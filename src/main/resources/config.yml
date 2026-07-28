@@ -1,0 +1,150 @@
+# FlameForge Root Configuration
+# MMO Forge Theme: dark_gray, purple, white, lime, gold
+# All values use MiniMessage formatting unless noted
+
+# Schema version - do not modify
+schema-version: 1
+
+# Plugin enabled state
+enabled: true
+
+# Station behavior mode: ANY_BEACON allows any beacon, REGISTERED_ONLY requires stations
+station-mode: REGISTERED_ONLY
+
+# Audit log settings
+audit-queue-capacity: 1024
+audit:
+  enabled: true
+  folder: audit
+  max-file-age-days: 30
+
+# Chance calculation settings
+chance-decimals: 4
+chance-display-decimals: 1
+
+# Unsafe enchantments list - these enchants cannot be forged
+unsafe-enchants:
+  - CURSE_OF_VOIDING
+  - CURSE_OF_TERRIBLE_DEATH
+
+# Item group definitions for filtering
+item-groups:
+  swords:
+    materials:
+      - diamond_sword
+      - iron_sword
+      - gold_sword
+      - stone_sword
+      - wooden_sword
+  pickaxes:
+    materials:
+      - diamond_pickaxe
+      - iron_pickaxe
+      - gold_pickaxe
+      - stone_pickaxe
+      - wooden_pickaxe
+  armor:
+    materials:
+      - diamond_helmet
+      - diamond_chestplate
+      - diamond_leggings
+      - diamond_boots
+      - iron_helmet
+      - iron_chestplate
+      - iron_leggings
+      - iron_boots
+      - gold_helmet
+      - gold_chestplate
+      - gold_leggings
+      - gold_boots
+      - chainmail_helmet
+      - chainmail_chestplate
+      - chainmail_leggings
+      - chainmail_boots
+      - leather_helmet
+      - leather_chestplate
+      - leather_leggings
+      - leather_boots
+
+# Catalyst definitions
+catalysts:
+  lucky_dust:
+    enabled: true
+    material: GLOWSTONE_DUST
+    name: "<reset><white>Lucky Dust"
+    lore:
+      - "<gray>Optional catalyst"
+      - "<gray>Place to modify outcomes"
+    chance-modifier: 0.1
+    consume: true
+    protected-outcomes:
+      - legendary_ward
+      - epic_ward
+
+# Ward definitions
+wards:
+  safety_rune:
+    enabled: true
+    material: PRISMARINE_SHARD
+    name: "<reset><aqua>Safety Rune"
+    lore:
+      - "<gray>Optional ward"
+      - "<gray>Place to protect your item"
+    protected-outcomes:
+      - legendary_ward
+      - epic_ward
+    convert_to_unchanged:
+      - BREAK
+    protect_all: false
+
+# Announcement settings
+announcements:
+  global:
+    enabled: true
+    radius: 0
+    title:
+      success: "<gold><bold>FORGE SUCCESS!"
+      fail: "<red><bold>FORGE FAILED"
+    subtitle:
+      success:
+        - "<white>%player_name% <green>received a powerful item!"
+        - "<gray>%item_name%"
+      fail:
+        - "<white>%player_name% <red>lost their item"
+  station:
+    enabled: true
+    radius: 16
+    title:
+      success: "<gold><bold>FORGE SUCCESS!"
+      fail: "<red><bold>FORGE FAILED"
+    subtitle:
+      success:
+        - "<white>%player_name% <green>forged successfully!"
+      fail:
+        - "<white>%player_name% <red>forged and lost"
+
+# Animation profile defaults
+animation-profile: default
+
+# Menu profile defaults
+menu-profile: default
+
+# Pity system defaults
+pity:
+  enabled: true
+  default-threshold: 10
+  default-bonus-weight: 2.0
+
+# Cost line colors (MiniMessage)
+cost-colors:
+  xp: "<light_purple>"
+  money: "<green>"
+  xp-label: "<light_purple>XP Cost:"
+  money-label: "<green>Money Cost:"
+
+# Default cost display format
+cost-display:
+  xp-format: "{value} XP"
+  money-format: "${value}"
+  show-zero-xp: false
+  show-zero-money: false

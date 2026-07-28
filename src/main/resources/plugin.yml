@@ -1,0 +1,78 @@
+name: FlameForge
+version: ${project.version}
+main: com.arkflame.flameforge.FlameForgePlugin
+author: ArkFlame Studios
+api-version: 1.13
+folia-supported: true
+softdepend:
+  - Vault
+  - SMPWeapons
+
+commands:
+  flameforge:
+    description: The root command for FlameForge
+    aliases: [forge, ff]
+    usage: /<command> [args]
+    permission: flameforge.use
+
+permissions:
+  flameforge.use:
+    description: Allows basic usage of FlameForge
+    default: true
+  flameforge.command.help:
+    description: Allows using the help command
+    default: true
+  flameforge.command.open:
+    description: Allows opening the beacon menu
+    default: true
+  flameforge.command.open.others:
+    description: Allows opening the beacon menu for other players
+    default: op
+  flameforge.command.reload:
+    description: Allows reloading the configuration
+    default: op
+  flameforge.command.validate:
+    description: Allows validating beacon configurations
+    default: op
+  flameforge.command.tiers:
+    description: Allows listing all tiers
+    default: op
+  flameforge.command.tier.info:
+    description: Allows viewing tier information
+    default: op
+  flameforge.command.preview:
+    description: Allows previewing beacon renames
+    default: op
+  flameforge.command.history:
+    description: Allows viewing rename history
+    default: true
+  flameforge.command.history.others:
+    description: Allows viewing other players' rename history
+    default: op
+  flameforge.command.station.add:
+    description: Allows adding rename stations
+    default: op
+  flameforge.command.station.remove:
+    description: Allows removing rename stations
+    default: op
+  flameforge.command.station.list:
+    description: Allows listing rename stations
+    default: op
+  flameforge.command.station.info:
+    description: Allows viewing rename station info
+    default: op
+  flameforge.command.station.teleport:
+    description: Allows teleporting to rename stations
+    default: op
+  flameforge.command.setup.tier:
+    description: Allows setting up tiers
+    default: op
+  flameforge.bypass.cost:
+    description: Allows bypassing rename costs
+    default: op
+  flameforge.bypass.cooldown:
+    description: Allows bypassing rename cooldowns
+    default: op
+  flameforge.admin:
+    description: Grants full admin access
+    default: op

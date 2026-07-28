@@ -1,2 +1,123 @@
-# BeaconRename
-Highly customizable plugin to rename swords by right-clicking beacons.
+# FlameForge
+
+FlameForge is a highly customizable Minecraft forge/reforge plugin for Spigot, Paper, and Folia servers. Players interact with beacon blocks to open a GUI-based forge menu where they can reforge weapons, armor, and tools with configurable outcomes, costs, cooldowns, and visual effects.
+
+## Compatibility
+
+| Platform      | Version         | Notes                                      |
+|---------------|-----------------|--------------------------------------------|
+| Spigot/Paper  | 1.8.8 - 1.21+  | API version 1.13 minimum                   |
+| Folia         | Supported       | Uses entity scheduler for cross-thread ops  |
+| Java          | 8+              | Compiled for Java 8 bytecode               |
+
+## Build and Install
+
+### Requirements
+
+- Java 8 JDK or higher
+- Maven 3.x
+
+### Build
+
+```bash
+mvn clean package
+```
+
+The compiled JAR will be at `target/FlameForge-1.0.0.jar`.
+
+### Installation
+
+1. Stop the server.
+2. Place the JAR in `plugins/`.
+3. Start the server. Default configuration and tier files will be generated.
+4. Review `plugins/FlameForge/config.yml` and `plugins/FlameForge/tiers/` directory.
+5. Register beacon stations using `/flameforge station add <id> [profile]`.
+6. Restart or use `/flameforge reload`.
+
+## Quick Start
+
+1. Create beacon blocks where you want forge stations.
+2. Run `/flameforge station add myforge default` while looking at a beacon.
+3. Edit tier files in `plugins/FlameForge/tiers/` to define outcomes.
+4. Open the forge by right-clicking a registered beacon.
+
+## Optional Dependencies
+
+| Plugin         | Purpose                                | Hook Type        |
+|----------------|----------------------------------------|------------------|
+| Vault          | Economy integration (money costs)      | Soft dependency  |
+| SMPWeapons     | Custom weapon attribute integration     | Soft dependency  |
+
+FlameForge will operate without these plugins. Economy features require Vault and a compatible economy provider.
+
+## Menu
+
+The forge GUI (45-slot inventory) contains:
+
+- **Input slot** (center-left): Place the item to reforge.
+- **Catalyst slot** (above input): Optional catalyst item to modify outcomes.
+- **Ward slot** (below input): Optional ward to protect against BREAK outcomes.
+- **Tier buttons** (right side): Multi-page tier selection.
+- **Confirm button** (bottom-center): Execute the forge with selected tier.
+- **Pity history** (bottom-left): Shows pity counter status.
+- **Navigation** (bottom corners): Previous/Next page, Close.
+
+## Commands
+
+| Command                            | Description                          | Permission (default)      |
+|------------------------------------|--------------------------------------|--------------------------|
+| `/flameforge help [page]`          | Show help menu                       | `flameforge.use` (all)   |
+| `/flameforge open [player]`        | Open forge GUI                       | `flameforge.command.open` (all) |
+| `/flameforge reload`               | Reload configuration                  | `flameforge.command.reload` (op) |
+| `/flameforge validate`             | Validate configuration files          | `flameforge.command.validate` (op) |
+| `/flameforge tiers [page]`         | List all configured tiers            | `flameforge.command.tiers` (op) |
+| `/flameforge tier info <tier>`     | Show tier details                    | `flameforge.command.tier.info` (op) |
+| `/flameforge preview <tier> [mat]` | Preview outcome for held item        | `flameforge.command.preview` (op) |
+| `/flameforge history [player]`      | View reforge history                 | `flameforge.command.history` (all) |
+| `/flameforge station add <id> [profile]` | Register a beacon station       | `flameforge.command.station.add` (op) |
+| `/flameforge station remove <id>`  | Remove a station                     | `flameforge.command.station.remove` (op) |
+| `/flameforge station list [page]`  | List all stations                    | `flameforge.command.station.list` (op) |
+| `/flameforge station info <id>`    | Show station details                 | `flameforge.command.station.info` (op) |
+| `/flameforge station teleport <id>` | Teleport to station                  | `flameforge.command.station.teleport` (op) |
+| `/flameforge setup tier create <id> <priority>` | Create empty tier     | `flameforge.command.setup.tier` (op) |
+| `/flameforge setup tier clone <source> <id> <priority>` | Clone existing tier | `flameforge.command.setup.tier` (op) |
+
+## Configuration Files
+
+| File                    | Purpose                                      |
+|-------------------------|----------------------------------------------|
+| `config.yml`            | Root plugin settings, catalysts, wards, announcements |
+| `stations.yml`          | Registered forge station locations (auto-managed) |
+| `tiers/*.yml`           | Individual tier definitions                   |
+| `messages.yml`          | Custom message strings                       |
+| `menus.yml`             | GUI layout and styling                       |
+
+## Tier Bootstrap Warning
+
+On first startup, if the `tiers/` directory does not exist, FlameForge will copy seven default tier files (tier1.yml through tier7.yml) into that directory. If you are upgrading and already have a `tiers/` directory, existing files will not be overwritten.
+
+**Deleting a tier file** removes that tier from the forge. Deleting all tier files does not disable the plugin; players will see an empty tier selection menu.
+
+## Hooks
+
+FlameForge provides command-based hooks for reward integration and economy:
+
+- **Vault**: Money costs via `CostMode.MONEY_ONLY` or `CostMode.XP_AND_MONEY`.
+- **Custom commands**: Outcome `COMMANDS` type dispatches console commands as rewards.
+- **PlaceholderAPI**: Expansion support for scoreboard and chat integration (separate plugin required).
+
+## Safety
+
+- **Anti-dupe**: Transaction journal prevents item duplication on disconnect. Pending deliveries are queued and delivered on player join.
+- **Session validation**: Items are held in custody only during animation. Disconnecting during animation returns items and refunds costs.
+- **Atomic operations**: Tier selection, cost charging, and outcome execution occur within a session state machine to prevent race conditions.
+
+## Documentation
+
+- [PROJECT-SPEC](docs/PROJECT-SPEC.md) — Acceptance contract
+- [ARCHITECTURE](docs/ARCHITECTURE.md) — Object model and threading
+- [CONFIGURATION](docs/CONFIGURATION.md) — File schemas and examples
+- [COMMANDS](docs/COMMANDS-AND-PERMISSIONS.md) — Permission nodes and command reference
+- [OUTCOMES](docs/OUTCOMES-AND-HOOKS.md) — Outcome types and hook system
+- [ADMIN-GUIDE](docs/ADMIN-GUIDE.md) — Setup, validation, backup, troubleshooting
+- [FEATURE-EVALUATION](docs/FEATURE-EVALUATION.md) — Feature selection rationale
