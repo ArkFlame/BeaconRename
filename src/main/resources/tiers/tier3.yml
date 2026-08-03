@@ -1,245 +1,157 @@
-schema-version: 1
+schema-version: 2
 id: tier3
-priority: 2
-display:
-  name: "&a&lTier III"
-  material: NETHER_STAR
-  lore:
-    - "&aAdvanced forging"
-    - "&7XP Cost: &a20"
+level: 3
 enabled: true
-cost:
-  mode: XP_ONLY
-  xp: 20
-cooldown-seconds: 5
-pity:
-  enabled: false
-  threshold: 0
-  bonus-weight: "1.000000"
+display:
+  name: "<gradient:#ff7a18:#ffd166><bold>Tier 3</bold></gradient>"
+  lore:
+    - "<gray>Automatic upgrade target: <white>Tier 3"
+    - "<gray>The original item material is always retained."
+cooldown-seconds: 12
+input:
+  allowed-groups:
+    - ANY
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 35
+  money:
+    enabled: false
+    amount: 3500.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "80.0"
+  break: "11.0"
+  curse: "9.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>☠ This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
 animation:
-  success-duration: 40
-  fail-duration: 20
-outcomes:
-  curse_sword:
-    type: BREAK
-    weight: "2.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&4☠ Void Blade"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 10
-  curse_axe:
-    type: BREAK
-    weight: "2.000000"
-    mutation:
-      material: DIAMOND_AXE
-      name: "&4☠ Void Axe"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 10
-  curse_tool:
-    type: BREAK
-    weight: "2.000000"
-    mutation:
-      material: DIAMOND_PICKAXE
-      name: "&4☠ Void Pickaxe"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 10
-  curse_armor:
-    type: BREAK
-    weight: "2.000000"
-    mutation:
-      material: DIAMOND_BOOTS
-      name: "&4☠ Void Boots"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 10
-  no_change:
-    type: RETURN_UNCHANGED
-    weight: "14.000000"
-  basic_sword:
-    type: MODIFY_INPUT
-    weight: "10.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&2Tempered Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 2
-          max-level: 3
-        fire_aspect:
-          name: fire_aspect
-          min-level: 1
-          max-level: 1
-        unbreaking:
-          name: unbreaking
-          min-level: 2
-          max-level: 3
-  basic_axe:
-    type: MODIFY_INPUT
-    weight: "8.000000"
-    mutation:
-      material: DIAMOND_AXE
-      name: "&2Tempered Axe"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 2
-          max-level: 3
-        efficiency:
-          name: efficiency
-          min-level: 3
-          max-level: 4
-        unbreaking:
-          name: unbreaking
-          min-level: 2
-          max-level: 3
-  basic_tool:
-    type: MODIFY_INPUT
-    weight: "6.000000"
-    mutation:
-      material: DIAMOND_PICKAXE
-      name: "&2Tempered Pickaxe"
-      amount: 1
-      enchants:
-        efficiency:
-          name: efficiency
-          min-level: 3
-          max-level: 4
-        fortune:
-          name: fortune
-          min-level: 1
-          max-level: 1
-        unbreaking:
-          name: unbreaking
-          min-level: 2
-          max-level: 3
-  basic_armor:
-    type: MODIFY_INPUT
-    weight: "5.000000"
-    mutation:
-      material: DIAMOND_CHESTPLATE
-      name: "&2Tempered Chestplate"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 2
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 2
-          max-level: 3
-  rare_sword:
-    type: MODIFY_INPUT
-    weight: "11.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&bElite Tempered Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 3
-          max-level: 4
-        fire_aspect:
-          name: fire_aspect
-          min-level: 1
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 1
-          max-level: 2
-  rare_armor:
-    type: MODIFY_INPUT
-    weight: "9.000000"
-    mutation:
-      material: DIAMOND_LEGGINGS
-      name: "&bElite Tempered Leggings"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 3
-          max-level: 4
-        thorns:
-          name: thorns
-          min-level: 1
-          max-level: 2
-  epic_sword:
-    type: MODIFY_INPUT
-    weight: "6.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&5Supreme Tempered Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 4
-          max-level: 4
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 2
-          max-level: 2
-        unbreaking:
-          name: unbreaking
-          min-level: 2
-          max-level: 3
-  legendary_sword:
-    type: MODIFY_INPUT
-    weight: "1.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&6&lLegendary Tempered Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 4
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 2
-          max-level: 2
-        unbreaking:
-          name: unbreaking
-          min-level: 3
-          max-level: 4
-  loot_rare:
-    type: CREATE_ITEM
-    weight: "5.000000"
-    mutation:
-      material: DIAMOND_CHESTPLATE
-      name: "&bRare Forged Chestplate"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 2
-          max-level: 2
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - BLOCK
+      - BLOCK_CRACK
+      - TILE_BREAK
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  vampiric:
+    weight: "30.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#991b1b:#f87171><bold>Vampiric %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier III forged variant"
+      - "<dark_gray>● <red>20% life-steal strike"
+      - "<dark_gray>● <white>60 tick cooldown"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: vampiric_hit
+        type: ON_HIT_HEAL
+        cooldown-ticks: 60
+        chance: "0.20"
+        heal-amount: "2.0"
+  guardian:
+    weight: "40.0"
+    applicable-groups:
+      - ANY
+    display-name: "<gradient:#fde68a:#ca8a04><bold>Guardian %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier III forged variant"
+      - "<dark_gray>● <gold>7% damage reduction"
+      - "<dark_gray>● <white>Active while equipped"
+    enchantments: []
+    attributes:
+      - id: guardian_guard
+        type: DAMAGE_REDUCTION_PERCENT
+        value: "0.07"
+    powers: []
+  hasty:
+    weight: "30.0"
+    applicable-groups:
+      - ANY
+    display-name: "<gradient:#fef08a:#22c55e><bold>Hasty %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier III forged variant"
+      - "<dark_gray>● <yellow>Haste while actively equipped"
+      - "<dark_gray>● <white>Original enchantments retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: hasty_passive
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - FAST_DIGGING
+          - HASTE
+        duration-ticks: 40
+        amplifier: 0
+        activation-slots:
+          - MAIN_HAND
+          - OFF_HAND
+          - ARMOR

@@ -22,7 +22,7 @@ public class TierRepository {
     private boolean directoryExistedBeforeStartup;
 
     private final Map<String, TierDefinition> tiersById = new LinkedHashMap<>();
-    private final Map<String, TierParser.TierExtra> extrasByTierId = new LinkedHashMap<>();
+    private final NavigableMap<Integer, TierDefinition> tiersByLevel = new TreeMap<>();
 
     public TierRepository(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -66,12 +66,13 @@ public class TierRepository {
     }
 
     public ValidationReport load() {
-        tiersById.clear();
-        extrasByTierId.clear();
-
         ValidationReport report = new ValidationReport();
+        Map<String, TierDefinition> loadedTiers = new LinkedHashMap<>();
+        NavigableMap<Integer, TierDefinition> loadedByLevel = new TreeMap<>();
 
         if (!tiersDirectory.exists() || !tiersDirectory.isDirectory()) {
+            tiersById.clear();
+            tiersByLevel.clear();
             return report;
         }
 
@@ -79,35 +80,100 @@ public class TierRepository {
             name.endsWith(TIER_EXTENSION) && !name.startsWith("."));
 
         if (files == null) {
+            tiersById.clear();
+            tiersByLevel.clear();
             return report;
         }
 
         Set<String> seenIds = new HashSet<>();
+        Set<Integer> seenLevels = new HashSet<>();
 
         for (File file : files) {
-            ValidationReport fileReport = loadTierFile(file, seenIds);
+            ValidationReport fileReport = loadTierFile(file, seenIds, seenLevels, loadedTiers, loadedByLevel);
             report.merge(fileReport);
         }
 
-        sortTiers();
+        tiersById.clear();
+        tiersByLevel.clear();
+        tiersById.putAll(loadedTiers);
+        tiersByLevel.putAll(loadedByLevel);
         return report;
     }
 
-    private ValidationReport loadTierFile(File file, Set<String> seenIds) {
+    public ValidationReport loadWithMigration(boolean replaceSchemaV1) {
+        ValidationReport report = new ValidationReport();
+        Map<String, TierDefinition> loadedTiers = new LinkedHashMap<>();
+        NavigableMap<Integer, TierDefinition> loadedByLevel = new TreeMap<>();
+
+        if (!tiersDirectory.exists() || !tiersDirectory.isDirectory()) {
+            tiersById.clear();
+            tiersByLevel.clear();
+            return report;
+        }
+
+        File[] files = tiersDirectory.listFiles((dir, name) ->
+            name.endsWith(TIER_EXTENSION) && !name.startsWith("."));
+
+        if (files == null) {
+            tiersById.clear();
+            tiersByLevel.clear();
+            return report;
+        }
+
+        Set<String> seenIds = new HashSet<>();
+        Set<Integer> seenLevels = new HashSet<>();
+
+        for (File file : files) {
+            ValidationReport fileReport = loadTierFileWithMigration(file, seenIds, seenLevels,
+                loadedTiers, loadedByLevel, replaceSchemaV1);
+            report.merge(fileReport);
+        }
+
+        tiersById.clear();
+        tiersByLevel.clear();
+        tiersById.putAll(loadedTiers);
+        tiersByLevel.putAll(loadedByLevel);
+        return report;
+    }
+
+    private ValidationReport loadTierFile(File file, Set<String> seenIds, Set<Integer> seenLevels,
+                                          Map<String, TierDefinition> loadedTiers,
+                                          NavigableMap<Integer, TierDefinition> loadedByLevel) {
+        return loadTierFileWithMigration(file, seenIds, seenLevels, loadedTiers, loadedByLevel, false);
+    }
+
+    private ValidationReport loadTierFileWithMigration(File file, Set<String> seenIds, Set<Integer> seenLevels,
+                                                       Map<String, TierDefinition> loadedTiers,
+                                                       NavigableMap<Integer, TierDefinition> loadedByLevel,
+                                                       boolean replaceSchemaV1) {
         ValidationReport report = new ValidationReport();
 
         try {
             org.bukkit.configuration.file.YamlConfiguration yaml =
                 org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file);
 
-            YamlValues values = new YamlValues(yaml, report);
-            TierParser.TierParseResult result = TierParser.parse(values, report);
+            int schemaVersion = yaml.getInt("schema-version", 1);
+            TierParser.MigrationContext migrationCtx = null;
 
-            if (!result.isSuccess()) {
+            if (schemaVersion == 1 && replaceSchemaV1) {
+                final File legacyFileRef = file;
+                migrationCtx = TierParser.MigrationContext.forMigration(
+                    tiersDirectory,
+                    legacyFileRef,
+                    true,
+                    resourceName -> plugin.getResource("tiers/" + resourceName)
+                );
+            } else {
+                migrationCtx = TierParser.MigrationContext.noOp();
+            }
+
+            YamlValues values = new YamlValues(yaml, report);
+            TierDefinition tier = TierParser.parse(values, report, migrationCtx);
+
+            if (tier == null) {
                 return report;
             }
 
-            TierDefinition tier = result.getTier();
             String id = tier.getId();
 
             if (seenIds.contains(id)) {
@@ -115,11 +181,16 @@ public class TierRepository {
                 return report;
             }
 
-            seenIds.add(id);
-            tiersById.put(id, tier);
-            if (result.getExtra() != null) {
-                extrasByTierId.put(id, result.getExtra());
+            int level = tier.getLevel();
+            if (seenLevels.contains(level)) {
+                report.addError("", "level", "Duplicate tier level: " + level + " in file " + file.getName());
+                return report;
             }
+
+            seenIds.add(id);
+            seenLevels.add(level);
+            loadedTiers.put(id, tier);
+            loadedByLevel.put(level, tier);
 
         } catch (Exception e) {
             report.addError("", file.getName(), "Failed to parse tier file: " + e.getMessage());
@@ -128,88 +199,91 @@ public class TierRepository {
         return report;
     }
 
-    private void sortTiers() {
-        List<Map.Entry<String, TierDefinition>> entries = new ArrayList<>(tiersById.entrySet());
-
-        Collections.sort(entries, (a, b) -> {
-            TierDefinition tierA = a.getValue();
-            TierDefinition tierB = b.getValue();
-
-            int priorityCompare = Integer.compare(tierB.getTierLevel(), tierA.getTierLevel());
-            if (priorityCompare != 0) {
-                return priorityCompare;
-            }
-
-            return a.getKey().compareTo(b.getKey());
-        });
-
-        tiersById.clear();
-        for (Map.Entry<String, TierDefinition> entry : entries) {
-            tiersById.put(entry.getKey(), entry.getValue());
-        }
+    public Optional<TierDefinition> findById(String id) {
+        return Optional.ofNullable(tiersById.get(id));
     }
 
     public Optional<TierDefinition> find(String id) {
-        return Optional.ofNullable(tiersById.get(id));
+        return findById(id);
+    }
+
+    public <T> Optional<T> findExtra(String id) {
+        return Optional.empty();
+    }
+
+    public Optional<TierDefinition> findByLevel(int level) {
+        return Optional.ofNullable(tiersByLevel.get(level));
+    }
+
+    public Optional<TierDefinition> findNextLevel(int currentLevel) {
+        Map.Entry<Integer, TierDefinition> next = tiersByLevel.higherEntry(currentLevel);
+        return next != null ? Optional.of(next.getValue()) : Optional.empty();
+    }
+
+    public List<TierDefinition> allAscending() {
+        return Collections.unmodifiableList(new ArrayList<>(tiersByLevel.values()));
     }
 
     public List<TierDefinition> all() {
         return Collections.unmodifiableList(new ArrayList<>(tiersById.values()));
     }
 
-    public Optional<TierParser.TierExtra> findExtra(String tierId) {
-        return Optional.ofNullable(extrasByTierId.get(tierId));
-    }
-
-    public TierDefinition create(String id, int priority) {
-        TierDefinition tier = TierDefinition.of(
+    public TierDefinition create(String id, int level) {
+        TierDefinition tier = new TierDefinition(
             id,
-            priority,
-            com.arkflame.flameforge.model.TierCost.xpOnly(java.math.BigDecimal.ZERO),
-            40,
-            20,
+            level,
+            true,
+            "",
+            new TierDefinition.TierDisplay("", Collections.emptyList(), false, "AIR"),
+            0L,
+            Collections.singletonList("ANY"),
+            Collections.emptyList(),
+            null,
+            null,
+            null,
+            null,
+            null,
             Collections.emptyList()
         );
         tiersById.put(id, tier);
-        extrasByTierId.put(id, new TierParser.TierExtra(
-            true, "", TierParser.TierDisplay.DEFAULT, 0L, TierParser.TierPity.DEFAULT
-        ));
-        sortTiers();
+        tiersByLevel.put(level, tier);
         return tier;
     }
 
-    public TierDefinition clone(String sourceId, String newId) {
+    public TierDefinition clone(String sourceId, String newId, int newLevel) {
         TierDefinition source = tiersById.get(sourceId);
         if (source == null) {
             return null;
         }
 
-        TierDefinition clone = TierDefinition.of(
+        TierDefinition clone = new TierDefinition(
             newId,
-            source.getTierLevel(),
-            source.getCost(),
-            source.getSuccessAnimationDuration(),
-            source.getFailAnimationDuration(),
-            new ArrayList<>(source.getOutcomes())
-        );
-
-        TierParser.TierExtra sourceExtra = extrasByTierId.get(sourceId);
-        TierParser.TierExtra cloneExtra = sourceExtra != null ? sourceExtra : new TierParser.TierExtra(
-            true, "", TierParser.TierDisplay.DEFAULT, 0L, TierParser.TierPity.DEFAULT
+            newLevel,
+            source.isEnabled(),
+            source.getPermission(),
+            source.getDisplay(),
+            source.getCooldownSeconds(),
+            new ArrayList<>(source.getAllowedGroups()),
+            new ArrayList<>(source.getDeniedMaterials()),
+            source.getRequirements(),
+            source.getChances(),
+            source.getBreakPolicy(),
+            source.getCurseDefinition(),
+            source.getAnimationProfile(),
+            new ArrayList<>(source.getVariants())
         );
 
         tiersById.put(newId, clone);
-        extrasByTierId.put(newId, cloneExtra);
-        sortTiers();
+        tiersByLevel.put(newLevel, clone);
         return clone;
     }
 
     public boolean delete(String id) {
-        if (!tiersById.containsKey(id)) {
+        TierDefinition removed = tiersById.remove(id);
+        if (removed == null) {
             return false;
         }
-        tiersById.remove(id);
-        extrasByTierId.remove(id);
+        tiersByLevel.remove(removed.getLevel());
         return true;
     }
 
@@ -218,7 +292,10 @@ public class TierRepository {
         if (!tiersById.containsKey(id)) {
             return false;
         }
+        TierDefinition old = tiersById.get(id);
+        tiersByLevel.remove(old.getLevel());
         tiersById.put(id, tier);
+        tiersByLevel.put(tier.getLevel(), tier);
         return true;
     }
 

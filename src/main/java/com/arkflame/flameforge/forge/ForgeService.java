@@ -6,24 +6,27 @@ import com.arkflame.flameforge.chance.OutcomeSelector;
 import com.arkflame.flameforge.chance.RandomSource;
 import com.arkflame.flameforge.chance.ThreadLocalRandomSource;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
+import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.effect.AnimationHandle;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
-import com.arkflame.flameforge.forge.ForgeTransaction.Builder;
 import com.arkflame.flameforge.model.AnimationStep;
 import com.arkflame.flameforge.model.ForgeHistory;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.OutcomeDefinition;
 import com.arkflame.flameforge.model.OutcomeType;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.model.StationProfile;
+import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
+import com.arkflame.flameforge.model.TierRequirements;
 import com.arkflame.flameforge.persistence.AuditLogService;
 import com.arkflame.flameforge.persistence.PendingDeliveryRepository;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
 import com.arkflame.flameforge.session.ForgeSession;
 import com.arkflame.flameforge.session.ForgeSessionService;
-import com.arkflame.flameforge.persistence.StationRepository.StationData;
 import com.arkflame.flameforge.station.ForgeStationService;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -38,6 +41,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 
 public final class ForgeService {
@@ -80,365 +84,337 @@ public final class ForgeService {
         this.disabled = disabled;
     }
 
-    public void onPlayerQuit(Player player) {
-        if (player == null) return;
-        String playerId = player.getUniqueId().toString();
-        ForgeSession session = sessionService.getSession(playerId);
-        if (session == null) {
-            return;
+    public ForgePlan createPlan(Player player, PlayerForgeState session, ItemStack input) {
+        if (player == null || session == null || input == null) {
+            return null;
         }
-        synchronized (session) {
-            if (session.isOpen()) {
-                session.transitionToSettling();
-                returnCustodyAndRefund(session, player);
-                session.transitionToClosed();
-            } else if (session.isProcessing()) {
-                session.transitionToSettling();
-                queuePendingDeliveryForSession(session, player);
-            }
-        }
-    }
 
-    public void onPlayerJoin(Player player) {
-        if (player != null) {
-            deliveryService.processPlayerJoin(player);
-        }
-    }
-
-    public void onDisable() {
-        disabled = true;
-        sessionService.closeAllSessions(session -> {
-            String playerId = session.getPlayerId();
-            Player player = Bukkit.getPlayer(playerId);
-            if (player != null && player.isOnline()) {
-                synchronized (session) {
-                    if (session.isProcessing()) {
-                        session.transitionToSettling();
-                        queuePendingDeliveryForSession(session, player);
-                    }
-                }
-            }
-        });
-        deliveryService.processGlobalContext();
-    }
-
-    public ForgeContext buildContext(Player player, ItemStack[] inputSlots,
-            ItemStack[] catalystSlots, ItemStack[] wardSlots, int tierLevel) {
-        if (player == null) {
-            throw new IllegalArgumentException("Player cannot be null");
-        }
         ConfigSnapshot config = configService.getCurrentSnapshot();
-        String playerId = player.getUniqueId().toString();
-        PlayerForgeState playerState = loadOrCreatePlayerState(player);
+        int currentTier = session.getActiveTierLevel();
+        int targetTier = currentTier + 1;
 
-        StationData stationData = stationService.resolveStationFromClick(player).orElse(null);
-        String stationId = stationData != null ? stationData.id : null;
-        StationProfile profile = stationData != null ?
-            stationService.resolveProfile(stationData).orElse(null) : null;
-        Location stationLocation = null;
-        if (stationData != null && player.getWorld() != null) {
-            World world = Bukkit.getWorld(stationData.world);
-            if (world != null) {
-                stationLocation = stationData.toLocation(world);
-            }
-        }
-
-        return ForgeContext.builder()
-            .transactionId(UUID.randomUUID())
-            .playerId(playerId)
-            .inputSlots(cloneItems(inputSlots))
-            .catalystSlots(cloneItems(catalystSlots))
-            .wardSlots(cloneItems(wardSlots))
-            .tierLevel(tierLevel)
-            .stationId(stationId)
-            .stationProfile(profile)
-            .playerState(playerState)
-            .configSnapshot(config)
-            .stationLocation(stationLocation)
-            .build();
-    }
-
-    public ValidationResult validateOpen(ForgeContext context, Player player) {
-        if (disabled) {
-            return ValidationResult.failure("Forge is disabled");
-        }
-        if (context == null) {
-            return ValidationResult.failure("Context is null");
-        }
-        if (player == null || !player.isOnline()) {
-            return ValidationResult.failure("Player is not online");
-        }
-        PlayerForgeState state = context.getPlayerState();
-        if (state != null && state.isOnCooldown(context.getStationId())) {
-            return ValidationResult.failure("Player is on cooldown");
-        }
-        StationProfile profile = context.getStationProfile();
-        if (profile != null) {
-            if (!stationService.hasPermission(player, null, profile)) {
-                return ValidationResult.failure("Missing station permission");
-            }
-            if (!stationService.isTierAllowed(profile, context.getTierLevel())) {
-                return ValidationResult.failure("Tier not allowed at this station");
-            }
-        }
-        if (!context.hasInputItems()) {
-            return ValidationResult.failure("No input items provided");
-        }
-        return ValidationResult.success();
-    }
-
-    public PreviewResult preview(ForgeContext context, Player player) {
-        ConfigSnapshot config = context.getConfigSnapshot();
-        TierDefinition tier = findTier(config, context.getTierLevel());
+        TierDefinition tier = findTier(config, targetTier);
         if (tier == null) {
-            return PreviewResult.failure("Tier not found");
+            return null;
         }
-        CostQuote quote = costService.quote(player, tier.getCost());
-        if (!quote.isAffordable()) {
-            return PreviewResult.failure("Cannot afford cost");
+
+        if (!tier.isEnabled()) {
+            return null;
         }
-        List<AnimationStep> animSteps = loadAnimationSteps(config, context.getStationId(), "preview");
-        ChanceTable table = buildChanceTable(tier);
-        return PreviewResult.of(quote, tier, table, animSteps);
+
+        TierRequirements requirements = tier.getRequirements();
+        TierChances chances = tier.getChances();
+        ForgeVariant selectedVariant = selectVariant(tier, session);
+        CostQuote costQuote = costService.quote(player, tier.getCost());
+
+        return ForgePlan.create(player, session, input, tier, requirements, chances,
+                               selectedVariant, costQuote);
     }
 
-    public ForgeResolution confirmAndExecute(ForgeContext context, Player player,
-            ItemStack[] inputSlots, ItemStack[] catalystSlots, ItemStack[] wardSlots,
-            Consumer<ForgeResolution> completionCallback) {
+    public void confirmAndExecute(Player player, PlayerForgeState sessionState,
+                                 ItemStack input, ForgePlan plan,
+                                 Consumer<ForgeResolution> completionCallback) {
         if (Thread.holdsLock(getClass())) {
             throw new IllegalStateException("Cannot call while holding lock");
         }
-        String playerId = context.getPlayerId();
+        if (player == null || plan == null) {
+            invokeCallback(completionCallback, ForgeResolution.failure(
+                plan != null ? UUID.randomUUID() : null,
+                ForgeOutcomeCategory.BREAK, "Invalid parameters", true));
+            return;
+        }
+
+        String playerId = player.getUniqueId().toString();
         ForgeSession session = sessionService.openSession(playerId);
 
         synchronized (session) {
             if (session.isClosed()) {
-                return ForgeResolution.failure(context.getTransactionId(), "Session is closed", false);
+                invokeCallback(completionCallback, ForgeResolution.failure(
+                    plan.getTargetTier() != null ? UUID.randomUUID() : null,
+                    ForgeOutcomeCategory.BREAK, "Session is closed", false));
+                return;
             }
             if (!session.isOpen()) {
-                return ForgeResolution.failure(context.getTransactionId(), "Session is not open", false);
+                invokeCallback(completionCallback, ForgeResolution.failure(
+                    plan.getTargetTier() != null ? UUID.randomUUID() : null,
+                    ForgeOutcomeCategory.BREAK, "Session is not open", false));
+                return;
             }
 
-            ConfigSnapshot configAtConfirm = configService.getCurrentSnapshot();
-            PlayerForgeState reReadPlayerState = loadOrCreatePlayerState(player);
+            UUID transactionId = UUID.randomUUID();
 
-            TierDefinition tier = findTier(configAtConfirm, context.getTierLevel());
-            if (tier == null) {
-                return finalizeWithFailure(session, context, player, "Tier not found", true);
+            ForgeContext context = ForgeContext.builder()
+                .transactionId(transactionId)
+                .playerId(playerId)
+                .plan(plan)
+                .playerState(sessionState)
+                .configSnapshot(configService.getCurrentSnapshot())
+                .stationProfile(null)
+                .stationLocation(player.getLocation())
+                .build();
+
+            ForgeTransaction tx = executeOrchestration(session, context, player, input,
+                                                       completionCallback);
+            if (tx != null) {
+                context.setCurrentTransaction(tx);
             }
+        }
+    }
 
-            ForgeTransaction.Builder txBuilder = ForgeTransaction.builder()
-                .transactionId(context.getTransactionId())
-                .context(context)
-                .historyBefore(ForgeHistory.of(playerId, Instant.now(), context.getStationId(),
-                    context.getTierLevel(), null, null, Collections.emptyList()));
+    private ForgeTransaction executeOrchestration(ForgeSession session, ForgeContext context,
+                                                  Player player, ItemStack input,
+                                                  Consumer<ForgeResolution> completionCallback) {
+        ForgePlan plan = context.getPlan();
 
-            CostQuote quote = costService.quote(player, tier.getCost());
-            if (!quote.isAffordable()) {
-                return finalizeWithFailure(session, context, player, "Cannot afford cost", true);
-            }
-            txBuilder.quote(quote);
-
-            List<ItemStack> custodySnapshot = collectCustody(inputSlots, catalystSlots, wardSlots);
-            txBuilder.custodySnapshot(custodySnapshot);
-
-            ChargeReceipt chargeReceipt = costService.charge(player, tier.getCost());
-            if (!chargeReceipt.isSuccess()) {
-                costService.refund(player, chargeReceipt);
-                return finalizeWithFailure(session, context, player,
-                    chargeReceipt.getFailureReason(), true);
-            }
-            txBuilder.chargeReceipt(chargeReceipt);
-
-            removeInputCustody(inputSlots, catalystSlots, wardSlots);
-
-            ChanceTable chanceTable = buildChanceTable(tier);
-            txBuilder.chanceTable(chanceTable);
-
-            long randomValue = randomSource.nextLong(chanceTable.getTotalMicroWeight());
-            ChanceEntry selectedEntry = chanceTable.select(randomValue);
-
-            OutcomeDefinition selectedOutcome = findOutcomeById(tier, selectedEntry.getOutcomeId());
-            if (selectedOutcome == null) {
-                rollbackCustodyAndCharges(context, player, custodySnapshot, chargeReceipt);
-                return finalizeWithFailure(session, context, player, "Selected outcome not found", true);
-            }
-            txBuilder.selectedEntry(selectedEntry);
-            txBuilder.selectedOutcome(selectedOutcome);
-
-            ForgeTransaction transaction = txBuilder.build();
-            if (!session.atomicOpenToProcessing(context, transaction)) {
-                rollbackCustodyAndCharges(context, player, custodySnapshot, chargeReceipt);
-                return finalizeWithFailure(session, context, player, "State transition failed", true);
-            }
-
-            updateCooldownAndPityOnce(context, reReadPlayerState, player);
-
-            List<AnimationStep> animSteps = loadAnimationSteps(configAtConfirm,
-                context.getStationId(), selectedOutcome.getType() == OutcomeType.BREAK ? "fail" : "success");
-            int animDuration = selectedOutcome.getType() == OutcomeType.BREAK ?
-                tier.getFailAnimationDuration() : tier.getSuccessAnimationDuration();
-
-            AnimationHandle animHandle = animationService.playAnimation(
-                context.getTransactionId().toString(), player, context.getStationLocation(),
-                animSteps, animDuration, (txId) -> {
-                    scheduler.runGlobal(plugin, () -> {
-                        synchronized (session) {
-                            if (session.isSettling()) {
-                                executeOutcomeAndDeliver(session, context, player, selectedOutcome,
-                                    chargeReceipt, completionCallback);
-                            }
-                        }
-                    });
-                });
-
-            if (animHandle == null) {
-                executeOutcomeAndDeliver(session, context, player, selectedOutcome,
-                    chargeReceipt, completionCallback);
-            }
-
+        if (!revalidatePlan(context, player, plan)) {
+            rollbackAndFail(context, session, player, ForgeTransaction.RollbackReason.PRE_TERMINAL_FAILURE,
+                "Plan revalidation failed", completionCallback);
             return null;
         }
+
+        CostQuote quote = plan.getCostQuote();
+        if (quote == null || !quote.isAffordable()) {
+            rollbackAndFail(context, session, player, ForgeTransaction.RollbackReason.PRE_TERMINAL_FAILURE,
+                "Cannot afford cost", completionCallback);
+            return null;
+        }
+
+        ChargeReceipt chargeReceipt = costService.charge(player, plan.getTargetTier().getCost(), Collections.singletonList(input));
+        if (!chargeReceipt.isSuccess()) {
+            rollbackAndFail(context, session, player, ForgeTransaction.RollbackReason.PRE_TERMINAL_FAILURE,
+                chargeReceipt.getFailureReason(), completionCallback);
+            return null;
+        }
+
+        List<ItemStack> custodySnapshot = collectCustody(input);
+        removeInputCustody(input);
+
+        ChanceTable chanceTable = buildChanceTable(plan.getTargetTier());
+        long randomValue = randomSource.nextLong(chanceTable.getTotalMicroWeight());
+        ChanceEntry selectedEntry = chanceTable.select(randomValue);
+
+        ForgeOutcomeCategory category = mapToCategory(selectedEntry.getOutcomeId(),
+            plan.getTargetTier());
+        OutcomeDefinition selectedOutcome = findOutcomeById(plan.getTargetTier(),
+            selectedEntry.getOutcomeId());
+
+        if (selectedOutcome == null) {
+            atomicRollback(context, player, custodySnapshot, chargeReceipt);
+            rollbackAndFail(context, session, player, ForgeTransaction.RollbackReason.PRE_TERMINAL_FAILURE,
+                "Selected outcome not found", completionCallback);
+            return null;
+        }
+
+        ForgeTransaction.Builder txBuilder = ForgeTransaction.builder()
+            .transactionId(context.getTransactionId())
+            .context(context)
+            .plan(plan)
+            .quote(quote)
+            .chargeReceipt(chargeReceipt)
+            .chanceTable(chanceTable)
+            .selectedEntry(selectedEntry)
+            .outcomeCategory(category)
+            .selectedOutcome(selectedOutcome)
+            .custodySnapshot(custodySnapshot)
+            .usedVariant(plan.getSelectedVariant());
+
+        ForgeTransaction transaction = txBuilder.build();
+
+        if (!session.atomicOpenToProcessing(context, transaction)) {
+            atomicRollback(context, player, custodySnapshot, chargeReceipt);
+            rollbackAndFail(context, session, player, ForgeTransaction.RollbackReason.PRE_TERMINAL_FAILURE,
+                "State transition failed", completionCallback);
+            return null;
+        }
+
+        if (!context.tryMarkCompleted()) {
+            return transaction;
+        }
+
+        int animDuration = getAnimationDuration(plan.getTargetTier(), category);
+
+        AnimationHandle animHandle = animationService.playAnimation(
+            context.getTransactionId().toString(), player, context.getStationLocation(),
+            plan.getTargetTier().getAnimationProfile(), (txId) -> {
+                scheduler.runGlobal(plugin, () -> {
+                    synchronized (session) {
+                        if (session.isSettling()) {
+                            mutateAndDeliver(session, context,
+                                player, plan, transaction, completionCallback);
+                        }
+                    }
+                });
+            }, (txId) -> {
+                scheduler.runGlobal(plugin, () -> {
+                    rollbackAndFail(context, session, player, ForgeTransaction.RollbackReason.ANIMATION_FAILURE,
+                        "Animation failed", completionCallback);
+                });
+            });
+
+        if (animHandle == null) {
+            mutateAndDeliver(session, context, player, plan, transaction,
+                completionCallback);
+        }
+
+        return transaction;
     }
 
-    private ForgeResolution finalizeWithFailure(ForgeSession session, ForgeContext context,
-            Player player, String errorMessage, boolean preRollFailure) {
-        ForgeResolution resolution = ForgeResolution.failure(
-            context.getTransactionId(), errorMessage, preRollFailure);
-        session.setTerminalResolution(resolution);
-        session.transitionToClosed();
-        return resolution;
+    private boolean revalidatePlan(ForgeContext context, Player player, ForgePlan plan) {
+        if (disabled) {
+            return false;
+        }
+        if (context == null || plan == null) {
+            return false;
+        }
+        if (player == null || !player.isOnline()) {
+            return false;
+        }
+        PlayerForgeState state = context.getPlayerState();
+        if (state != null && state.isOnCooldown(context.getPlan().getTargetTier().getId())) {
+            return false;
+        }
+        return true;
     }
 
-    private void rollbackCustodyAndCharges(ForgeContext context,
-            Player player, List<ItemStack> custodySnapshot, ChargeReceipt chargeReceipt) {
-        returnCustodyToPlayer(player, custodySnapshot);
-        if (chargeReceipt != null && chargeReceipt.isSuccess()) {
-            costService.refund(player, chargeReceipt);
-        }
-    }
-
-    private void returnCustodyAndRefund(ForgeSession session, Player player) {
-        ForgeTransaction tx = session.getCurrentTransaction();
-        if (tx == null) {
-            return;
-        }
-        List<ItemStack> custody = tx.getCustodySnapshot();
-        if (custody != null && !custody.isEmpty()) {
-            returnCustodyToPlayer(player, custody);
-        }
-        ChargeReceipt receipt = tx.getChargeReceipt();
-        if (receipt != null && receipt.isSuccess()) {
-            costService.refund(player, receipt);
-        }
-    }
-
-    private void queuePendingDeliveryForSession(ForgeSession session, Player player) {
-        ForgeTransaction tx = session.getCurrentTransaction();
-        if (tx == null || !tx.hasSelectedOutcome()) {
-            session.transitionToClosed();
-            return;
-        }
-        ForgeContext ctx = session.getCurrentContext();
-        if (ctx == null) {
-            session.transitionToClosed();
-            return;
-        }
-        OutcomeDefinition outcome = tx.getSelectedOutcome();
-        OutcomeExecutionResult execResult = outcomeExecutor.execute(outcome,
-            ctx.getInputSlots().length > 0 ? ctx.getInputSlots()[0] : null, player,
-            ctx.getStationLocation());
-
-        session.setTerminalResolution(ForgeResolution.success(
-            ctx.getTransactionId(), tx.getChanceTable(), tx.getSelectedEntry(),
-            outcome, execResult.getItemOutput(), null, tx.getChargeReceipt(),
-            tx.getCustodySnapshot(), execResult.isWardConverted()));
-        session.transitionToClosed();
-    }
-
-    private void executeOutcomeAndDeliver(ForgeSession session, ForgeContext context,
-            Player player, OutcomeDefinition outcome, ChargeReceipt chargeReceipt,
-            Consumer<ForgeResolution> completionCallback) {
-        if (session.isClosed()) {
-            return;
-        }
-
-        ForgeTransaction tx = session.getCurrentTransaction();
+    private List<ItemStack> mutateAndDeliver(ForgeSession session, ForgeContext context,
+                                             Player player, ForgePlan plan,
+                                             ForgeTransaction transaction,
+                                             Consumer<ForgeResolution> completionCallback) {
+        List<ItemStack> mutatedItems = new ArrayList<>();
+        ItemStack inputItem = context.getInputItem();
         ItemStack resultItem = null;
-        boolean wardConverted = false;
+        OutcomeDefinition selectedOutcome = transaction.getSelectedOutcome();
 
-        ItemStack inputItem = context.getInputSlots().length > 0 ? context.getInputSlots()[0] : null;
-        OutcomeExecutionResult execResult = outcomeExecutor.execute(outcome, inputItem, player,
-            context.getStationLocation());
-
-        wardConverted = execResult.isWardConverted();
+        OutcomeExecutionResult execResult = outcomeExecutor.execute(plan, inputItem, player,
+            UUID.randomUUID());
 
         if (execResult.hasItemOutput()) {
             resultItem = execResult.getItemOutput();
-        } else if (outcome.getType() == OutcomeType.BREAK) {
-            resultItem = null;
-        } else if (outcome.getType() == OutcomeType.RETURN_UNCHANGED && inputItem != null) {
-            resultItem = inputItem.clone();
-            String deliveryId = deliveryService.generateDeliveryId(player, outcome.getId());
+            mutatedItems.add(resultItem);
+        }
+
+        if (resultItem != null) {
+            String deliveryId = deliveryService.generateDeliveryId(player, selectedOutcome != null ? selectedOutcome.getId() : "unknown");
             deliveryService.deliverItem(resultItem, player, context.getStationLocation(), deliveryId);
         }
 
         ForgeHistory history = ForgeHistory.of(
-            context.getPlayerId(), Instant.now(), context.getStationId(),
-            context.getTierLevel(), outcome.getId(), outcome.getType(),
+            context.getPlayerId(), Instant.now(),
+            context.getPlan().getTargetTier().getId(),
+            context.getTargetTierLevel(), selectedOutcome != null ? selectedOutcome.getId() : "unknown",
+            selectedOutcome != null ? selectedOutcome.getType() : OutcomeType.BREAK,
             Collections.emptyList());
 
+        ForgeOutcomeCategory category = transaction.getOutcomeCategory();
+
         ForgeResolution resolution = ForgeResolution.success(
-            context.getTransactionId(), tx.getChanceTable(), tx.getSelectedEntry(),
-            outcome, resultItem, history, chargeReceipt, tx.getCustodySnapshot(), wardConverted);
+            context.getTransactionId(), category,
+            transaction.getChanceTable(), transaction.getSelectedEntry(),
+            transaction.getUsedVariant(), selectedOutcome, resultItem, mutatedItems,
+            history, transaction.getChargeReceipt(),
+            transaction.getCustodySnapshot());
 
         session.setTerminalResolution(resolution);
         session.setPlayerStateSnapshot(context.getPlayerState());
         session.transitionToClosed();
 
         auditLog.logAsync("FORGE_COMPLETE", player.getName(), context.getTransactionId().toString(),
-            "Outcome: " + outcome.getId() + ", Type: " + outcome.getType());
+            "Category: " + category + ", Outcome: " + selectedOutcome.getId());
 
-        if (completionCallback != null) {
-            completionCallback.accept(resolution);
+        invokeCallback(completionCallback, resolution);
+
+        return mutatedItems;
+    }
+
+    private void rollbackAndFail(ForgeContext context, ForgeSession session, Player player,
+                                 ForgeTransaction.RollbackReason reason, String errorMessage,
+                                 Consumer<ForgeResolution> completionCallback) {
+        ForgeTransaction tx = context.getCurrentTransaction();
+        if (tx != null) {
+            tx.rollback(reason, player,
+                cust -> returnCustodyToPlayer(player, cust),
+                receipt -> costService.refund(player, receipt));
+        }
+
+        ForgeResolution resolution = ForgeResolution.failure(
+            context.getTransactionId(),
+            ForgeOutcomeCategory.BREAK,
+            errorMessage,
+            reason == ForgeTransaction.RollbackReason.PRE_TERMINAL_FAILURE);
+
+        session.setTerminalResolution(resolution);
+        session.transitionToClosed();
+
+        invokeCallback(completionCallback, resolution);
+    }
+
+    private void atomicRollback(ForgeContext context, Player player,
+                               List<ItemStack> custodySnapshot, ChargeReceipt chargeReceipt) {
+        returnCustodyToPlayer(player, custodySnapshot);
+        if (chargeReceipt != null && chargeReceipt.isSuccess()) {
+            costService.refund(player, chargeReceipt);
         }
     }
 
-    private ItemStack[] cloneItems(ItemStack[] original) {
-        if (original == null) return null;
-        ItemStack[] copy = new ItemStack[original.length];
-        for (int i = 0; i < original.length; i++) {
-            if (original[i] != null) {
-                copy[i] = original[i].clone();
-            }
+    private ForgeOutcomeCategory mapToCategory(String outcomeId, TierDefinition tier) {
+        if (tier == null || outcomeId == null) {
+            return ForgeOutcomeCategory.BREAK;
         }
-        return copy;
+        OutcomeDefinition outcome = findOutcomeById(tier, outcomeId);
+        if (outcome == null) {
+            return ForgeOutcomeCategory.BREAK;
+        }
+        switch (outcome.getType()) {
+            case MODIFY_INPUT:
+            case CREATE_ITEM:
+                return ForgeOutcomeCategory.SUCCESS;
+            case BREAK:
+                return ForgeOutcomeCategory.BREAK;
+            case RETURN_UNCHANGED:
+            case COMMANDS:
+            default:
+                return ForgeOutcomeCategory.BREAK;
+        }
     }
 
-    private List<ItemStack> collectCustody(ItemStack[] input, ItemStack[] catalyst, ItemStack[] ward) {
-        List<ItemStack> custody = new ArrayList<>();
-        if (input != null) {
-            for (ItemStack item : input) {
-                if (item != null && item.getType() != org.bukkit.Material.AIR) {
-                    custody.add(item.clone());
-                }
+    private int getAnimationDuration(TierDefinition tier, ForgeOutcomeCategory category) {
+        if (tier == null) {
+            return 1000;
+        }
+        switch (category) {
+            case SUCCESS:
+                return tier.getSuccessAnimationDuration();
+            case BREAK:
+            case CURSE:
+            default:
+                return tier.getFailAnimationDuration();
+        }
+    }
+
+    private void invokeCallback(Consumer<ForgeResolution> callback, ForgeResolution resolution) {
+        if (callback != null) {
+            callback.accept(resolution);
+        }
+    }
+
+    private ForgeVariant selectVariant(TierDefinition tier, PlayerForgeState session) {
+        if (tier == null || tier.getVariants() == null || tier.getVariants().isEmpty()) {
+            return null;
+        }
+        List<ForgeVariant> variants = tier.getVariants();
+        double totalWeight = variants.stream().mapToDouble(ForgeVariant::getWeight).sum();
+        if (totalWeight <= 0) {
+            return variants.get(0);
+        }
+        long randomValue = randomSource.nextLong((long) totalWeight * 10000) / 10000;
+        double cumulative = 0;
+        for (ForgeVariant variant : variants) {
+            cumulative += variant.getWeight();
+            if (randomValue < cumulative) {
+                return variant;
             }
         }
-        if (catalyst != null) {
-            for (ItemStack item : catalyst) {
-                if (item != null && item.getType() != org.bukkit.Material.AIR) {
-                    custody.add(item.clone());
-                }
-            }
-        }
-        if (ward != null) {
-            for (ItemStack item : ward) {
-                if (item != null && item.getType() != org.bukkit.Material.AIR) {
-                    custody.add(item.clone());
-                }
-            }
-        }
-        return custody;
+        return variants.get(variants.size() - 1);
     }
 
     private void returnCustodyToPlayer(Player player, List<ItemStack> custody) {
@@ -452,49 +428,19 @@ public final class ForgeService {
         }
     }
 
-    private void removeInputCustody(ItemStack[] input, ItemStack[] catalyst, ItemStack[] ward) {
-        if (input != null) {
-            for (int i = 0; i < input.length; i++) {
-                if (input[i] != null && input[i].getType() != org.bukkit.Material.AIR) {
-                    input[i] = null;
-                }
-            }
-        }
-        if (catalyst != null) {
-            for (int i = 0; i < catalyst.length; i++) {
-                if (catalyst[i] != null && catalyst[i].getType() != org.bukkit.Material.AIR) {
-                    catalyst[i] = null;
-                }
-            }
-        }
-        if (ward != null) {
-            for (int i = 0; i < ward.length; i++) {
-                if (ward[i] != null && ward[i].getType() != org.bukkit.Material.AIR) {
-                    ward[i] = null;
-                }
-            }
+    private void removeInputCustody(ItemStack input) {
+        if (input != null && input.getType() != org.bukkit.Material.AIR) {
+            input.setType(org.bukkit.Material.AIR);
+            input.setAmount(0);
         }
     }
 
-    private void updateCooldownAndPityOnce(ForgeContext context,
-            PlayerForgeState currentState, Player player) {
-        String stationId = context.getStationId();
-        if (stationId == null || player == null) {
-            return;
+    private List<ItemStack> collectCustody(ItemStack input) {
+        List<ItemStack> custody = new ArrayList<>();
+        if (input != null && input.getType() != org.bukkit.Material.AIR) {
+            custody.add(input.clone());
         }
-
-        ConfigSnapshot config = context.getConfigSnapshot();
-        long cooldownDuration = getCooldownDuration(config, stationId);
-
-        if (cooldownDuration <= 0) {
-            return;
-        }
-
-        playerStateRepository.updateAndSave(player.getUniqueId(), existing -> {
-            PlayerStateRepository.PlayerState state = existing != null ? existing : new PlayerStateRepository.PlayerState(player.getUniqueId(), 0, 0L);
-            long newCooldown = System.currentTimeMillis() + cooldownDuration;
-            return new PlayerStateRepository.PlayerState(state.uuid, state.tier, newCooldown);
-        });
+        return custody;
     }
 
     private TierDefinition findTier(ConfigSnapshot config, int tierLevel) {
@@ -502,7 +448,7 @@ public final class ForgeService {
         List<TierDefinition> tiers = config.getTiers();
         if (tiers == null) return null;
         for (TierDefinition tier : tiers) {
-            if (tier.getTierLevel() == tierLevel) {
+            if (tier.getLevel() == tierLevel) {
                 return tier;
             }
         }
@@ -543,80 +489,53 @@ public final class ForgeService {
         return ChanceTable.from(weights, ids, orders);
     }
 
-    private List<AnimationStep> loadAnimationSteps(ConfigSnapshot config, String stationId, String profile) {
+    private List<AnimationStep> loadAnimationSteps(ConfigSnapshot config, Location location,
+                                                  ForgeOutcomeCategory category) {
         return Collections.emptyList();
     }
 
-    private long getCooldownDuration(ConfigSnapshot config, String stationId) {
-        return 0L;
+    public void onPlayerQuit(Player player) {
+        if (player == null) return;
+        String playerId = player.getUniqueId().toString();
+        ForgeSession session = sessionService.getSession(playerId);
+        if (session == null) {
+            return;
+        }
+        synchronized (session) {
+            if (session.isOpen()) {
+                session.transitionToSettling();
+                ForgeTransaction tx = session.getCurrentTransaction();
+                if (tx != null) {
+                    tx.rollback(ForgeTransaction.RollbackReason.PLAYER_QUIT, player,
+                        cust -> returnCustodyToPlayer(player, cust),
+                        receipt -> costService.refund(player, receipt));
+                }
+                session.transitionToClosed();
+            } else if (session.isProcessing()) {
+                session.transitionToSettling();
+            }
+        }
     }
 
-    private PlayerForgeState loadOrCreatePlayerState(Player player) {
-        if (player == null) return null;
-        PlayerStateRepository.PlayerState state = playerStateRepository.getOrLoad(player.getUniqueId());
-        return PlayerForgeState.of(
-            player.getUniqueId().toString(),
-            com.arkflame.flameforge.model.ForgeSessionState.OPEN,
-            null,
-            state != null ? state.tier : 0,
-            Collections.emptyMap(),
-            Collections.emptyMap()
-        );
+    public void onPlayerJoin(Player player) {
+        if (player != null) {
+            deliveryService.processPlayerJoin(player);
+        }
     }
 
-    public static final class ValidationResult {
-        private final boolean success;
-        private final String errorMessage;
-
-        private ValidationResult(boolean success, String errorMessage) {
-            this.success = success;
-            this.errorMessage = errorMessage;
-        }
-
-        public static ValidationResult success() {
-            return new ValidationResult(true, null);
-        }
-
-        public static ValidationResult failure(String errorMessage) {
-            return new ValidationResult(false, errorMessage);
-        }
-
-        public boolean isSuccess() { return success; }
-        public String getErrorMessage() { return errorMessage; }
-    }
-
-    public static final class PreviewResult {
-        private final boolean success;
-        private final String errorMessage;
-        private final CostQuote quote;
-        private final TierDefinition tier;
-        private final ChanceTable chanceTable;
-        private final List<AnimationStep> animationSteps;
-
-        private PreviewResult(boolean success, String errorMessage, CostQuote quote,
-                TierDefinition tier, ChanceTable chanceTable, List<AnimationStep> animationSteps) {
-            this.success = success;
-            this.errorMessage = errorMessage;
-            this.quote = quote;
-            this.tier = tier;
-            this.chanceTable = chanceTable;
-            this.animationSteps = animationSteps;
-        }
-
-        public static PreviewResult of(CostQuote quote, TierDefinition tier,
-                ChanceTable chanceTable, List<AnimationStep> animationSteps) {
-            return new PreviewResult(true, null, quote, tier, chanceTable, animationSteps);
-        }
-
-        public static PreviewResult failure(String errorMessage) {
-            return new PreviewResult(false, errorMessage, null, null, null, null);
-        }
-
-        public boolean isSuccess() { return success; }
-        public String getErrorMessage() { return errorMessage; }
-        public CostQuote getQuote() { return quote; }
-        public TierDefinition getTier() { return tier; }
-        public ChanceTable getChanceTable() { return chanceTable; }
-        public List<AnimationStep> getAnimationSteps() { return animationSteps; }
+    public void onDisable() {
+        disabled = true;
+        sessionService.closeAllSessions(session -> {
+            String playerId = session.getPlayerId();
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null && player.isOnline()) {
+                synchronized (session) {
+                    if (session.isProcessing()) {
+                        session.transitionToSettling();
+                    }
+                }
+            }
+        });
+        deliveryService.processGlobalContext();
     }
 }

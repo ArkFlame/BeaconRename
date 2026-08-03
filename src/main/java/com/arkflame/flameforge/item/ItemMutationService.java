@@ -1,21 +1,34 @@
 package com.arkflame.flameforge.item;
 
+import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.model.AttributeSpec;
+import com.arkflame.flameforge.model.BreakPolicy;
+import com.arkflame.flameforge.model.CurseDefinition;
 import com.arkflame.flameforge.model.EnchantSpec;
-import com.arkflame.flameforge.model.ItemMutationSpec;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
+import com.arkflame.flameforge.text.TextRenderer;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 public final class ItemMutationService {
     private static final ItemMutationService INSTANCE = new ItemMutationService();
-    private final EnchantmentResolver enchantResolver = EnchantmentResolver.getInstance();
+    private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
+    private static final String LEGACY_PREFIX = "\u00A70\u00A70FLAMEFORGE:";
+
+    private final EnchantmentResolver enchantResolver = new EnchantmentResolver();
+    private TextRenderer textRenderer;
 
     private ItemMutationService() {
     }
@@ -24,321 +37,354 @@ public final class ItemMutationService {
         return INSTANCE;
     }
 
-    public MutationResult mutate(final ItemStack input, final ItemMutationSpec spec, final MutationOptions options) {
+    public static void setTextRenderer(TextRenderer textRenderer) {
+        INSTANCE.textRenderer = textRenderer;
+    }
+
+    public MutationResult mutateSuccess(ItemStack input, ForgeVariant variant,
+                                       Map<Enchantment, Integer> baselineEnchants,
+                                       List<AttributeSpec> baselineAttributes,
+                                       List<String> baselinePowers,
+                                       int targetTier,
+                                       ItemIdentityService.IdentityData identityData) {
         if (input == null) {
             return MutationResult.fail("null input");
         }
-        if (spec == null) {
-            return MutationResult.fail("null spec");
-        }
         final ItemStack clone = input.clone();
-        if (clone.getAmount() <= 0) {
-            clone.setAmount(1);
-        }
-        if (spec.getAmount() > 0) {
-            clone.setAmount(spec.getAmount());
-        }
+        clone.setAmount(1);
         final ItemMeta meta = clone.getItemMeta();
         if (meta == null) {
             return MutationResult.fail("item has no meta");
         }
-        final List<String> warnings = new ArrayList<>();
-        if (spec.getResultMaterial() != null) {
-            try {
-                final Material mat = org.bukkit.Material.valueOf(spec.getResultMaterial().toUpperCase());
-                clone.setType(mat);
-            } catch (IllegalArgumentException e) {
-                warnings.add("unknown material: " + spec.getResultMaterial());
-            }
+
+        removeFlameForgeMetadata(meta);
+
+        restoreBaselineEnchants(meta, baselineEnchants);
+
+        Map<Enchantment, Integer> rolledEnchants = buildRolledEnchants(variant, baselineEnchants);
+        applyEnchants(meta, rolledEnchants);
+
+        if (variant.getName() != null && !variant.getName().isEmpty()) {
+            applyName(meta, variant.getName());
         }
-        if (spec.getResultName() != null) {
-            applyName(meta, spec.getResultName());
+
+        if (variant.getLore() != null && !variant.getLore().isEmpty()) {
+            applyLore(meta, variant.getLore());
         }
-        if (options != null && options.getLoreMode() != null) {
-            applyLore(meta, options.getLoreMode(), options.getLoreContent());
+
+        List<AttributeSpec> recordedAttributes = new ArrayList<>();
+        if (variant.getAttributeModifiers() != null && !variant.getAttributeModifiers().isEmpty()) {
+            recordedAttributes = applyVariantAttributes(clone, variant.getAttributeModifiers());
         }
-        if (spec.getAddEnchants() != null && !spec.getAddEnchants().isEmpty()) {
-            applyEnchants(meta, spec.getAddEnchants(), options);
-        }
-        if (spec.getAddAttributes() != null && !spec.getAddAttributes().isEmpty()) {
-            final AttributeBridge.Result attrResult = AttributeBridge.apply(clone, spec.getAddAttributes());
-            if (attrResult.hasExclusions()) {
-                for (final AttributeSpec excluded : attrResult.getExcluded()) {
-                    warnings.add("attribute excluded: " + excluded.getAttribute());
-                }
-            }
-        }
-        if (options != null) {
-            if (options.isUnbreakable() != null) {
-                final Optional<ItemStack> updated = AttributeBridge.getInstance().setUnbreakable(clone, options.isUnbreakable());
-                if (!updated.isPresent()) {
-                    warnings.add("unbreakable not supported");
-                }
-            }
-            if (options.getCustomModelData() != null) {
-                final Optional<ItemStack> updated = AttributeBridge.getInstance().setCustomModelData(clone, options.getCustomModelData());
-                if (!updated.isPresent()) {
-                    warnings.add("custom model data not supported");
-                }
-            }
-        }
+
+        List<String> recordedPowers = variant.getPowerIds() != null ?
+            new ArrayList<>(variant.getPowerIds()) : new ArrayList<>();
+
         try {
             clone.setItemMeta(meta);
         } catch (Exception e) {
             return MutationResult.fail("failed to apply meta: " + e.getMessage());
         }
-        if (options != null && options.getIdentityData() != null) {
-            final Optional<ItemStack> written = ItemIdentityService.getInstance().writeIdentity(clone, options.getIdentityData());
-            if (written.isPresent()) {
-                return MutationResult.success(written.get(), warnings);
+
+        ItemIdentityService.IdentityData updatedIdentity = buildIdentityForSuccess(
+            identityData, targetTier, recordedAttributes, recordedPowers);
+        Optional<ItemStack> written = ItemIdentityService.getInstance().writeIdentity(clone, updatedIdentity);
+        if (written.isPresent()) {
+            List<String> warnings = new ArrayList<>();
+            return MutationResult.success(written.get(), warnings);
+        }
+        return MutationResult.success(clone, new ArrayList<>());
+    }
+
+    public MutationResult mutateCurse(ItemStack input, CurseDefinition curse,
+                                     boolean currentlyCursed,
+                                     ItemIdentityService.IdentityData identityData) {
+        if (input == null) {
+            return MutationResult.fail("null input");
+        }
+        final ItemStack clone = input.clone();
+        clone.setAmount(1);
+        final ItemMeta meta = clone.getItemMeta();
+        if (meta == null) {
+            return MutationResult.fail("item has no meta");
+        }
+
+        if (curse.getName() != null && !curse.getName().isEmpty()) {
+            applyName(meta, curse.getName());
+        }
+
+        if (curse.getLore() != null && !curse.getLore().isEmpty()) {
+            applyLore(meta, curse.getLore());
+        }
+
+        if (!currentlyCursed && curse.getEnchantments() != null && !curse.getEnchantments().isEmpty()) {
+            applyFirstSupportedCurse(meta, curse.getEnchantments());
+        }
+
+        setCursedFlag(clone, true);
+
+        try {
+            clone.setItemMeta(meta);
+        } catch (Exception e) {
+            return MutationResult.fail("failed to apply meta: " + e.getMessage());
+        }
+
+        if (identityData != null) {
+            ItemIdentityService.getInstance().writeIdentity(clone, identityData);
+        }
+
+        return MutationResult.success(clone, new ArrayList<>());
+    }
+
+    public MutationResult mutateBreak(ItemStack input, BreakPolicy policy,
+                                     ItemIdentityService.IdentityData identityData) {
+        if (input == null) {
+            return MutationResult.fail("null input");
+        }
+        final ItemStack clone = input.clone();
+        clone.setAmount(1);
+        clone.setType(input.getType());
+        final ItemMeta meta = clone.getItemMeta();
+        if (meta == null) {
+            return MutationResult.fail("item has no meta");
+        }
+
+        if (policy == null) {
+            policy = BreakPolicy.none();
+        }
+
+        if (policy.isResetName()) {
+            meta.setDisplayName(null);
+        }
+
+        if (policy.isResetLore()) {
+            meta.setLore(new ArrayList<>());
+        }
+
+        if (policy.isResetEnchants()) {
+            enchantResolver.clearFromMeta(meta);
+        }
+
+        if (policy.isResetAttributes()) {
+            clearAttributes(meta);
+        }
+
+        if (policy.isResetPowers()) {
+        }
+
+        AttributeBridge.getInstance().setCustomModelData(clone, null);
+
+        try {
+            clone.setItemMeta(meta);
+        } catch (Exception e) {
+            return MutationResult.fail("failed to apply meta: " + e.getMessage());
+        }
+
+        ItemIdentityService.IdentityData breakIdentity = buildBreakIdentity(identityData, policy);
+        ItemIdentityService.getInstance().writeIdentity(clone, breakIdentity);
+
+        if (policy.isDestroyItem()) {
+            return MutationResult.destroyed();
+        }
+
+        return MutationResult.success(clone, new ArrayList<>());
+    }
+
+    private void removeFlameForgeMetadata(ItemMeta meta) {
+        try {
+            List<String> lore = meta.getLore();
+            if (lore != null) {
+                List<String> cleaned = new ArrayList<>();
+                for (String line : lore) {
+                    if (line != null && !line.startsWith(LEGACY_PREFIX)) {
+                        cleaned.add(line);
+                    }
+                }
+                meta.setLore(cleaned);
+            }
+        } catch (Exception e) {
+        }
+    }
+
+    private void restoreBaselineEnchants(ItemMeta meta, Map<Enchantment, Integer> baselineEnchants) {
+        if (baselineEnchants == null || baselineEnchants.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<Enchantment, Integer> entry : baselineEnchants.entrySet()) {
+            try {
+                meta.addEnchant(entry.getKey(), entry.getValue(), false);
+            } catch (Exception e) {
             }
         }
-        return MutationResult.success(clone, warnings);
     }
 
-    public Optional<ItemStack> applyEnchantRemovals(final ItemStack item, final List<String> enchantKeys) {
-        if (item == null) {
-            return Optional.empty();
+    private Map<Enchantment, Integer> buildRolledEnchants(ForgeVariant variant,
+                                                          Map<Enchantment, Integer> baseline) {
+        Map<Enchantment, Integer> result = new HashMap<>();
+        if (baseline != null) {
+            result.putAll(baseline);
         }
-        final ItemStack clone = item.clone();
-        final ItemMeta meta = clone.getItemMeta();
-        if (meta == null) {
-            return Optional.empty();
+        if (variant != null && variant.getEnchantmentCandidates() != null) {
+            for (String enchantKey : variant.getEnchantmentCandidates()) {
+                enchantResolver.resolve(enchantKey).ifPresent(enchant -> {
+                    int currentLevel = result.getOrDefault(enchant, 0);
+                    int rolledLevel = enchantResolver.resolveLevel(1);
+                    int effective = Math.max(currentLevel, rolledLevel);
+                    effective = enchantResolver.clampLevel(effective, enchant.getMaxLevel());
+                    result.put(enchant, effective);
+                });
+            }
         }
-        if (enchantKeys == null || enchantKeys.isEmpty()) {
-            return Optional.of(clone);
+        return result;
+    }
+
+    private void applyEnchants(ItemMeta meta, Map<Enchantment, Integer> enchants) {
+        if (meta == null || enchants == null) {
+            return;
         }
-        for (final String key : enchantKeys) {
-            enchantResolver.resolve(key).ifPresent(enchant -> {
-                try {
-                    meta.removeEnchant(enchant);
-                } catch (Exception e) {
+        for (Map.Entry<Enchantment, Integer> entry : enchants.entrySet()) {
+            try {
+                meta.addEnchant(entry.getKey(), entry.getValue(), false);
+            } catch (Exception e) {
+            }
+        }
+    }
+
+    private List<AttributeSpec> applyVariantAttributes(ItemStack item, Map<String, Integer> modifiers) {
+        List<AttributeSpec> applied = new ArrayList<>();
+        if (modifiers == null || modifiers.isEmpty()) {
+            return applied;
+        }
+        for (Map.Entry<String, Integer> entry : modifiers.entrySet()) {
+            AttributeSpec spec = AttributeSpec.of(entry.getKey(), entry.getValue().doubleValue(),
+                entry.getValue().doubleValue(), "ADD");
+            applied.add(spec);
+        }
+        AttributeBridge.apply(item, applied);
+        return applied;
+    }
+
+    private void applyFirstSupportedCurse(ItemMeta meta, List<String> enchantKeys) {
+        for (String key : enchantKeys) {
+            Optional<Enchantment> opt = enchantResolver.resolve(key);
+            if (opt.isPresent()) {
+                Enchantment curse = opt.get();
+                if (enchantResolver.isCursed(curse)) {
+                    try {
+                        int level = enchantResolver.resolveLevel(1);
+                        meta.addEnchant(curse, level, false);
+                        return;
+                    } catch (Exception e) {
+                    }
                 }
-            });
+            }
         }
-        try {
-            clone.setItemMeta(meta);
-        } catch (Exception e) {
-            return Optional.empty();
-        }
-        return Optional.of(clone);
     }
 
-    public Optional<ItemStack> clearAllEnchants(final ItemStack item) {
-        if (item == null) {
-            return Optional.empty();
-        }
-        final ItemStack clone = item.clone();
-        final ItemMeta meta = clone.getItemMeta();
-        if (meta == null) {
-            return Optional.empty();
-        }
-        enchantResolver.clearFromMeta(meta);
-        try {
-            clone.setItemMeta(meta);
-        } catch (Exception e) {
-            return Optional.empty();
-        }
-        return Optional.of(clone);
+    private void setCursedFlag(ItemStack item, boolean cursed) {
     }
 
-    public Optional<ItemStack> setUnbreakable(final ItemStack item, final boolean unbreakable) {
-        if (item == null) {
-            return Optional.empty();
-        }
-        return AttributeBridge.getInstance().setUnbreakable(item.clone(), unbreakable);
+    private void clearAttributes(ItemMeta meta) {
     }
 
-    public Optional<ItemStack> setCustomModelData(final ItemStack item, final Integer data) {
-        if (item == null) {
-            return Optional.empty();
+    private ItemIdentityService.IdentityData buildIdentityForSuccess(
+            ItemIdentityService.IdentityData current,
+            int targetTier,
+            List<AttributeSpec> attributes,
+            List<String> powers) {
+        if (current == null) {
+            current = ItemIdentityService.IdentityData.fresh();
         }
-        return AttributeBridge.getInstance().setCustomModelData(item.clone(), data);
+        return current
+            .withHighestTier(targetTier)
+            .withLastTier(String.valueOf(targetTier))
+            .withLastOutcome("SUCCESS")
+            .incrementReforge();
     }
 
-    private void applyName(final ItemMeta meta, final String name) {
+    private ItemIdentityService.IdentityData buildBreakIdentity(
+            ItemIdentityService.IdentityData current,
+            BreakPolicy policy) {
+        if (current == null) {
+            current = ItemIdentityService.IdentityData.fresh();
+        }
+        ItemIdentityService.IdentityData result = current
+            .withLastOutcome("BREAK");
+        if (policy != null && policy.isResetTier()) {
+            result = result.withHighestTier(0);
+        }
+        if (policy != null && policy.isResetIdentity()) {
+            result = ItemIdentityService.IdentityData.fresh();
+        }
+        return result;
+    }
+
+    private void applyName(ItemMeta meta, String name) {
         if (meta == null || name == null) {
             return;
         }
         try {
-            final String translated = net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', name);
-            meta.setDisplayName(translated);
+            meta.setDisplayName(renderText(name));
         } catch (Exception e) {
         }
     }
 
-    private void applyLore(final ItemMeta meta, final ItemFactory.LoreMode mode, final List<String> content) {
-        if (meta == null || mode == null) {
+    private void applyLore(ItemMeta meta, List<String> lore) {
+        if (meta == null || lore == null) {
             return;
         }
-        final List<String> lore;
-        try {
-            lore = meta.getLore();
-        } catch (Exception e) {
-            return;
-        }
-        final List<String> newLore = lore != null ? new ArrayList<>(lore) : new ArrayList<>();
-        switch (mode) {
-            case PRESERVE:
-                break;
-            case REPLACE:
-                newLore.clear();
-                if (content != null) {
-                    for (final String line : content) {
-                        newLore.add(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', line));
-                    }
-                }
-                break;
-            case APPEND:
-                if (content != null) {
-                    for (final String line : content) {
-                        newLore.add(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', line));
-                    }
-                }
-                break;
-            case PREPEND:
-                if (content != null) {
-                    final List<String> combined = new ArrayList<>();
-                    for (final String line : content) {
-                        combined.add(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', line));
-                    }
-                    combined.addAll(newLore);
-                    newLore.clear();
-                    newLore.addAll(combined);
-                }
-                break;
+        List<String> rendered = new ArrayList<>();
+        for (String line : lore) {
+            rendered.add(renderText(line));
         }
         try {
-            meta.setLore(newLore);
+            meta.setLore(rendered);
         } catch (Exception e) {
         }
     }
 
-    private void applyEnchants(final ItemMeta meta, final List<EnchantSpec> specs, final MutationOptions options) {
-        if (meta == null || specs == null) {
-            return;
-        }
-        final boolean isRelative = options != null && options.isRelativeEnchants();
-        for (final EnchantSpec spec : specs) {
-            final Optional<Enchantment> enchantOpt = enchantResolver.resolve(spec.getEnchantment());
-            if (!enchantOpt.isPresent()) {
-                continue;
-            }
-            final Enchantment enchant = enchantOpt.get();
-            int targetLevel;
-            if (isRelative) {
-                final int currentLevel = getCurrentEnchantLevel(meta, enchant);
-                targetLevel = enchantResolver.resolveLevel(spec.getMinLevel());
-                if (targetLevel < 0) {
-                    targetLevel = currentLevel + Math.abs(targetLevel);
-                } else {
-                    targetLevel = currentLevel + targetLevel;
-                }
-            } else {
-                targetLevel = enchantResolver.resolveLevel(spec.getMinLevel());
-            }
-            targetLevel = enchantResolver.clampLevel(targetLevel, enchant.getMaxLevel());
-            if (targetLevel <= 0) {
-                try {
-                    meta.removeEnchant(enchant);
-                } catch (Exception e) {
-                }
-            } else {
-                try {
-                    meta.addEnchant(enchant, targetLevel, false);
-                } catch (Exception e) {
-                }
-            }
-        }
-    }
-
-    private int getCurrentEnchantLevel(final ItemMeta meta, final Enchantment enchant) {
-        try {
-            return meta.getEnchants().getOrDefault(enchant, 0);
-        } catch (Exception e) {
-            return 0;
-        }
+    private String renderText(String input) {
+        if (input == null) return "";
+        if (textRenderer == null) return input;
+        Component component = textRenderer.renderToComponent(input);
+        return LEGACY_SERIALIZER.serialize(component);
     }
 
     public static final class MutationResult {
         private final boolean success;
+        private final boolean destroyed;
         private final ItemStack result;
         private final List<String> warnings;
 
-        private MutationResult(final boolean success, final ItemStack result, final List<String> warnings) {
+        private MutationResult(final boolean success, final boolean destroyed,
+                              final ItemStack result, final List<String> warnings) {
             this.success = success;
+            this.destroyed = destroyed;
             this.result = result;
             this.warnings = warnings != null ? warnings : new ArrayList<>();
         }
 
         public static MutationResult success(final ItemStack result) {
-            return new MutationResult(true, result, new ArrayList<>());
+            return new MutationResult(true, false, result, new ArrayList<>());
         }
 
         public static MutationResult success(final ItemStack result, final List<String> warnings) {
-            return new MutationResult(true, result, warnings);
+            return new MutationResult(true, false, result, warnings);
         }
 
         public static MutationResult fail(final String reason) {
             final List<String> list = new ArrayList<>();
             list.add(reason);
-            return new MutationResult(false, null, list);
+            return new MutationResult(false, false, null, list);
+        }
+
+        public static MutationResult destroyed() {
+            return new MutationResult(true, true, null, new ArrayList<>());
         }
 
         public boolean isSuccess() { return success; }
+        public boolean isDestroyed() { return destroyed; }
         public ItemStack getResult() { return result; }
         public List<String> getWarnings() { return warnings; }
-    }
-
-    public static final class MutationOptions {
-        private final ItemFactory.LoreMode loreMode;
-        private final List<String> loreContent;
-        private final Boolean unbreakable;
-        private final Integer customModelData;
-        private final ItemIdentityService.IdentityData identityData;
-        private final boolean relativeEnchants;
-
-        private MutationOptions(final ItemFactory.LoreMode loreMode, final List<String> loreContent,
-                                final Boolean unbreakable, final Integer customModelData,
-                                final ItemIdentityService.IdentityData identityData,
-                                final boolean relativeEnchants) {
-            this.loreMode = loreMode != null ? loreMode : ItemFactory.LoreMode.PRESERVE;
-            this.loreContent = loreContent;
-            this.unbreakable = unbreakable;
-            this.customModelData = customModelData;
-            this.identityData = identityData;
-            this.relativeEnchants = relativeEnchants;
-        }
-
-        public static Builder builder() {
-            return new Builder();
-        }
-
-        public ItemFactory.LoreMode getLoreMode() { return loreMode; }
-        public List<String> getLoreContent() { return loreContent; }
-        public Boolean isUnbreakable() { return unbreakable; }
-        public Integer getCustomModelData() { return customModelData; }
-        public ItemIdentityService.IdentityData getIdentityData() { return identityData; }
-        public boolean isRelativeEnchants() { return relativeEnchants; }
-
-        public static final class Builder {
-            private ItemFactory.LoreMode loreMode = ItemFactory.LoreMode.PRESERVE;
-            private List<String> loreContent;
-            private Boolean unbreakable;
-            private Integer customModelData;
-            private ItemIdentityService.IdentityData identityData;
-            private boolean relativeEnchants = false;
-
-            public Builder loreMode(final ItemFactory.LoreMode mode) { this.loreMode = mode; return this; }
-            public Builder loreContent(final List<String> content) { this.loreContent = content; return this; }
-            public Builder unbreakable(final Boolean unbreakable) { this.unbreakable = unbreakable; return this; }
-            public Builder customModelData(final Integer data) { this.customModelData = data; return this; }
-            public Builder identityData(final ItemIdentityService.IdentityData data) { this.identityData = data; return this; }
-            public Builder relativeEnchants(final boolean relative) { this.relativeEnchants = relative; return this; }
-
-            public MutationOptions build() {
-                return new MutationOptions(loreMode, loreContent, unbreakable, customModelData, identityData, relativeEnchants);
-            }
-        }
     }
 }

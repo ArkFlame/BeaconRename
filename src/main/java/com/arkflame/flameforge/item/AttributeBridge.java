@@ -261,6 +261,10 @@ public final class AttributeBridge {
         }
     }
 
+    public Boolean isModernCustomModelDataAvailable() {
+        return modernCustomModelDataAvailable;
+    }
+
     public static final class Result {
         private final List<AttributeSpec> applied;
         private final List<AttributeSpec> excluded;

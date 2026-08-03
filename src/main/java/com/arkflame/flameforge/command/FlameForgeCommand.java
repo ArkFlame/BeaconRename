@@ -1,22 +1,25 @@
 package com.arkflame.flameforge.command;
 
+import com.arkflame.flameforge.ForgeAccessService;
 import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
+import com.arkflame.flameforge.compat.scheduler.TeleportBridge;
 import com.arkflame.flameforge.config.ConfigService;
-import com.arkflame.flameforge.config.TierParser;
 import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.config.ValidationIssue;
 import com.arkflame.flameforge.config.ValidationReport;
-import com.arkflame.flameforge.item.ItemFactory;
-import com.arkflame.flameforge.model.OutcomeDefinition;
-import com.arkflame.flameforge.model.TierCost;
+import com.arkflame.flameforge.model.ForgeVariant;
+import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
+import com.arkflame.flameforge.model.TierRequirements;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.station.ForgeStationService;
-import com.arkflame.flameforge.text.TextBridge;
+import com.arkflame.flameforge.text.MessageArguments;
+import com.arkflame.flameforge.text.MessageService;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.event.ClickEvent;
+import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.command.Command;
@@ -28,54 +31,88 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
 
-    private static final int PAGE_SIZE = 8;
+    private static final int LIST_PAGE_SIZE = 8;
 
     private final JavaPlugin plugin;
     private final SchedulerBridge scheduler;
-    private final TextBridge text;
+    private final MessageService messageService;
     private final ConfigService configService;
-    private final ForgeStationService stationService;
-    private final StationRepository stationRepository;
-    private final PlayerStateRepository playerStateRepository;
     private final TierRepository tierRepository;
     private final MaterialResolver materialResolver;
+    private final CommandSuggestionIndex suggestionIndex;
+    private final AtomicReference<CommandContext> context = new AtomicReference<>(CommandContext.loading());
 
-    public FlameForgeCommand(JavaPlugin plugin, SchedulerBridge scheduler, TextBridge text,
-                             ConfigService configService, ForgeStationService stationService,
-                             StationRepository stationRepository, PlayerStateRepository playerStateRepository,
-                             TierRepository tierRepository) {
+    public FlameForgeCommand(JavaPlugin plugin, SchedulerBridge scheduler, MessageService messageService,
+                             ConfigService configService, TierRepository tierRepository,
+                             CommandSuggestionIndex suggestionIndex) {
         this.plugin = plugin;
         this.scheduler = scheduler;
-        this.text = text;
+        this.messageService = messageService;
         this.configService = configService;
-        this.stationService = stationService;
-        this.stationRepository = stationRepository;
-        this.playerStateRepository = playerStateRepository;
         this.tierRepository = tierRepository;
         this.materialResolver = MaterialResolver.getInstance();
+        this.suggestionIndex = suggestionIndex;
+    }
+
+    public void markLoading() {
+        context.set(CommandContext.loading());
+    }
+
+    public void markReady(ReadyServices readyServices) {
+        context.set(CommandContext.ready(readyServices));
+    }
+
+    public void markFailed(StartupFailure failure) {
+        context.set(CommandContext.failed(failure));
+    }
+
+    public void markUnavailable() {
+        context.set(CommandContext.unavailable());
+    }
+
+    public CommandContext snapshot() {
+        return context.get();
+    }
+
+    public boolean isReady() {
+        return snapshot().isReady();
+    }
+
+    public boolean isLoading() {
+        return snapshot().isLoading();
+    }
+
+    public StartupFailure getStartupFailure() {
+        return snapshot().getStartupFailure();
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            return commandHelp(sender, 1);
+            return commandHelp(sender, Collections.emptyList(), label);
         }
 
-        String sub = args[0].toLowerCase();
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        if ("help".equals(sub)) {
+            if (args.length > 1 && !"help".equals(args[1])) {
+                return commandHelpForGroup(sender, args, 1, label);
+            }
+            return commandHelp(sender, Collections.emptyList(), label);
+        }
 
         switch (sub) {
-            case "help":
-                return commandHelp(sender, args.length > 1 ? parsePage(args[1]) : 1);
             case "open":
                 return commandOpen(sender, args);
             case "reload":
@@ -83,19 +120,21 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             case "validate":
                 return commandValidate(sender);
             case "tiers":
-                return commandTiers(sender, args.length > 1 ? parsePage(args[1]) : 1);
+                return commandTiers(sender, args.length > 1 ? parsePageArg(args[1]) : 1);
             case "tier":
                 return commandTierInfo(sender, args);
             case "preview":
                 return commandPreview(sender, args);
             case "history":
                 return commandHistory(sender, args);
+            case "tp":
+                return commandTeleport(sender, args);
             case "station":
                 return commandStation(sender, args);
             case "setup":
                 return commandSetup(sender, args);
             default:
-                send(sender, Component.text("Unknown command. Use /" + label + " help for available commands.", NamedTextColor.RED));
+                send(sender, "command.unknown");
                 return true;
         }
     }
@@ -106,35 +145,29 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             return Collections.emptyList();
         }
 
-        String prefix = args[args.length - 1].toLowerCase();
-
+        String prefix = args[args.length - 1];
         if (args.length == 1) {
-            List<String> cmds = Arrays.asList("help", "open", "reload", "validate", "tiers", "tier", "preview", "history", "station", "setup");
-            return filterPrefix(cmds, prefix);
+            return suggestionIndex.getRootSuggestions(sender, prefix);
         }
 
-        String sub = args[0].toLowerCase();
-
+        String sub = args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "help":
-                return Collections.emptyList();
+                return suggestionIndex.getHelpSuggestions(sender, args, prefix);
             case "open":
-                if (args.length == 2) {
-                    if (sender.hasPermission("flameforge.command.open.others")) {
-                        return filterPrefix(getOnlinePlayerNames(), prefix);
-                    }
+                if (args.length == 2 && permitted(sender, "flameforge.command.open.others")) {
+                    return suggestionIndex.getOnlinePlayerSuggestions(prefix);
                 }
                 return Collections.emptyList();
             case "reload":
             case "validate":
-                return Collections.emptyList();
             case "tiers":
                 return Collections.emptyList();
             case "tier":
                 if (args.length == 2) {
-                    return filterPrefix(Arrays.asList("info"), prefix);
+                    return suggestionIndex.getTierSubSuggestions(sender, prefix);
                 }
-                if (args.length == 3 && "info".equals(args[1].toLowerCase())) {
+                if (args.length == 3 && "info".equalsIgnoreCase(args[1])) {
                     return filterPrefixTierIds(prefix);
                 }
                 return Collections.emptyList();
@@ -147,12 +180,13 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                 }
                 return Collections.emptyList();
             case "history":
-                if (args.length == 2) {
-                    if (sender.hasPermission("flameforge.command.history.others")) {
-                        return filterPrefix(getOnlinePlayerNames(), prefix);
-                    }
+                if (args.length == 2 && permitted(sender, "flameforge.command.history.others")) {
+                    return suggestionIndex.getOnlinePlayerSuggestions(prefix);
                 }
                 return Collections.emptyList();
+            case "tp":
+                return permitted(sender, "flameforge.command.station.teleport")
+                    ? filterPrefixStationIds(prefix) : Collections.emptyList();
             case "station":
                 return tabCompleteStation(sender, args, prefix);
             case "setup":
@@ -162,863 +196,987 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    private List<String> tabCompleteStation(CommandSender sender, String[] args, String prefix) {
-        if (!sender.hasPermission("flameforge.command.station.add") &&
-            !sender.hasPermission("flameforge.command.station.remove") &&
-            !sender.hasPermission("flameforge.command.station.list") &&
-            !sender.hasPermission("flameforge.command.station.info") &&
-            !sender.hasPermission("flameforge.command.station.teleport")) {
-            return Collections.emptyList();
+    private boolean commandUnavailable(CommandSender sender, CommandContext ctx) {
+        if (ctx.isFailed()) {
+            StartupFailure failure = ctx.getStartupFailure();
+            String reason = failure != null ? failure.getReason() : "unknown";
+            send(sender, "command.failed", messageArguments("reason", reason));
+        } else if (ctx.isUnavailable()) {
+            send(sender, "command.unavailable");
+        } else {
+            send(sender, "command.loading");
         }
-
-        if (args.length == 2) {
-            List<String> sub = new ArrayList<>();
-            if (sender.hasPermission("flameforge.command.station.add")) sub.add("add");
-            if (sender.hasPermission("flameforge.command.station.remove")) sub.add("remove");
-            if (sender.hasPermission("flameforge.command.station.list")) sub.add("list");
-            if (sender.hasPermission("flameforge.command.station.info")) sub.add("info");
-            if (sender.hasPermission("flameforge.command.station.teleport")) sub.add("teleport");
-            return filterPrefix(sub, prefix);
-        }
-
-        String stationCmd = args[1].toLowerCase();
-
-        if ("add".equals(stationCmd) && sender.hasPermission("flameforge.command.station.add")) {
-            if (args.length == 3) {
-                return filterPrefix(Arrays.asList("<id>"), prefix);
-            }
-            if (args.length == 4) {
-                List<String> profiles = new ArrayList<>();
-                Map<String, Object> snapshot = configService.getCurrentSnapshot().getStationProfile("default") != null
-                    ? configService.getCurrentSnapshot().getStationProfile("default") : Collections.emptyMap();
-                profiles.add("default");
-                return filterPrefix(profiles, prefix);
-            }
-        }
-
-        if ("remove".equals(stationCmd) && sender.hasPermission("flameforge.command.station.remove")) {
-            if (args.length == 3) {
-                return filterPrefixStationIds(prefix);
-            }
-        }
-
-        if ("list".equals(stationCmd) && sender.hasPermission("flameforge.command.station.list")) {
-            return Collections.emptyList();
-        }
-
-        if ("info".equals(stationCmd) && sender.hasPermission("flameforge.command.station.info")) {
-            if (args.length == 3) {
-                return filterPrefixStationIds(prefix);
-            }
-        }
-
-        if ("teleport".equals(stationCmd) && sender.hasPermission("flameforge.command.station.teleport")) {
-            if (args.length == 3) {
-                return filterPrefixStationIds(prefix);
-            }
-        }
-
-        return Collections.emptyList();
-    }
-
-    private List<String> tabCompleteSetup(CommandSender sender, String[] args, String prefix) {
-        if (!sender.hasPermission("flameforge.command.setup.tier")) {
-            return Collections.emptyList();
-        }
-
-        if (args.length == 2) {
-            return filterPrefix(Arrays.asList("tier"), prefix);
-        }
-
-        if ("tier".equals(args[1].toLowerCase()) && args.length >= 3) {
-            if (args.length == 3) {
-                return filterPrefix(Arrays.asList("create", "clone"), prefix);
-            }
-
-            String tierCmd = args[2].toLowerCase();
-
-            if ("create".equals(tierCmd)) {
-                if (args.length == 4) {
-                    return filterPrefix(Arrays.asList("<id>"), prefix);
-                }
-                if (args.length == 5) {
-                    return filterPrefix(Arrays.asList("<priority>"), prefix);
-                }
-            }
-
-            if ("clone".equals(tierCmd)) {
-                if (args.length == 4) {
-                    return filterPrefixTierIds(prefix);
-                }
-                if (args.length == 5) {
-                    return filterPrefix(Arrays.asList("<id>"), prefix);
-                }
-                if (args.length == 6) {
-                    return filterPrefix(Arrays.asList("<priority>"), prefix);
-                }
-            }
-        }
-
-        return Collections.emptyList();
-    }
-
-    private boolean commandHelp(CommandSender sender, int page) {
-        if (!sender.hasPermission("flameforge.command.help")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
-            return true;
-        }
-
-        List<CommandEntry> commands = buildCommandList(sender);
-        int totalPages = (commands.size() + PAGE_SIZE - 1) / PAGE_SIZE;
-        page = Math.max(1, Math.min(page, totalPages));
-
-        send(sender, Component.text("=== FlameForge Help (" + page + "/" + totalPages + ") ===", NamedTextColor.GOLD));
-
-        int start = (page - 1) * PAGE_SIZE;
-        int end = Math.min(start + PAGE_SIZE, commands.size());
-
-        for (int i = start; i < end; i++) {
-            CommandEntry entry = commands.get(i);
-            Component line = Component.text()
-                .color(NamedTextColor.GRAY)
-                .append(Component.text(entry.usage, NamedTextColor.YELLOW))
-                .append(Component.text(" - ", NamedTextColor.GRAY))
-                .append(Component.text(entry.description, NamedTextColor.WHITE))
-                .build();
-            send(sender, line);
-        }
-
-        if (totalPages > 1) {
-            send(sender, Component.text("Use /flameforge help <page> for more pages.", NamedTextColor.GRAY));
-        }
-
         return true;
     }
 
-    private List<CommandEntry> buildCommandList(CommandSender sender) {
-        List<CommandEntry> commands = new ArrayList<>();
-        commands.add(new CommandEntry("help [page]", "Show this help menu"));
-        if (sender.hasPermission("flameforge.command.open")) {
-            commands.add(new CommandEntry("open [player]", "Open the beacon menu"));
+    private boolean requirePermission(CommandSender sender, String messageKey, String permission) {
+        if (sender.hasPermission(permission)) {
+            return true;
         }
-        if (sender.hasPermission("flameforge.command.reload")) {
-            commands.add(new CommandEntry("reload", "Reload configuration"));
+        send(sender, messageKey, messageArguments("permission", permission));
+        return false;
+    }
+
+    private void sendStartupBlocker(CommandSender sender, CommandContext ctx) {
+        if (ctx.isFailed()) {
+            StartupFailure failure = ctx.getStartupFailure();
+            String reason = failure != null ? failure.getReason() : "unknown";
+            send(sender, "startup.failed", messageArguments("reason", reason));
+        } else if (ctx.isUnavailable()) {
+            send(sender, "startup.unavailable");
+        } else {
+            send(sender, "startup.loading");
         }
-        if (sender.hasPermission("flameforge.command.validate")) {
-            commands.add(new CommandEntry("validate", "Validate configurations"));
+    }
+
+    private boolean commandHelp(CommandSender sender, List<String> parentPath, String label) {
+        if (!requirePermission(sender, "command.no-permission", "flameforge.command.help")) {
+            return true;
         }
-        if (sender.hasPermission("flameforge.command.tiers")) {
-            commands.add(new CommandEntry("tiers [page]", "List all tiers"));
+
+        List<CommandNode.HelpEntry> children = CommandNode.immediateChildren(sender, parentPath);
+
+        String pluginName = (plugin.getDescription() != null && plugin.getDescription().getName() != null)
+            ? plugin.getDescription().getName() : "FlameForge";
+        String groupName = null;
+        if (!parentPath.isEmpty()) {
+            String lastToken = parentPath.get(parentPath.size() - 1);
+            groupName = lastToken.substring(0, 1).toUpperCase(Locale.ROOT) + lastToken.substring(1);
+            for (int i = parentPath.size() - 2; i >= 0; i--) {
+                groupName = parentPath.get(i).substring(0, 1).toUpperCase(Locale.ROOT)
+                    + parentPath.get(i).substring(1) + " " + groupName;
+            }
         }
-        if (sender.hasPermission("flameforge.command.tier.info")) {
-            commands.add(new CommandEntry("tier info <tier>", "Show tier information"));
+
+        boolean parentExists = false;
+        if (!parentPath.isEmpty()) {
+            String parentToken = parentPath.get(0);
+            for (CommandNode node : CommandNode.values()) {
+                String[] parts = node.getSuggestion().split(" ");
+                if (parts.length > 0 && parts[0].equalsIgnoreCase(parentToken)) {
+                    parentExists = true;
+                    break;
+                }
+            }
         }
-        if (sender.hasPermission("flameforge.command.preview")) {
-            commands.add(new CommandEntry("preview <tier> [material]", "Preview rename outcome"));
+
+        send(sender, "help.border");
+        String headerKey = parentPath.isEmpty() ? "help.root-header" : "help.group-header";
+        if (parentPath.isEmpty()) {
+            send(sender, headerKey, messageArguments("plugin_name", pluginName));
+        } else {
+            send(sender, headerKey, messageArguments("plugin_name", pluginName, "group_name", groupName));
         }
-        if (sender.hasPermission("flameforge.command.history")) {
-            commands.add(new CommandEntry("history [player]", "View rename history"));
+
+        for (CommandNode.HelpEntry entry : children) {
+            String description = entry.getDescriptionKey() != null
+                ? messageService.findMessageString(entry.getDescriptionKey()).orElse("")
+                : "";
+            MessageArguments arguments = messageArguments(
+                "label", label,
+                "usage", entry.getUsage(),
+                "description", description,
+                "suggestion", entry.getSuggestion()
+            );
+            Component line = messageService.renderToComponent("help.entry", sender, arguments)
+                .hoverEvent(HoverEvent.showText(messageService.renderToComponent("help.hover", sender,
+                    messageArguments("label", label, "suggestion", entry.getSuggestion()))))
+                .clickEvent(ClickEvent.suggestCommand("/" + label + " " + entry.getSuggestion()));
+            messageService.sendComponent(sender, line);
         }
-        if (sender.hasPermission("flameforge.command.station.add")) {
-            commands.add(new CommandEntry("station add <id> [profile]", "Add a rename station"));
+
+        if (children.isEmpty()) {
+            if (!parentPath.isEmpty() && !parentExists) {
+                StringBuilder pathBuilder = new StringBuilder();
+                for (int i = 0; i < parentPath.size(); i++) {
+                    if (i > 0) pathBuilder.append(" ");
+                    pathBuilder.append(parentPath.get(i));
+                }
+                send(sender, "help.unknown-path", messageArguments("path", pathBuilder.toString()));
+            } else {
+                send(sender, "help.empty");
+            }
         }
-        if (sender.hasPermission("flameforge.command.station.remove")) {
-            commands.add(new CommandEntry("station remove <id>", "Remove a rename station"));
+
+        send(sender, "help.border");
+        return true;
+    }
+
+    private boolean commandHelpForGroup(CommandSender sender, String[] args, int groupStart, String label) {
+        List<String> parentPath = new ArrayList<>();
+        for (int i = 1; i < args.length; i++) {
+            String arg = args[i].toLowerCase(Locale.ROOT);
+            if ("help".equals(arg)) {
+                continue;
+            }
+            parentPath.add(arg);
         }
-        if (sender.hasPermission("flameforge.command.station.list")) {
-            commands.add(new CommandEntry("station list [page]", "List rename stations"));
-        }
-        if (sender.hasPermission("flameforge.command.station.info")) {
-            commands.add(new CommandEntry("station info <id>", "Show station information"));
-        }
-        if (sender.hasPermission("flameforge.command.station.teleport")) {
-            commands.add(new CommandEntry("station teleport <id>", "Teleport to a station"));
-        }
-        if (sender.hasPermission("flameforge.command.setup.tier")) {
-            commands.add(new CommandEntry("setup tier create <id> <priority>", "Create a new tier"));
-            commands.add(new CommandEntry("setup tier clone <source> <id> <priority>", "Clone a tier"));
-        }
-        return commands;
+        return commandHelp(sender, parentPath, label);
     }
 
     private boolean commandOpen(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.open")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "command.no-permission", "flameforge.command.open")) {
             return true;
         }
-
         if (!(sender instanceof Player)) {
-            send(sender, Component.text("This command can only be used by players.", NamedTextColor.RED));
+            send(sender, "command.player-only");
             return true;
         }
 
-        Player player = (Player) sender;
-        Player target = player;
-
+        Player target = (Player) sender;
         if (args.length > 1) {
-            if (!sender.hasPermission("flameforge.command.open.others")) {
-                send(sender, Component.text("You don't have permission to open menus for other players.", NamedTextColor.RED));
+            if (!requirePermission(sender, "open.no-permission", "flameforge.command.open.others")) {
                 return true;
             }
             target = Bukkit.getPlayer(args[1]);
             if (target == null) {
-                send(sender, Component.text("Player not found.", NamedTextColor.RED));
+                send(sender, "open.no-target");
                 return true;
             }
         }
 
-        send(player, Component.text("Opening beacon menu for " + target.getName() + "...", NamedTextColor.YELLOW));
-        openBeaconMenu(target);
-        return true;
-    }
-
-    private void openBeaconMenu(Player player) {
-        Optional<ForgeStationService.StationInfo> optInfo = stationService.resolveStationFromClick(player)
-            .flatMap(data -> stationService.getStationInfo(data.id));
-
-        if (!optInfo.isPresent()) {
-            Component msg = Component.text("You must be looking at a beacon to open the menu.", NamedTextColor.RED);
-            text.send(player, msg);
-            return;
-        }
-
-        ForgeStationService.StationInfo info = optInfo.get();
-        player.sendMessage(Component.text("Beacon menu opened at station: " + info.getId()).color(NamedTextColor.GREEN).toString());
-    }
-
-    private boolean commandReload(CommandSender sender) {
-        if (!sender.hasPermission("flameforge.command.reload")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
             return true;
         }
 
-        send(sender, Component.text("Reloading configuration...", NamedTextColor.YELLOW));
+        openForgeForTarget(sender, target);
+        return true;
+    }
 
-        configService.asyncReloadWithCallback(() -> {
-            Component msg = Component.text("Configuration reloaded successfully.", NamedTextColor.GREEN);
-            scheduler.runGlobalLater(plugin, () -> send(sender, msg), 1L);
-        });
+    private void openForgeForTarget(CommandSender sender, Player target) {
+        ForgeStationService stationService = snapshot().getReadyServices().getStationService();
+        stationService.resolveRegisteredForgeFromTarget(target).thenAccept(station ->
+            runOnSenderScheduler(sender, () -> {
+                if (!station.isPresent()) {
+                    send(sender, "open.no-forge-target");
+                    return;
+                }
 
+                ForgeAccessService accessService = snapshot().getReadyServices().getAccessService();
+                accessService.openForgeFromId(target, station.get().id).thenAccept(result -> {
+                    runOnSenderScheduler(sender, () -> {
+                        switch (result.getStatus()) {
+                            case OPENED:
+                                send(sender, "open.menu-opened", messageArguments("station_id", station.get().id,
+                                    "player_name", target.getName()));
+                                break;
+                            case PLAYER_OFFLINE:
+                                send(sender, "open.player-offline");
+                                break;
+                            case FORGE_NOT_FOUND:
+                                send(sender, "open.forge-not-found", messageArguments("station_id", result.getStationId()));
+                                break;
+                            case PROFILE_NOT_FOUND:
+                                send(sender, "open.profile-not-found", messageArguments("station_id", result.getStationId()));
+                                break;
+                            case PERMISSION_REQUIRED: {
+                                List<String> perms = result.getRequiredPermissions();
+                                String permStr = perms.isEmpty() ? "" : perms.get(0);
+                                send(sender, "open.station-permission-required", messageArguments("permission", permStr));
+                                break;
+                            }
+                            case NO_ALLOWED_TIER:
+                                send(sender, "open.no-allowed-tier", messageArguments("station_id", result.getStationId()));
+                                break;
+                            case SCHEDULER_REJECTED:
+                                send(sender, "open.scheduler-rejected", messageArguments("reference", result.getReference()));
+                                break;
+                            case MENU_OPEN_FAILED:
+                                send(sender, "open.menu-open-failed", messageArguments("reference", result.getReference()));
+                                break;
+                            case PLAYER_RETIRED:
+                                send(sender, "open.player-retired");
+                                break;
+                        }
+                    });
+                });
+            }));
+    }
+
+    private boolean commandReload(CommandSender sender) {
+        if (!requirePermission(sender, "reload.no-permission", "flameforge.command.reload")) {
+            return true;
+        }
+        send(sender, "reload.started");
+        configService.reloadAsync().whenComplete((result, ex) -> runOnSenderScheduler(sender, () -> {
+            if (ex != null) {
+                send(sender, "reload.load-failed", messageArguments("reason", ex.getMessage()));
+                return;
+            }
+            switch (result.getStatus()) {
+                case APPLIED:
+                    send(sender, "reload.success");
+                    break;
+                case VALIDATION_REJECTED:
+                    send(sender, "reload.validation-rejected");
+                    break;
+                case ALREADY_RUNNING:
+                    send(sender, "reload.already-running");
+                    break;
+                case SCHEDULER_REJECTED:
+                    send(sender, "reload.scheduler-rejected", messageArguments("reference", result.getReference()));
+                    break;
+                case LOAD_FAILED:
+                    send(sender, "reload.load-failed", messageArguments("reason", result.getReason(),
+                        "reference", result.getReference()));
+                    break;
+            }
+        }));
         return true;
     }
 
     private boolean commandValidate(CommandSender sender) {
-        if (!sender.hasPermission("flameforge.command.validate")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "validate.no-permission", "flameforge.command.validate")) {
             return true;
         }
-
-        send(sender, Component.text("Validating configuration...", NamedTextColor.YELLOW));
-
-        scheduler.runAsync(plugin, () -> {
-            configService.asyncReloadWithCallback(() -> {
-                Component result = buildValidationResult();
-                scheduler.runGlobalLater(plugin, () -> send(sender, result), 1L);
-            });
-        });
-
+        send(sender, "validate.started");
+        scheduler.runAsync(plugin, () -> configService.asyncReloadWithCallback(() ->
+            runOnSenderScheduler(sender, () -> sendValidationResult(sender))));
         return true;
     }
 
-    private Component buildValidationResult() {
+    private void sendValidationResult(CommandSender sender) {
         ValidationReport report = configService.getValidationReport();
         if (!report.hasErrors() && !report.hasWarnings()) {
-            return Component.text("Validation passed: No errors or warnings found.", NamedTextColor.GREEN);
+            send(sender, "validate.passed");
+            return;
         }
-
-        Component result = Component.text("Validation Report:", NamedTextColor.YELLOW);
-
-        if (report.hasErrors()) {
-            for (ValidationIssue issue : report.getErrors()) {
-                result = result.append(Component.text()
-                    .append(Component.text("\n  [ERROR] ", NamedTextColor.RED))
-                    .append(Component.text(issue.getPath() + ": " + issue.getMessage(), NamedTextColor.WHITE))
-                    .build());
-            }
+        for (ValidationIssue issue : report.getErrors()) {
+            send(sender, "validate.error", messageArguments("path", issue.getPath(), "message", issue.getMessage()));
         }
-
-        if (report.hasWarnings()) {
-            for (ValidationIssue issue : report.getWarnings()) {
-                result = result.append(Component.text()
-                    .append(Component.text("\n  [WARN] ", NamedTextColor.YELLOW))
-                    .append(Component.text(issue.getPath() + ": " + issue.getMessage(), NamedTextColor.WHITE))
-                    .build());
-            }
+        for (ValidationIssue issue : report.getWarnings()) {
+            send(sender, "validate.warning", messageArguments("path", issue.getPath(), "message", issue.getMessage()));
         }
-
-        return result;
     }
 
     private boolean commandTiers(CommandSender sender, int page) {
-        if (!sender.hasPermission("flameforge.command.tiers")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "tiers.no-permission", "flameforge.command.tiers")) {
             return true;
         }
-
-        List<TierDefinition> tiers = configService.getAllTiers();
+        List<TierDefinition> tiers = tierRepository.allAscending();
         if (tiers.isEmpty()) {
-            send(sender, Component.text("No tiers configured.", NamedTextColor.YELLOW));
+            send(sender, "tiers.empty");
             return true;
         }
-
-        int totalPages = (tiers.size() + PAGE_SIZE - 1) / PAGE_SIZE;
+        int totalPages = (tiers.size() + LIST_PAGE_SIZE - 1) / LIST_PAGE_SIZE;
         page = Math.max(1, Math.min(page, totalPages));
-
-        send(sender, Component.text("=== Tiers (" + page + "/" + totalPages + ") ===", NamedTextColor.GOLD));
-
-        int start = (page - 1) * PAGE_SIZE;
-        int end = Math.min(start + PAGE_SIZE, tiers.size());
-
+        send(sender, "tiers.header", messageArguments("page", String.valueOf(page),
+            "total_pages", String.valueOf(totalPages)));
+        int start = (page - 1) * LIST_PAGE_SIZE;
+        int end = Math.min(start + LIST_PAGE_SIZE, tiers.size());
         for (int i = start; i < end; i++) {
             TierDefinition tier = tiers.get(i);
-            Component line = Component.text()
-                .color(NamedTextColor.GRAY)
-                .append(Component.text(tier.getId(), NamedTextColor.YELLOW))
-                .append(Component.text(" (Priority: " + tier.getTierLevel() + ")", NamedTextColor.WHITE))
-                .build();
-            send(sender, line);
+            send(sender, "tiers.entry", messageArguments("tier_id", tier.getId(),
+                "level", String.valueOf(tier.getLevel())));
         }
-
         if (totalPages > 1) {
-            send(sender, Component.text("Use /flameforge tiers <page> for more pages.", NamedTextColor.GRAY));
+            send(sender, "tiers.footer", messageArguments("page", String.valueOf(page),
+                "total_pages", String.valueOf(totalPages)));
         }
-
         return true;
     }
 
     private boolean commandTierInfo(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.tier.info")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "tier-info.no-permission", "flameforge.command.tier.info")) {
             return true;
         }
-
-        if (args.length < 3 || !"info".equals(args[1].toLowerCase())) {
-            send(sender, Component.text("Usage: /flameforge tier info <tier>", NamedTextColor.RED));
+        if (args.length < 3 || !"info".equalsIgnoreCase(args[1])) {
+            send(sender, "tier-info.usage");
             return true;
         }
-
         String tierId = args[2];
-        Optional<TierDefinition> optTier = configService.findTier(tierId);
-
+        Optional<TierDefinition> optTier = tierRepository.findById(tierId);
         if (!optTier.isPresent()) {
-            send(sender, Component.text("Tier not found: " + tierId, NamedTextColor.RED));
+            send(sender, "tier-info.not-found", messageArguments("tier_id", tierId));
             return true;
         }
 
         TierDefinition tier = optTier.get();
-        TierParser.TierExtra extra = tierRepository.findExtra(tierId).orElse(null);
+        send(sender, "tier-info.header", messageArguments("tier_id", tier.getId()));
+        send(sender, "tier-info.level", messageArguments("level", String.valueOf(tier.getLevel())));
+        send(sender, "tier-info.enabled", messageArguments("enabled", String.valueOf(tier.isEnabled())));
+        send(sender, "tier-info.cooldown", messageArguments("seconds", String.valueOf(tier.getCooldownSeconds())));
 
-        send(sender, Component.text("=== Tier: " + tier.getId() + " ===", NamedTextColor.GOLD));
-        send(sender, Component.text("Priority: " + tier.getTierLevel(), NamedTextColor.WHITE));
-        send(sender, Component.text("Success Animation: " + tier.getSuccessAnimationDuration() + " ticks", NamedTextColor.WHITE));
-        send(sender, Component.text("Fail Animation: " + tier.getFailAnimationDuration() + " ticks", NamedTextColor.WHITE));
-
-        TierCost cost = tier.getCost();
-        if (cost != null) {
-            send(sender, Component.text("Cost Mode: " + cost.getMode().name(), NamedTextColor.WHITE));
-        }
-
-        if (extra != null) {
-            send(sender, Component.text("Enabled: " + extra.isEnabled(), NamedTextColor.WHITE));
-            send(sender, Component.text("Cooldown: " + extra.getCooldownSeconds() + " seconds", NamedTextColor.WHITE));
-        }
-
-        List<OutcomeDefinition> outcomes = tier.getOutcomes();
-        if (!outcomes.isEmpty()) {
-            send(sender, Component.text("Outcomes (" + outcomes.size() + "):", NamedTextColor.WHITE));
-            for (OutcomeDefinition outcome : outcomes) {
-                Component outcomeLine = Component.text()
-                    .color(NamedTextColor.GRAY)
-                    .append(Component.text("  - " + outcome.getId() + " (", NamedTextColor.YELLOW))
-                    .append(Component.text(outcome.getType().name(), NamedTextColor.WHITE))
-                    .append(Component.text(", weight: " + outcome.getWeight() + ")", NamedTextColor.GRAY))
-                    .build();
-                send(sender, outcomeLine);
+        TierRequirements reqs = tier.getRequirements();
+        if (reqs != null) {
+            if (reqs.getCombine() != null) {
+                send(sender, "tier-info.requirements-combine", messageArguments("combine", reqs.getCombine().name()));
+            }
+            TierRequirements.XpRequirement xp = reqs.getXp();
+            if (xp != null && xp.isEnabled()) {
+                send(sender, "tier-info.requirement-xp", messageArguments("level", String.valueOf(xp.getLevel())));
+            }
+            TierRequirements.MoneyRequirement money = reqs.getMoney();
+            if (money != null && money.isEnabled()) {
+                send(sender, "tier-info.requirement-money", messageArguments("amount", money.getAmount().toString()));
+            }
+            TierRequirements.ItemsRequirement items = reqs.getItems();
+            if (items != null && items.isEnabled() && !items.getItems().isEmpty()) {
+                send(sender, "tier-info.requirements-items-header");
+                for (TierRequirements.ItemRequirement item : items.getItems()) {
+                    StringBuilder matBuilder = new StringBuilder();
+                    List<String> mats = item.getMaterialCandidates();
+                    for (int i = 0; i < mats.size(); i++) {
+                        if (i > 0) matBuilder.append(",");
+                        matBuilder.append(mats.get(i));
+                    }
+                    send(sender, "tier-info.requirement-item", messageArguments(
+                        "materials", matBuilder.toString(),
+                        "amount", String.valueOf(item.getAmount()),
+                        "name", item.getDisplayName() != null ? item.getDisplayName() : ""));
+                }
             }
         }
 
+        TierChances chances = tier.getChances();
+        if (chances != null) {
+            send(sender, "tier-info.chances", messageArguments(
+                "success", String.valueOf(chances.getSuccessPercent()),
+                "break", String.valueOf(chances.getBreakPercent()),
+                "curse", String.valueOf(chances.getCursePercent())));
+        }
+
+        List<ForgeVariant> variants = tier.getVariants();
+        if (variants != null && !variants.isEmpty()) {
+            send(sender, "tier-info.variants-header", messageArguments("count", String.valueOf(variants.size())));
+            for (ForgeVariant variant : variants) {
+                send(sender, "tier-info.variant-entry", messageArguments(
+                    "variant_id", variant.getId(),
+                    "name", variant.getName(),
+                    "weight", String.valueOf(variant.getWeight())));
+            }
+        }
         return true;
     }
 
     private boolean commandPreview(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.preview")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "preview.no-permission", "flameforge.command.preview")) {
             return true;
         }
-
         if (!(sender instanceof Player)) {
-            send(sender, Component.text("This command can only be used by players.", NamedTextColor.RED));
+            send(sender, "command.player-only");
             return true;
         }
-
         if (args.length < 2) {
-            send(sender, Component.text("Usage: /flameforge preview <tier> [material]", NamedTextColor.RED));
+            send(sender, "preview.usage");
             return true;
         }
-
         String tierId = args[1];
-        Optional<TierDefinition> optTier = configService.findTier(tierId);
-
+        Optional<TierDefinition> optTier = tierRepository.findById(tierId);
         if (!optTier.isPresent()) {
-            send(sender, Component.text("Tier not found: " + tierId, NamedTextColor.RED));
+            send(sender, "preview.tier-not-found", messageArguments("tier_id", tierId));
             return true;
         }
 
         TierDefinition tier = optTier.get();
-
         Player player = (Player) sender;
         ItemStack heldItem = player.getItemInHand();
-
         if (args.length >= 3) {
             String materialKey = args[2];
             if (materialResolver.resolve(materialKey).isPresent()) {
                 heldItem = new ItemStack(materialResolver.resolveOrThrow(materialKey), 1);
             } else {
-                send(sender, Component.text("Unknown material: " + materialKey, NamedTextColor.RED));
+                send(sender, "preview.unknown-material", messageArguments("material", materialKey));
                 return true;
             }
         }
-
         if (heldItem == null || heldItem.getType() == Material.AIR) {
-            send(sender, Component.text("You must be holding an item to preview.", NamedTextColor.RED));
+            send(sender, "preview.no-item");
             return true;
         }
 
-        List<OutcomeDefinition> outcomes = tier.getOutcomes();
-        if (outcomes.isEmpty()) {
-            send(sender, Component.text("This tier has no outcomes configured.", NamedTextColor.YELLOW));
+        List<ForgeVariant> variants = tier.getVariants();
+        if (variants == null || variants.isEmpty()) {
+            send(sender, "preview.no-variants");
             return true;
         }
 
-        OutcomeDefinition firstOutcome = outcomes.get(0);
-        if (firstOutcome.getMutation() != null) {
-            Optional<ItemStack> preview = ItemFactory.getInstance().createPreview(firstOutcome.getMutation(), heldItem);
-            if (preview.isPresent()) {
-                send(sender, Component.text("Preview for tier '" + tierId + "':", NamedTextColor.GREEN));
-                send(sender, Component.text("Result material: " + preview.get().getType().name(), NamedTextColor.WHITE));
-            }
-        } else {
-            send(sender, Component.text("This tier does not modify items.", NamedTextColor.YELLOW));
+        ForgeVariant selectedVariant = selectEligibleVariant(variants, heldItem);
+        if (selectedVariant == null) {
+            send(sender, "preview.no-eligible-variant");
+            return true;
         }
 
+        send(sender, "preview.variant", messageArguments("tier_id", tierId,
+            "variant_id", selectedVariant.getId(),
+            "variant_name", selectedVariant.getName()));
+        send(sender, "preview.material", messageArguments("material", heldItem.getType().name()));
         return true;
     }
 
-    private boolean commandHistory(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.history")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+    private ForgeVariant selectEligibleVariant(List<ForgeVariant> variants, ItemStack item) {
+        for (ForgeVariant variant : variants) {
+            if (isVariantEligible(variant, item)) {
+                return variant;
+            }
+        }
+        return null;
+    }
+
+    private boolean isVariantEligible(ForgeVariant variant, ItemStack item) {
+        List<String> candidates = variant.getEnchantmentCandidates();
+        if (candidates == null || candidates.isEmpty()) {
             return true;
         }
+        String itemMaterial = item.getType().name();
+        for (String candidate : candidates) {
+            if (candidate.equalsIgnoreCase(itemMaterial) || candidate.equalsIgnoreCase("ANY")) {
+                return true;
+            }
+        }
+        return false;
+    }
 
+    private boolean commandHistory(CommandSender sender, String[] args) {
         UUID targetUuid;
         String targetName;
-
         if (args.length > 1) {
-            if (!sender.hasPermission("flameforge.command.history.others")) {
-                send(sender, Component.text("You don't have permission to view other players' history.", NamedTextColor.RED));
+            if (!requirePermission(sender, "history.no-permission", "flameforge.command.history.others")) {
                 return true;
             }
             Player target = Bukkit.getPlayer(args[1]);
             if (target == null) {
-                send(sender, Component.text("Player not found.", NamedTextColor.RED));
+                send(sender, "open.no-target");
                 return true;
             }
             targetUuid = target.getUniqueId();
             targetName = target.getName();
         } else {
+            if (!requirePermission(sender, "history.no-permission", "flameforge.command.history")) {
+                return true;
+            }
             if (!(sender instanceof Player)) {
-                send(sender, Component.text("Usage: /flameforge history <player>", NamedTextColor.RED));
+                send(sender, "history.usage");
                 return true;
             }
             targetUuid = ((Player) sender).getUniqueId();
             targetName = sender.getName();
         }
 
-        send(sender, Component.text("History for " + targetName + ":", NamedTextColor.GOLD));
-
-        PlayerStateRepository.PlayerState state = playerStateRepository.getSnapshot(targetUuid);
-        if (state == null) {
-            send(sender, Component.text("No history found for " + targetName, NamedTextColor.YELLOW));
+        send(sender, "history.header", messageArguments("player_name", targetName));
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
             return true;
         }
-
-        send(sender, Component.text("Current Tier: " + state.tier, NamedTextColor.WHITE));
-        send(sender, Component.text("Reforges: " + state.tier, NamedTextColor.WHITE));
-
-        if (state.pityCooldown > 0) {
-            send(sender, Component.text("Pity Cooldown: " + state.pityCooldown + "ms remaining", NamedTextColor.WHITE));
+        PlayerStateRepository.PlayerState state = ctx.getReadyServices().getPlayerStateRepository()
+            .getSnapshot(targetUuid);
+        if (state == null) {
+            send(sender, "history.no-history", messageArguments("player_name", targetName));
+            return true;
         }
+        send(sender, "history.current-tier", messageArguments("tier", String.valueOf(state.tier)));
+        send(sender, "history.not-implemented");
+        return true;
+    }
 
-        send(sender, Component.text("(Full history log not yet implemented)", NamedTextColor.GRAY));
-
+    private boolean commandTeleport(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "tp.no-permission", "flameforge.command.station.teleport")) {
+            return true;
+        }
+        if (!(sender instanceof Player)) {
+            send(sender, "tp.player-only");
+            return true;
+        }
+        if (args.length < 2) {
+            send(sender, "tp.usage");
+            return true;
+        }
+        String id = args[1];
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
+            return true;
+        }
+        ForgeStationService stationService = ctx.getReadyServices().getStationService();
+        StationRepository.StationData station = stationService.getStationById(id).orElse(null);
+        if (station == null) {
+            send(sender, "tp.not-found", messageArguments("station_id", id));
+            return true;
+        }
+        stationService.teleportToStation((Player) sender, station)
+            .thenAccept(result -> sendTeleportResult(sender, result, "tp", id));
         return true;
     }
 
     private boolean commandStation(CommandSender sender, String[] args) {
         if (args.length < 2) {
-            send(sender, Component.text("Usage: /flameforge station <add|remove|list|info|teleport> [args]", NamedTextColor.RED));
+            send(sender, "station.usage");
             return true;
         }
-
-        String stationCmd = args[1].toLowerCase();
-
-        switch (stationCmd) {
+        switch (args[1].toLowerCase(Locale.ROOT)) {
             case "add":
                 return commandStationAdd(sender, args);
             case "remove":
                 return commandStationRemove(sender, args);
             case "list":
-                return commandStationList(sender, args.length > 2 ? parsePage(args[2]) : 1);
+                return commandStationList(sender, args.length > 2 ? parsePageArg(args[2]) : 1);
             case "info":
                 return commandStationInfo(sender, args);
             case "teleport":
                 return commandStationTeleport(sender, args);
             default:
-                send(sender, Component.text("Unknown station command. Use /flameforge station list to see available commands.", NamedTextColor.RED));
+                send(sender, "station.unknown");
                 return true;
         }
     }
 
     private boolean commandStationAdd(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.station.add")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "station-add.no-permission", "flameforge.command.station.add")) {
             return true;
         }
-
         if (!(sender instanceof Player)) {
-            send(sender, Component.text("This command can only be used by players.", NamedTextColor.RED));
+            send(sender, "station-add.player-only");
+            return true;
+        }
+        if (args.length > 4) {
+            send(sender, "station-add.usage");
             return true;
         }
 
-        if (args.length < 3) {
-            send(sender, Component.text("Usage: /flameforge station add <id> [profile]", NamedTextColor.RED));
+        Optional<String> requestedId = args.length > 2 ? Optional.of(args[2]) : Optional.empty();
+        String profile = args.length > 3 ? args[3] : ForgeStationService.DEFAULT_PROFILE_ID;
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
             return true;
         }
 
-        String id = args[2];
-        String profile = args.length > 3 ? args[3] : "default";
-
-        Player player = (Player) sender;
-
-        Optional<StationRepository.StationData> resolved = stationService.resolveStationFromClick(player);
-        if (!resolved.isPresent()) {
-            send(sender, Component.text("You must be looking at a beacon block.", NamedTextColor.RED));
-            return true;
-        }
-
-        StationRepository.StationData beacon = resolved.get();
-        boolean added = stationService.addStation(id, beacon.toLocation(Bukkit.getWorld(beacon.world)).getBlock(), profile);
-
-        if (added) {
-            send(sender, Component.text("Station '" + id + "' added successfully.", NamedTextColor.GREEN));
-        } else {
-            send(sender, Component.text("Failed to add station. ID may already exist or coordinates are invalid.", NamedTextColor.RED));
-        }
-
+        ForgeStationService stationService = ctx.getReadyServices().getStationService();
+        stationService.addTargetedForge((Player) sender, requestedId, profile).thenAccept(outcome ->
+            runOnSenderScheduler(sender, () -> sendAddOutcome(sender, outcome)));
         return true;
     }
 
+    private void sendAddOutcome(CommandSender sender, ForgeStationService.AddForgeOutcome outcome) {
+        switch (outcome.result()) {
+            case ADDED:
+                StationRepository.RegisteredForge forge = outcome.forge();
+                send(sender, "station-add.success", messageArguments("station_id", outcome.finalId(),
+                    "world", forge.getWorldName(), "x", String.valueOf(forge.getX()),
+                    "y", String.valueOf(forge.getY()), "z", String.valueOf(forge.getZ()),
+                    "profile", forge.getProfileId()));
+                send(sender, "station-list.entry", messageArguments("station_id", outcome.finalId(),
+                    "world", forge.getWorldName(), "x", String.valueOf(forge.getX()),
+                    "y", String.valueOf(forge.getY()), "z", String.valueOf(forge.getZ()),
+                    "profile", forge.getProfileId()));
+                suggestionIndex.updateStationIds(currentStationIds());
+                return;
+            case INVALID_ID:
+                send(sender, "station-add.invalid-id", messageArguments("station_id", outcome.finalId()));
+                return;
+            case UNKNOWN_PROFILE:
+                send(sender, "station-add.unknown-profile", messageArguments("station_id", outcome.finalId()));
+                return;
+            case TARGET_UNAVAILABLE:
+                send(sender, "station-add.target-unavailable", messageArguments("station_id", outcome.finalId()));
+                return;
+            case DUPLICATE_ID:
+                send(sender, "station-add.duplicate-id", messageArguments("station_id", outcome.finalId()));
+                return;
+            case DUPLICATE_LOCATION:
+                send(sender, "station-add.duplicate-location", messageArguments("station_id", outcome.finalId()));
+                return;
+            case PERSISTENCE_FAILED:
+                send(sender, "station-add.persistence-failed", messageArguments("station_id", outcome.finalId()));
+                return;
+            case ID_GENERATION_EXHAUSTED:
+                send(sender, "station-add.id-generation-exhausted", messageArguments("station_id", outcome.finalId()));
+                return;
+            case NO_TARGET:
+                send(sender, "station-add.no-block");
+                return;
+            case PLAYER_RETIRED:
+                send(sender, "station-add.player-only");
+                return;
+        }
+    }
+
+    private List<String> currentStationIds() {
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            return Collections.emptyList();
+        }
+        return ctx.getReadyServices().getStationService().listStations().stream()
+            .map(station -> station.id).collect(Collectors.toList());
+    }
+
     private boolean commandStationRemove(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.station.remove")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "station-remove.no-permission", "flameforge.command.station.remove")) {
             return true;
         }
-
         if (args.length < 3) {
-            send(sender, Component.text("Usage: /flameforge station remove <id>", NamedTextColor.RED));
+            send(sender, "station-remove.usage");
             return true;
         }
-
         String id = args[2];
-        boolean removed = stationService.removeStation(id);
-
-        if (removed) {
-            send(sender, Component.text("Station '" + id + "' removed successfully.", NamedTextColor.GREEN));
-        } else {
-            send(sender, Component.text("Station not found: " + id, NamedTextColor.RED));
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
+            return true;
         }
-
+        ctx.getReadyServices().getStationService().removeStation(id).thenAccept(outcome ->
+            runOnSenderScheduler(sender, () -> {
+                switch (outcome.getResult()) {
+                    case REMOVED:
+                        send(sender, "station-remove.success", messageArguments("station_id", id));
+                        suggestionIndex.updateStationIds(currentStationIds());
+                        break;
+                    case NOT_FOUND:
+                        send(sender, "station-remove.not-found", messageArguments("station_id", id));
+                        break;
+                    case PERSISTENCE_FAILED:
+                        send(sender, "station-remove.persistence-failed",
+                            messageArguments("station_id", id, "reference", outcome.getReference()));
+                        break;
+                }
+            }));
         return true;
     }
 
     private boolean commandStationList(CommandSender sender, int page) {
-        if (!sender.hasPermission("flameforge.command.station.list")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "station-list.no-permission", "flameforge.command.station.list")) {
             return true;
         }
-
-        List<StationRepository.StationData> stations = stationService.listStations();
-
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
+            return true;
+        }
+        List<StationRepository.StationData> stations = ctx.getReadyServices().getStationService().listStations();
         if (stations.isEmpty()) {
-            send(sender, Component.text("No stations configured.", NamedTextColor.YELLOW));
+            send(sender, "station-list.empty");
             return true;
         }
-
-        int totalPages = (stations.size() + PAGE_SIZE - 1) / PAGE_SIZE;
+        int totalPages = (stations.size() + LIST_PAGE_SIZE - 1) / LIST_PAGE_SIZE;
         page = Math.max(1, Math.min(page, totalPages));
-
-        send(sender, Component.text("=== Stations (" + page + "/" + totalPages + ") ===", NamedTextColor.GOLD));
-
-        int start = (page - 1) * PAGE_SIZE;
-        int end = Math.min(start + PAGE_SIZE, stations.size());
-
+        send(sender, "station-list.header", messageArguments("page", String.valueOf(page),
+            "total_pages", String.valueOf(totalPages)));
+        int start = (page - 1) * LIST_PAGE_SIZE;
+        int end = Math.min(start + LIST_PAGE_SIZE, stations.size());
         for (int i = start; i < end; i++) {
             StationRepository.StationData station = stations.get(i);
-            Component line = Component.text()
-                .color(NamedTextColor.GRAY)
-                .append(Component.text(station.id, NamedTextColor.YELLOW))
-                .append(Component.text(" [" + station.world + " " + station.x + "," + station.y + "," + station.z + "]", NamedTextColor.WHITE))
-                .append(Component.text(" (Profile: " + station.profile + ")", NamedTextColor.GRAY))
-                .build();
-            send(sender, line);
+            send(sender, "station-list.entry", messageArguments("station_id", station.id,
+                "world", station.world, "x", String.valueOf(station.x), "y", String.valueOf(station.y),
+                "z", String.valueOf(station.z), "profile", station.profile));
         }
-
         if (totalPages > 1) {
-            send(sender, Component.text("Use /flameforge station list <page> for more pages.", NamedTextColor.GRAY));
+            send(sender, "station-list.footer", messageArguments("page", String.valueOf(page),
+                "total_pages", String.valueOf(totalPages)));
         }
-
         return true;
     }
 
     private boolean commandStationInfo(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.station.info")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "station-info.no-permission", "flameforge.command.station.info")) {
             return true;
         }
-
         if (args.length < 3) {
-            send(sender, Component.text("Usage: /flameforge station info <id>", NamedTextColor.RED));
+            send(sender, "station-info.usage");
             return true;
         }
-
         String id = args[2];
-        Optional<ForgeStationService.StationInfo> optInfo = stationService.getStationInfo(id);
-
-        if (!optInfo.isPresent()) {
-            send(sender, Component.text("Station not found: " + id, NamedTextColor.RED));
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
             return true;
         }
-
-        ForgeStationService.StationInfo info = optInfo.get();
-
-        send(sender, Component.text("=== Station: " + info.getId() + " ===", NamedTextColor.GOLD));
-        send(sender, Component.text("World: " + info.getWorld(), NamedTextColor.WHITE));
-        send(sender, Component.text("Location: " + info.getX() + ", " + info.getY() + ", " + info.getZ(), NamedTextColor.WHITE));
-        send(sender, Component.text("Profile: " + info.getProfileId(), NamedTextColor.WHITE));
-
-        if (info.getProfile() != null) {
-            send(sender, Component.text("Max Tier: " + info.getProfile().getMaxTierUnlocked(), NamedTextColor.WHITE));
+        ForgeStationService.StationInfo info = ctx.getReadyServices().getStationService().getStationInfo(id).orElse(null);
+        if (info == null) {
+            send(sender, "station-info.not-found", messageArguments("station_id", id));
+            return true;
         }
-
+        send(sender, "station-info.header", messageArguments("station_id", info.getId()));
+        send(sender, "station-info.world", messageArguments("world", info.getWorld()));
+        send(sender, "station-info.location", messageArguments("x", String.valueOf(info.getX()),
+            "y", String.valueOf(info.getY()), "z", String.valueOf(info.getZ())));
+        send(sender, "station-info.profile", messageArguments("profile", info.getProfileId()));
+        if (info.getProfile() != null) {
+            send(sender, "station-info.max-tier", messageArguments("max_tier",
+                String.valueOf(info.getProfile().getMaxTierUnlocked())));
+        }
         return true;
     }
 
     private boolean commandStationTeleport(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.station.teleport")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "station-teleport.no-permission", "flameforge.command.station.teleport")) {
             return true;
         }
-
         if (!(sender instanceof Player)) {
-            send(sender, Component.text("This command can only be used by players.", NamedTextColor.RED));
+            send(sender, "station-teleport.player-only");
             return true;
         }
-
         if (args.length < 3) {
-            send(sender, Component.text("Usage: /flameforge station teleport <id>", NamedTextColor.RED));
+            send(sender, "station-teleport.usage");
             return true;
         }
-
         String id = args[2];
-        Player player = (Player) sender;
-
-        Optional<StationRepository.StationData> optStation = stationService.getStationById(id);
-        if (!optStation.isPresent()) {
-            send(sender, Component.text("Station not found: " + id, NamedTextColor.RED));
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
             return true;
         }
-
-        StationRepository.StationData station = optStation.get();
-
-        ForgeStationService.TeleportResult result = stationService.teleportToStation(player, station);
-
-        switch (result) {
-            case SUCCESS_SYNC:
-            case SUCCESS_ASYNC:
-                send(sender, Component.text("Teleporting to station '" + id + "'...", NamedTextColor.GREEN));
-                break;
-            case WORLD_NOT_FOUND:
-                send(sender, Component.text("World not found for station.", NamedTextColor.RED));
-                break;
-            case WORLD_NOT_LOADED:
-                send(sender, Component.text("World is not loaded. Teleport failed.", NamedTextColor.RED));
-                break;
-            case FAILURE:
-            default:
-                send(sender, Component.text("Teleport failed.", NamedTextColor.RED));
-                break;
+        ForgeStationService stationService = ctx.getReadyServices().getStationService();
+        StationRepository.StationData station = stationService.getStationById(id).orElse(null);
+        if (station == null) {
+            send(sender, "station-teleport.not-found", messageArguments("station_id", id));
+            return true;
         }
-
+        stationService.teleportToStation((Player) sender, station)
+            .thenAccept(result -> sendTeleportResult(sender, result, "station-teleport", id));
         return true;
     }
 
+    private void sendTeleportResult(CommandSender sender, TeleportBridge.TeleportOutcome result,
+                                    String keyPrefix, String id) {
+        switch (result.getStatus()) {
+            case TELEPORTED:
+                send(sender, keyPrefix + ".success", messageArguments("station_id", id));
+                break;
+            case PLAYER_OFFLINE:
+                send(sender, keyPrefix + ".player-offline");
+                break;
+            case WORLD_NOT_FOUND:
+                send(sender, keyPrefix + ".world-not-found");
+                break;
+            case WORLD_NOT_LOADED:
+                send(sender, keyPrefix + ".world-not-loaded");
+                break;
+            case TELEPORT_REJECTED:
+                send(sender, keyPrefix + ".teleport-rejected");
+                break;
+            case TELEPORT_EXCEPTION:
+                send(sender, keyPrefix + ".teleport-exception", messageArguments("reason", result.getReason()));
+                break;
+            case PLAYER_RETIRED:
+                send(sender, keyPrefix + ".player-retired");
+                break;
+            case SCHEDULER_REJECTED:
+                send(sender, keyPrefix + ".scheduler-rejected");
+                break;
+        }
+    }
+
     private boolean commandSetup(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("flameforge.command.setup.tier")) {
-            send(sender, Component.text("You don't have permission to use this command.", NamedTextColor.RED));
+        if (!requirePermission(sender, "setup.no-permission", "flameforge.command.setup.tier")) {
             return true;
         }
-
         if (args.length < 3) {
-            send(sender, Component.text("Usage: /flameforge setup tier <create|clone> [args]", NamedTextColor.RED));
+            send(sender, "setup.usage");
             return true;
         }
-
-        if (!"tier".equals(args[1].toLowerCase())) {
-            send(sender, Component.text("Unknown setup command. Use /flameforge setup tier create|clone", NamedTextColor.RED));
+        if (!"tier".equalsIgnoreCase(args[1])) {
+            send(sender, "setup.unknown");
             return true;
         }
-
-        String tierCmd = args[2].toLowerCase();
-
-        switch (tierCmd) {
+        switch (args[2].toLowerCase(Locale.ROOT)) {
             case "create":
                 return commandSetupTierCreate(sender, args);
             case "clone":
                 return commandSetupTierClone(sender, args);
             default:
-                send(sender, Component.text("Unknown tier setup command. Use create or clone.", NamedTextColor.RED));
+                send(sender, "setup.unknown");
                 return true;
         }
     }
 
     private boolean commandSetupTierCreate(CommandSender sender, String[] args) {
         if (args.length < 5) {
-            send(sender, Component.text("Usage: /flameforge setup tier create <id> <priority>", NamedTextColor.RED));
+            send(sender, "setup-tier-create.usage");
             return true;
         }
-
         String id = args[3];
-        int priority;
-
+        int level;
         try {
-            priority = Integer.parseInt(args[4]);
+            level = Integer.parseInt(args[4]);
         } catch (NumberFormatException e) {
-            send(sender, Component.text("Priority must be a number.", NamedTextColor.RED));
+            send(sender, "setup-tier-create.level-invalid");
             return true;
         }
-
-        if (tierRepository.find(id).isPresent()) {
-            send(sender, Component.text("Tier already exists: " + id, NamedTextColor.RED));
+        if (tierRepository.findById(id).isPresent()) {
+            send(sender, "setup-tier-create.already-exists", messageArguments("tier_id", id));
             return true;
         }
-
-        TierDefinition tier = tierRepository.create(id, priority);
-
-        send(sender, Component.text("Tier '" + id + "' created with priority " + priority + ".", NamedTextColor.GREEN));
-        send(sender, Component.text("Note: New tiers are not populated with default outcomes. Edit the tier file manually.", NamedTextColor.YELLOW));
-
+        tierRepository.create(id, level);
+        send(sender, "setup-tier-create.success", messageArguments("tier_id", id,
+            "level", String.valueOf(level)));
+        send(sender, "setup-tier-create.note");
         return true;
     }
 
     private boolean commandSetupTierClone(CommandSender sender, String[] args) {
         if (args.length < 6) {
-            send(sender, Component.text("Usage: /flameforge setup tier clone <source> <id> <priority>", NamedTextColor.RED));
+            send(sender, "setup-tier-clone.usage");
             return true;
         }
-
         String sourceId = args[3];
         String newId = args[4];
-        int priority;
-
+        int level;
         try {
-            priority = Integer.parseInt(args[5]);
+            level = Integer.parseInt(args[5]);
         } catch (NumberFormatException e) {
-            send(sender, Component.text("Priority must be a number.", NamedTextColor.RED));
+            send(sender, "setup-tier-clone.level-invalid");
             return true;
         }
-
-        if (tierRepository.find(sourceId).isEmpty()) {
-            send(sender, Component.text("Source tier not found: " + sourceId, NamedTextColor.RED));
+        if (!tierRepository.findById(sourceId).isPresent()) {
+            send(sender, "setup-tier-clone.source-not-found", messageArguments("source_id", sourceId));
             return true;
         }
-
-        if (tierRepository.find(newId).isPresent()) {
-            send(sender, Component.text("Tier already exists: " + newId, NamedTextColor.RED));
+        if (tierRepository.findById(newId).isPresent()) {
+            send(sender, "setup-tier-clone.already-exists", messageArguments("new_id", newId));
             return true;
         }
-
-        TierDefinition cloned = tierRepository.clone(sourceId, newId);
-
+        TierDefinition cloned = tierRepository.clone(sourceId, newId, level);
         if (cloned == null) {
-            send(sender, Component.text("Failed to clone tier.", NamedTextColor.RED));
+            send(sender, "setup-tier-clone.failure");
             return true;
         }
-
-        send(sender, Component.text("Tier '" + newId + "' cloned from '" + sourceId + "' with priority " + priority + ".", NamedTextColor.GREEN));
-        send(sender, Component.text("Note: Cloned tiers inherit all settings. Edit the tier file manually to adjust.", NamedTextColor.YELLOW));
-
+        send(sender, "setup-tier-clone.success", messageArguments("new_id", newId,
+            "source_id", sourceId, "level", String.valueOf(level)));
+        send(sender, "setup-tier-clone.note");
         return true;
     }
 
-    private int parsePage(String arg) {
+    private int parsePageArg(String value) {
         try {
-            return Math.max(1, Integer.parseInt(arg));
+            return Math.max(1, Integer.parseInt(value));
         } catch (NumberFormatException e) {
             return 1;
         }
     }
 
-    private List<String> filterPrefix(List<String> list, String prefix) {
-        if (prefix.isEmpty()) {
-            return list;
-        }
-        return list.stream()
-            .filter(s -> s.toLowerCase().startsWith(prefix.toLowerCase()))
-            .sorted(String::compareToIgnoreCase)
-            .collect(Collectors.toList());
-    }
-
     private List<String> filterPrefixTierIds(String prefix) {
-        return configService.getAllTiers().stream()
-            .map(TierDefinition::getId)
-            .filter(id -> id.toLowerCase().startsWith(prefix.toLowerCase()))
-            .sorted(String::compareToIgnoreCase)
-            .collect(Collectors.toList());
+        return filterPrefix(tierRepository.allAscending().stream().map(TierDefinition::getId)
+            .collect(Collectors.toList()), prefix);
     }
 
     private List<String> filterPrefixStationIds(String prefix) {
-        return stationService.listStations().stream()
-            .map(s -> s.id)
-            .filter(id -> id.toLowerCase().startsWith(prefix.toLowerCase()))
-            .sorted(String::compareToIgnoreCase)
-            .collect(Collectors.toList());
+        return suggestionIndex.getStationIdSuggestions(prefix);
     }
 
     private List<String> filterPrefixMaterial(String prefix) {
-        return materialResolver.getAliases().keySet().stream()
-            .filter(name -> name.toLowerCase().startsWith(prefix.toLowerCase()))
-            .sorted(String::compareToIgnoreCase)
-            .collect(Collectors.toList());
+        return filterPrefix(new ArrayList<>(materialResolver.getAliases().keySet()), prefix);
     }
 
-    private List<String> getOnlinePlayerNames() {
-        return Bukkit.getOnlinePlayers().stream()
-            .map(Player::getName)
-            .sorted(String::compareToIgnoreCase)
-            .collect(Collectors.toList());
+    private List<String> filterPrefix(List<String> values, String prefix) {
+        String lowerPrefix = prefix == null ? "" : prefix.toLowerCase(Locale.ROOT);
+        Map<String, String> matches = new LinkedHashMap<>();
+        for (String value : values) {
+            if (value != null && value.toLowerCase(Locale.ROOT).startsWith(lowerPrefix)) {
+                matches.put(value.toLowerCase(Locale.ROOT), value);
+            }
+        }
+        List<String> result = new ArrayList<>(matches.values());
+        Collections.sort(result, String::compareToIgnoreCase);
+        return result;
     }
 
-    private void send(CommandSender sender, Component component) {
-        text.send(sender, component);
+    private List<String> tabCompleteStation(CommandSender sender, String[] args, String prefix) {
+        if (!hasAnyStationPermission(sender)) {
+            return Collections.emptyList();
+        }
+        if (args.length == 2) {
+            return suggestionIndex.getStationSubSuggestions(sender, prefix);
+        }
+        String stationCommand = args[1].toLowerCase(Locale.ROOT);
+        if ("add".equals(stationCommand) && permitted(sender, "flameforge.command.station.add")) {
+            return suggestionIndex.getStationAddSuggestions(args, prefix);
+        }
+        if (("remove".equals(stationCommand) && permitted(sender, "flameforge.command.station.remove"))
+            || ("info".equals(stationCommand) && permitted(sender, "flameforge.command.station.info"))
+            || ("teleport".equals(stationCommand) && permitted(sender, "flameforge.command.station.teleport"))) {
+            return args.length == 3 ? filterPrefixStationIds(prefix) : Collections.emptyList();
+        }
+        return Collections.emptyList();
     }
 
-    private static final class CommandEntry {
-        final String usage;
-        final String description;
+    private List<String> tabCompleteSetup(CommandSender sender, String[] args, String prefix) {
+        if (!permitted(sender, "flameforge.command.setup.tier")) {
+            return Collections.emptyList();
+        }
+        if (args.length == 2) {
+            return catalogSuggestions(sender, "setup", 1, prefix);
+        }
+        if (!"tier".equalsIgnoreCase(args[1])) {
+            return Collections.emptyList();
+        }
+        if (args.length == 3) {
+            return catalogSuggestions(sender, "setup", 2, prefix);
+        }
+        String tierCommand = args[2].toLowerCase(Locale.ROOT);
+        if ("create".equals(tierCommand)) {
+            if (args.length == 4) {
+                return filterPrefix(Collections.singletonList("<id>"), prefix);
+            }
+            if (args.length == 5) {
+                return filterPrefix(Collections.singletonList("<priority>"), prefix);
+            }
+        }
+        if ("clone".equals(tierCommand)) {
+            if (args.length == 4) {
+                return filterPrefixTierIds(prefix);
+            }
+            if (args.length == 5) {
+                return filterPrefix(Collections.singletonList("<id>"), prefix);
+            }
+            if (args.length == 6) {
+                return filterPrefix(Collections.singletonList("<priority>"), prefix);
+            }
+        }
+        return Collections.emptyList();
+    }
 
-        CommandEntry(String usage, String description) {
-            this.usage = usage;
-            this.description = description;
+    private List<String> catalogSuggestions(CommandSender sender, String root, int part, String prefix) {
+        Map<String, String> suggestions = new LinkedHashMap<>();
+        for (CommandNode node : CommandNode.values()) {
+            if (!node.isPermitted(sender) || !node.getRoot().equalsIgnoreCase(root)) {
+                continue;
+            }
+            String[] parts = node.getSuggestion().split(" ");
+            if (parts.length > part) {
+                String suggestion = parts[part];
+                suggestions.put(suggestion.toLowerCase(Locale.ROOT), suggestion);
+            }
+        }
+        return filterPrefix(new ArrayList<>(suggestions.values()), prefix);
+    }
+
+    private boolean hasAnyStationPermission(CommandSender sender) {
+        return permitted(sender, "flameforge.command.station.add")
+            || permitted(sender, "flameforge.command.station.remove")
+            || permitted(sender, "flameforge.command.station.list")
+            || permitted(sender, "flameforge.command.station.info")
+            || permitted(sender, "flameforge.command.station.teleport");
+    }
+
+    private boolean permitted(CommandSender sender, String permission) {
+        return sender.hasPermission(CommandNode.ADMIN_PERMISSION) || sender.hasPermission(permission);
+    }
+
+    private void send(CommandSender sender, String key) {
+        messageService.send(sender, key);
+    }
+
+    private void send(CommandSender sender, String key, MessageArguments arguments) {
+        messageService.send(sender, key, arguments);
+    }
+
+    private MessageArguments messageArguments(String... values) {
+        MessageArguments arguments = MessageArguments.create();
+        for (int i = 0; i + 1 < values.length; i += 2) {
+            arguments.string(values[i], values[i + 1]);
+        }
+        return arguments;
+    }
+
+    private void runOnSenderScheduler(CommandSender sender, Runnable callback) {
+        if (sender instanceof Player) {
+            scheduler.runEntity((Player) sender, callback, () -> {});
+        } else {
+            scheduler.runGlobal(plugin, callback);
         }
     }
+
 }

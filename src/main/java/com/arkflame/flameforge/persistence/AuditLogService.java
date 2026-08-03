@@ -13,21 +13,44 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public final class AuditLogService implements AutoCloseable {
+
+    private enum RecordKind {
+        LOG, FLUSH, CLOSE
+    }
+
+    private static final class AuditRecord {
+        private final RecordKind kind;
+        private final String action;
+        private final String actor;
+        private final String target;
+        private final String details;
+        private final CompletableFuture<Void> acknowledgement;
+
+        private AuditRecord(RecordKind kind, String action, String actor, String target, String details,
+                            CompletableFuture<Void> acknowledgement) {
+            this.kind = kind;
+            this.action = action;
+            this.actor = actor;
+            this.target = target;
+            this.details = details;
+            this.acknowledgement = acknowledgement;
+        }
+    }
+
     private final JavaPlugin plugin;
     private final SchedulerBridge scheduler;
     private final Path auditFolder;
-    private final BlockingQueue<String> queue;
-    private final AtomicBoolean dropsLogged = new AtomicBoolean(false);
+    private final BlockingQueue<AuditRecord> queue;
+    private final Object queueLock = new Object();
+    private final AtomicBoolean queueFullWarningLogged = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final TaskHandle writerTask;
-    private final CountDownLatch writerLatch = new CountDownLatch(1);
-    private final AtomicInteger droppedCount = new AtomicInteger(0);
+    private CompletableFuture<Void> closeFuture;
 
     public AuditLogService(JavaPlugin plugin, SchedulerBridge scheduler, Path dataFolder, int queueCapacity) {
         this.plugin = Objects.requireNonNull(plugin);
@@ -42,11 +65,23 @@ public final class AuditLogService implements AutoCloseable {
         BufferedWriter writer = null;
         Path currentFile = null;
         try {
-            while (!Thread.currentThread().isInterrupted() && !closed.get()) {
-                String entry = queue.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS);
-                if (entry == null) {
+            while (!Thread.currentThread().isInterrupted()) {
+                AuditRecord record = queue.poll(500, java.util.concurrent.TimeUnit.MILLISECONDS);
+                if (record == null) {
                     continue;
                 }
+
+                if (record.kind == RecordKind.CLOSE) {
+                    acknowledgeClose(record, writer);
+                    break;
+                }
+
+                if (record.kind == RecordKind.FLUSH) {
+                    acknowledgeFlush(record, writer);
+                    continue;
+                }
+
+                String entry = buildEntry(record.action, record.actor, record.target, record.details);
                 Path todayFile = auditFolder.resolve(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) + ".jsonl");
                 if (!todayFile.equals(currentFile)) {
                     if (writer != null) {
@@ -77,20 +112,20 @@ public final class AuditLogService implements AutoCloseable {
             if (writer != null) {
                 try { writer.close(); } catch (IOException ignored) {}
             }
-            writerLatch.countDown();
         }
     }
 
-    public void logAsync(String action, String actor, String target, String details) {
-        if (closed.get()) {
-            return;
-        }
-        String entry = buildEntry(action, actor, target, details);
-        if (!queue.offer(entry)) {
-            int dropped = droppedCount.incrementAndGet();
-            if (dropsLogged.compareAndSet(false, true)) {
-                plugin.getLogger().warning("Audit queue full, dropping entries. First drop at: " + dropped);
+    public boolean logAsync(String action, String actor, String target, String details) {
+        AuditRecord record = new AuditRecord(RecordKind.LOG, action, actor, target, details, null);
+        synchronized (queueLock) {
+            if (closed.get()) {
+                return false;
             }
+            if (!queue.offer(record)) {
+                warnQueueFull();
+                return false;
+            }
+            return true;
         }
     }
 
@@ -130,23 +165,77 @@ public final class AuditLogService implements AutoCloseable {
         return "\"" + sb.toString() + "\"";
     }
 
-    public void flush() {
-        try {
-            queue.put("__FLUSH__");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+    public CompletableFuture<Void> flushAsync() {
+        CompletableFuture<Void> acknowledgement = new CompletableFuture<>();
+        synchronized (queueLock) {
+            if (closed.get()) {
+                return failedFuture(new IllegalStateException("Audit log service is closed"));
+            }
+            if (!queue.offer(new AuditRecord(RecordKind.FLUSH, null, null, null, null, acknowledgement))) {
+                warnQueueFull();
+                acknowledgement.completeExceptionally(new IllegalStateException("Audit queue is full"));
+            }
         }
+        return acknowledgement;
+    }
+
+    public void flush() {
+        flushAsync();
     }
 
     @Override
     public void close() {
-        if (closed.compareAndSet(false, true)) {
-            flush();
-            try {
-                writerLatch.await(5, java.util.concurrent.TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        closeAsync();
+    }
+
+    public CompletableFuture<Void> closeAsync() {
+        synchronized (queueLock) {
+            if (closeFuture != null) {
+                return closeFuture;
             }
+
+            closeFuture = new CompletableFuture<>();
+            closed.set(true);
+            if (!queue.offer(new AuditRecord(RecordKind.CLOSE, null, null, null, null, closeFuture))) {
+                warnQueueFull();
+                closeFuture.completeExceptionally(new IllegalStateException("Audit queue is full"));
+            }
+            return closeFuture;
         }
+    }
+
+    private void acknowledgeFlush(AuditRecord record, BufferedWriter writer) {
+        try {
+            if (writer != null) {
+                writer.flush();
+            }
+            record.acknowledgement.complete(null);
+        } catch (IOException e) {
+            record.acknowledgement.completeExceptionally(e);
+        }
+    }
+
+    private void acknowledgeClose(AuditRecord record, BufferedWriter writer) {
+        try {
+            if (writer != null) {
+                writer.flush();
+                writer.close();
+            }
+            record.acknowledgement.complete(null);
+        } catch (IOException e) {
+            record.acknowledgement.completeExceptionally(e);
+        }
+    }
+
+    private void warnQueueFull() {
+        if (queueFullWarningLogged.compareAndSet(false, true)) {
+            plugin.getLogger().warning("Audit queue full; dropping audit record.");
+        }
+    }
+
+    private CompletableFuture<Void> failedFuture(Throwable failure) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        future.completeExceptionally(failure);
+        return future;
     }
 }

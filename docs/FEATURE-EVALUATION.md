@@ -1,23 +1,32 @@
 # FlameForge Feature Evaluation
 
-This document contains the complete 100-candidate feature evaluation dataset and the rationale for the ten selected features in FlameForge v1.0.0.
+This document contains the complete 100-candidate feature evaluation dataset and the rationale for the selected features in FlameForge v1.0.0.
 
 ## Selected Features
 
-The following ten features were selected for implementation based on their scores and alignment with the core forge/reforge use case:
+The following features were selected for implementation based on their scores and alignment with the core forge/reforge use case:
 
 | ID     | Feature                               | Class     | Score | Decision    |
 |--------|---------------------------------------|-----------|-------|-------------|
 | F001   | Registered forge stations             | ELIGIBLE  | 96    | SELECTED    |
 | F002   | Station profiles and visual themes    | ELIGIBLE  | 91    | SELECTED    |
-| F003   | Catalyst items modifying weights      | ELIGIBLE  | 95    | SELECTED    |
-| F004   | Break-protection wards                | ELIGIBLE  | 94    | SELECTED    |
-| F005   | Per-tier pity system                  | ELIGIBLE  | 93    | SELECTED    |
-| F006   | Reforge provenance/history           | ELIGIBLE  | 92    | SELECTED    |
 | F007   | Per-tier cooldowns                    | ELIGIBLE  | 90    | SELECTED    |
 | F008   | Exact preview/simulation              | ELIGIBLE  | 89    | SELECTED    |
 | F009   | Jackpot announcements                 | ELIGIBLE  | 88    | SELECTED    |
 | F010   | Audit transaction ledger              | ELIGIBLE  | 87    | SELECTED    |
+
+## Removed Outcome Types
+
+The following outcome types have been removed from the implementation:
+
+| Type              | Reason |
+|-------------------|--------|
+| `CREATE_ITEM`     | Removed — same-material variants replace this |
+| `COMMANDS`        | Removed — generic command hook sufficient |
+| `RETURN_UNCHANGED` | Removed — BREAK with 0 weight replaces this |
+| `catalyst`        | Removed — tier requirements replace this |
+| `ward`            | Removed — CURSE type replaces this |
+| `pity`            | Removed — no UI in new menu flow |
 
 ## Selection Rationale
 
@@ -25,15 +34,7 @@ The following ten features were selected for implementation based on their score
 
 **F002 — Station profiles and visual themes (91):** Enables tier access control and per-station customization. Station profiles allow server operators to create gated forge areas.
 
-**F003 — Catalyst items modifying weights (95):** High-impact player engagement feature. Catalysts give players agency to improve their odds, creating meaningful choices.
-
-**F004 — Break-protection wards (94):** Protective mechanic reduces frustration. Players invest in wards to safeguard valuable items, creating an economy within the forge system.
-
-**F005 — Per-tier pity system (93):** Player retention mechanism. Guaranteed eventual success prevents indefinite bad-luck streaks and keeps the forge feeling rewarding.
-
-**F006 — Reforge provenance/history (92):** Accountability and transparency. History tracking enables anti-dupe verification and player satisfaction tracking.
-
-**F007 — Per-tier cooldowns (88):** Pace control. Cooldowns prevent abuse and encourage players to use multiple stations or return later.
+**F007 — Per-tier cooldowns (90):** Pace control. Cooldowns prevent abuse and encourage players to use multiple stations or return later.
 
 **F008 — Exact preview/simulation (89):** Informed decision-making. Players should know what they are risking before committing resources.
 
@@ -47,10 +48,10 @@ The following ten features were selected for implementation based on their score
 |--------|---------------------------------------|-----------|-------|-----------------------------|
 | F001   | Registered forge stations             | ELIGIBLE  | 96    | SELECTED                    |
 | F002   | Station profiles and visual themes    | ELIGIBLE  | 91    | SELECTED                    |
-| F003   | Catalyst items modifying weights      | ELIGIBLE  | 95    | SELECTED                    |
-| F004   | Break-protection wards                | ELIGIBLE  | 94    | SELECTED                    |
-| F005   | Per-tier pity system                  | ELIGIBLE  | 93    | SELECTED                    |
-| F006   | Reforge provenance/history           | ELIGIBLE  | 92    | SELECTED                    |
+| F003   | Catalyst items modifying weights      | REMOVED   | 95    | REMOVED                     |
+| F004   | Break-protection wards                | REMOVED   | 94    | REMOVED                     |
+| F005   | Per-tier pity system                  | REMOVED   | 93    | REMOVED                     |
+| F006   | Reforge provenance/history           | REMOVED   | 92    | REMOVED                     |
 | F007   | Per-tier cooldowns                    | ELIGIBLE  | 90    | SELECTED                    |
 | F008   | Exact preview/simulation              | ELIGIBLE  | 89    | SELECTED                    |
 | F009   | Jackpot announcements                 | ELIGIBLE  | 88    | SELECTED                    |
@@ -103,7 +104,7 @@ The following ten features were selected for implementation based on their score
 | F056   | EcoItems reward hook                 | ELIGIBLE  | 60    | DEFERRED; generic commands cover |
 | F057   | ExecutableItems reward hook          | ELIGIBLE  | 58    | DEFERRED; generic commands cover |
 | F058   | Generic required-plugin command hooks | CORE      | 85    | INCLUDED CORE               |
-| F059   | Direct SMPWeapons API hook           | ELIGIBLE  | 72    | REJECTED; command hook requested |
+| F059   | Direct SMPWeapons API hook           | REMOVED   | 72    | REMOVED                     |
 | F060   | Vault money costs                    | CORE      | 90    | INCLUDED CORE               |
 | F061   | PlayerPoints costs                   | ELIGIBLE  | 55    | DEFERRED; generic command insufficient for atomic costs |
 | F062   | TokenManager costs                   | ELIGIBLE  | 50    | DEFERRED                    |
@@ -127,18 +128,18 @@ The following ten features were selected for implementation based on their score
 | F080   | Random rotating tier availability      | ELIGIBLE  | 50    | DEFERRED                    |
 | F081   | Seasonal outcome pools                | ELIGIBLE  | 66    | DEFERRED                    |
 | F082   | Weighted rarity pools                 | CORE      | 85    | INCLUDED CORE               |
-| F083   | Guaranteed outcome after N failures   | ELIGIBLE  | 86    | DEFERRED; bounded pity selected instead |
+| F083   | Guaranteed outcome after N failures   | ELIGIBLE  | 86    | DEFERRED                    |
 | F084   | Downgrade outcomes                    | CORE      | 75    | SUPPORTED by mutation config |
-| F085   | No-change outcomes                    | CORE      | 70    | INCLUDED CORE               |
-| F086   | Durability-damage outcomes            | CORE      | 76    | SUPPORTED by mutation extension if configured |
+| F085   | No-change outcomes                    | REMOVED   | 70    | REMOVED; BREAK with 0 weight |
+| F086   | Durability-damage outcomes            | CORE      | 76    | SUPPORTED by CURSE DECAY       |
 | F087   | Repair outcomes                       | CORE      | 78    | SUPPORTED by mutation extension if configured |
-| F088   | Material transmutation outcomes       | CORE      | 82    | SUPPORTED by CREATE_ITEM    |
+| F088   | Material transmutation outcomes       | REMOVED   | 82    | REMOVED; same-material variants |
 | F089   | Socket system                         | ELIGIBLE  | 60    | DEFERRED                    |
 | F090   | Gem insertion system                  | ELIGIBLE  | 64    | DEFERRED                    |
 | F091   | Item-set bonuses                      | ELIGIBLE  | 55    | DEFERRED                    |
 | F092   | Custom attributes                     | CORE      | 88    | INCLUDED CORE capability-gated |
 | F093   | High/custom enchant levels            | CORE      | 87    | INCLUDED CORE               |
-| F094   | Curse outcomes                        | CORE      | 86    | INCLUDED CORE               |
+| F094   | Curse outcomes                        | CORE      | 86    | INCLUDED CORE (CURSE type) |
 | F095   | Item binding                          | ELIGIBLE  | 40    | DEFERRED                    |
 | F096   | Soulbound result                      | ELIGIBLE  | 50    | DEFERRED                    |
 | F097   | Trade restrictions                    | ELIGIBLE  | 35    | REJECTED scope              |
@@ -152,16 +153,18 @@ The following ten features were selected for implementation based on their score
 |-----------|-----------------------------------------------------------|
 | CORE      | Essential infrastructure without which the plugin cannot function meaningfully |
 | ELIGIBLE  | Candidate feature that is not essential but would add significant value     |
+| REMOVED   | Previously considered or implemented but removed in current version |
 | REJECTED  | Considered but rejected; reasons vary (scope, security, complexity, risk)  |
 
 ## Decision Categories
 
 | Decision                        | Count | Notes                                           |
 |---------------------------------|-------|-------------------------------------------------|
-| SELECTED                        | 10    | Implemented in v1.0.0                          |
+| SELECTED                        | 6     | Implemented in v1.0.0                          |
 | INCLUDED CORE                  | 15    | Already part of core infrastructure              |
-| SUPPORTED                      | 5     | Available via configuration extension             |
+| SUPPORTED                      | 4     | Available via configuration extension             |
+| REMOVED                        | 7     | Removed in current version                      |
 | DEFERRED                       | 40    | Not in v1.0.0; may appear in future releases    |
-| REJECTED                       | 12    | Explicitly rejected with stated reasons          |
+| REJECTED                       | 10    | Explicitly rejected with stated reasons          |
 
-**Total:** 100 candidates across 4 classes with 5 decision outcomes.
+**Total:** 100 candidates across 5 classes with 6 decision outcomes.

@@ -18,4 +18,17 @@ public final class ThreadLocalRandomSource implements RandomSource {
         }
         return ThreadLocalRandom.current().nextLong(bound);
     }
+
+    @Override
+    public double nextDouble() {
+        return ThreadLocalRandom.current().nextDouble();
+    }
+
+    @Override
+    public double nextDouble(double bound) {
+        if (bound <= 0) {
+            throw new IllegalArgumentException("bound must be positive");
+        }
+        return ThreadLocalRandom.current().nextDouble(bound);
+    }
 }

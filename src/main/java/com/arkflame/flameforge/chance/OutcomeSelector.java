@@ -1,6 +1,8 @@
 package com.arkflame.flameforge.chance;
 
-import com.arkflame.flameforge.model.OutcomeDefinition;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
+import com.arkflame.flameforge.model.TierChances;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -13,7 +15,51 @@ public final class OutcomeSelector {
         this.randomSource = Objects.requireNonNull(randomSource);
     }
 
-    public ChanceTable buildChanceTable(List<OutcomeDefinition> outcomes) {
+    public ForgeOutcomeCategory rollCategory(TierChances chances) {
+        if (chances == null) {
+            throw new IllegalArgumentException("chances cannot be null");
+        }
+        double total = chances.getSuccessPercent() + chances.getBreakPercent() + chances.getCursePercent();
+        if (total <= 0) {
+            return ForgeOutcomeCategory.BREAK;
+        }
+        double roll = randomSource.nextDouble() * total;
+        double successThreshold = chances.getSuccessPercent();
+        double breakThreshold = successThreshold + chances.getBreakPercent();
+        if (roll < successThreshold) {
+            return ForgeOutcomeCategory.SUCCESS;
+        } else if (roll < breakThreshold) {
+            return ForgeOutcomeCategory.BREAK;
+        } else {
+            return ForgeOutcomeCategory.CURSE;
+        }
+    }
+
+    public ForgeVariant selectVariant(List<ForgeVariant> variants) {
+        if (variants == null || variants.isEmpty()) {
+            return null;
+        }
+        int n = variants.size();
+        double totalWeight = 0;
+        double[] cumulativeWeights = new double[n];
+        for (int i = 0; i < n; i++) {
+            double w = variants.get(i).getWeight();
+            totalWeight += w;
+            cumulativeWeights[i] = totalWeight;
+        }
+        if (totalWeight <= 0) {
+            return variants.get(0);
+        }
+        double roll = randomSource.nextDouble() * totalWeight;
+        for (int i = 0; i < n; i++) {
+            if (roll < cumulativeWeights[i]) {
+                return variants.get(i);
+            }
+        }
+        return variants.get(n - 1);
+    }
+
+    public ChanceTable buildChanceTable(List<ChanceEntry> outcomes) {
         if (outcomes == null || outcomes.isEmpty()) {
             throw new IllegalArgumentException("outcomes cannot be null or empty");
         }
@@ -24,80 +70,12 @@ public final class OutcomeSelector {
         int[] orders = new int[n];
 
         for (int i = 0; i < n; i++) {
-            OutcomeDefinition outcome = outcomes.get(i);
+            ChanceEntry outcome = outcomes.get(i);
             weights[i] = outcome.getWeight();
-            ids[i] = outcome.getId();
-            orders[i] = outcome.getDisplayOrder();
+            ids[i] = outcome.getOutcomeId();
+            orders[i] = outcome.getYamlOrder();
         }
 
         return ChanceTable.from(weights, ids, orders);
-    }
-
-    public OutcomeDefinition select(List<OutcomeDefinition> outcomes, MaterialFilter materialFilter,
-                                    PluginFilter pluginFilter, CapabilityFilter capabilityFilter,
-                                    PlayerFilter playerFilter, CatalystFilter catalystFilter,
-                                    WardFilter wardFilter) {
-        if (outcomes == null || outcomes.isEmpty()) {
-            throw new IllegalArgumentException("outcomes cannot be null or empty");
-        }
-
-        List<OutcomeDefinition> filtered = filterOutcomes(outcomes, materialFilter,
-            pluginFilter, capabilityFilter, playerFilter, catalystFilter, wardFilter);
-
-        if (filtered.isEmpty()) {
-            throw new IllegalStateException("No outcomes passed filters");
-        }
-
-        ChanceTable table = buildChanceTable(filtered);
-        long randomValue = randomSource.nextLong(table.getTotalMicroWeight());
-        ChanceEntry selected = table.select(randomValue);
-
-        for (OutcomeDefinition outcome : filtered) {
-            if (outcome.getId().equals(selected.getOutcomeId())) {
-                return outcome;
-            }
-        }
-        throw new IllegalStateException("Selected outcome not found");
-    }
-
-    private List<OutcomeDefinition> filterOutcomes(List<OutcomeDefinition> outcomes,
-                                                    MaterialFilter materialFilter,
-                                                    PluginFilter pluginFilter,
-                                                    CapabilityFilter capabilityFilter,
-                                                    PlayerFilter playerFilter,
-                                                    CatalystFilter catalystFilter,
-                                                    WardFilter wardFilter) {
-        return outcomes.stream()
-            .filter(o -> materialFilter == null || materialFilter.test(o))
-            .filter(o -> pluginFilter == null || pluginFilter.test(o))
-            .filter(o -> capabilityFilter == null || capabilityFilter.test(o))
-            .filter(o -> playerFilter == null || playerFilter.test(o))
-            .filter(o -> catalystFilter == null || catalystFilter.test(o))
-            .filter(o -> wardFilter == null || wardFilter.test(o))
-            .collect(java.util.stream.Collectors.toList());
-    }
-
-    public interface MaterialFilter {
-        boolean test(OutcomeDefinition outcome);
-    }
-
-    public interface PluginFilter {
-        boolean test(OutcomeDefinition outcome);
-    }
-
-    public interface CapabilityFilter {
-        boolean test(OutcomeDefinition outcome);
-    }
-
-    public interface PlayerFilter {
-        boolean test(OutcomeDefinition outcome);
-    }
-
-    public interface CatalystFilter {
-        boolean test(OutcomeDefinition outcome);
-    }
-
-    public interface WardFilter {
-        boolean test(OutcomeDefinition outcome);
     }
 }

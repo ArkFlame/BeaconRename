@@ -5,7 +5,6 @@ import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -15,10 +14,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 
 public final class SoundResolver {
+    private static final int MAX_CACHE_ENTRIES = 256;
     private static final SoundResolver INSTANCE = new SoundResolver();
-    private static final Map<String, Sound> ALIASES = new ConcurrentHashMap<>();
+    private static final Map<String, String[]> ALIASES = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> SOUND_GROUPS = new ConcurrentHashMap<>();
-    private static final Set<String> LOGGED_MISSING = Collections.synchronizedSet(new HashSet<>());
+    private static final Set<String> LOGGED_MISSING = new HashSet<>();
+    private static final Map<String, Object> CACHE = new ConcurrentHashMap<>(MAX_CACHE_ENTRIES);
+    private static final Object NOT_FOUND = new Object();
     private static Logger pluginLogger;
 
     static {
@@ -36,24 +38,22 @@ public final class SoundResolver {
                 "ui.button.click", "entity.slime.squish",
                 "entity.bat.takeoff", "entity.arrow.hit_player")));
 
-        ALIASES.put("level_up", Sound.LEVEL_UP);
-        ALIASES.put("anvil_use", Sound.ANVIL_USE);
-        ALIASES.put("anvil_break", Sound.ANVIL_BREAK);
-        ALIASES.put("anvil_land", Sound.ANVIL_LAND);
-        ALIASES.put("villager_no", Sound.VILLAGER_NO);
-        ALIASES.put("villager_yes", Sound.VILLAGER_YES);
-        ALIASES.put("item_break", Sound.ITEM_BREAK);
-        ALIASES.put("item_pickup", Sound.ITEM_PICKUP);
-        ALIASES.put("click", Sound.CLICK);
-        ALIASES.put("bow_hit", Sound.ARROW_HIT);
-        ALIASES.put("explode", Sound.EXPLODE);
-        ALIASES.put("fire_work", Sound.FIREWORK_LAUNCH);
-        ALIASES.put("enderpearl", Sound.ENDERMAN_TELEPORT);
-        ALIASES.put("chest_open", Sound.CHEST_OPEN);
-        ALIASES.put("chest_close", Sound.CHEST_CLOSE);
-        ALIASES.put("click_1", Sound.valueOf("WOOD_CLICK"));
-        ALIASES.put("click_2", Sound.valueOf("CLICK"));
-        ALIASES.put("stone_click", Sound.valueOf("STEP_STONE"));
+        ALIASES.put("level_up", new String[]{"ENTITY_PLAYER_LEVELUP", "LEVEL_UP"});
+        ALIASES.put("anvil_use", new String[]{"BLOCK_ANVIL_USE", "ANVIL_USE"});
+        ALIASES.put("anvil_break", new String[]{"BLOCK_ANVIL_BREAK", "ANVIL_BREAK"});
+        ALIASES.put("anvil_land", new String[]{"BLOCK_ANVIL_LAND", "ANVIL_LAND"});
+        ALIASES.put("villager_no", new String[]{"ENTITY_VILLAGER_NO", "VILLAGER_NO"});
+        ALIASES.put("villager_yes", new String[]{"ENTITY_VILLAGER_YES", "VILLAGER_YES"});
+        ALIASES.put("item_break", new String[]{"ENTITY_ITEM_BREAK", "ITEM_BREAK"});
+        ALIASES.put("item_pickup", new String[]{"ENTITY_ITEM_PICKUP", "ITEM_PICKUP"});
+        ALIASES.put("click", new String[]{"UI_BUTTON_CLICK", "CLICK", "WOOD_CLICK"});
+        ALIASES.put("bow_hit", new String[]{"ENTITY_ARROW_HIT", "ARROW_HIT"});
+        ALIASES.put("explode", new String[]{"ENTITY_GENERIC_EXPLODE", "EXPLODE"});
+        ALIASES.put("fire_work", new String[]{"ENTITY_FIREWORK_LAUNCH", "FIREWORK_LAUNCH"});
+        ALIASES.put("enderpearl", new String[]{"ENTITY_ENDERMAN_TELEPORT", "ENDERMAN_TELEPORT"});
+        ALIASES.put("chest_open", new String[]{"BLOCK_CHEST_OPEN", "CHEST_OPEN"});
+        ALIASES.put("chest_close", new String[]{"BLOCK_CHEST_CLOSE", "CHEST_CLOSE"});
+        ALIASES.put("pickup", new String[]{"ENTITY_ITEM_PICKUP", "ITEM_PICKUP"});
     }
 
     private SoundResolver() {
@@ -67,18 +67,66 @@ public final class SoundResolver {
         return INSTANCE;
     }
 
-    public Optional<Sound> resolve(final String key) {
-        if (key == null || key.isEmpty()) {
+    public Optional<Sound> resolve(String... candidates) {
+        if (candidates == null || candidates.length == 0) {
             return Optional.empty();
         }
-        final String normalized = key.toLowerCase().replace(" ", "_");
-        if (ALIASES.containsKey(normalized)) {
-            return Optional.of(ALIASES.get(normalized));
+        for (String candidate : candidates) {
+            if (candidate == null || candidate.isEmpty()) {
+                continue;
+            }
+            Object cached = CACHE.get(candidate);
+            if (cached == NOT_FOUND) {
+                continue;
+            }
+            if (cached instanceof Sound) {
+                return Optional.of((Sound) cached);
+            }
+            Sound sound = resolveSingle(candidate);
+            if (sound != null) {
+                putInCache(candidate, sound);
+                return Optional.of(sound);
+            }
+            putInCache(candidate, NOT_FOUND);
         }
+        return Optional.empty();
+    }
+
+    private void putInCache(String key, Object value) {
+        if (CACHE.size() >= MAX_CACHE_ENTRIES && !CACHE.containsKey(key)) {
+            evictOneEntry();
+        }
+        CACHE.put(key, value);
+    }
+
+    private void evictOneEntry() {
+        for (Map.Entry<String, Object> entry : CACHE.entrySet()) {
+            if (entry.getValue() != NOT_FOUND) {
+                CACHE.remove(entry.getKey());
+                break;
+            }
+        }
+    }
+
+    private Sound resolveSingle(String key) {
+        String normalized = key.toLowerCase().replace(" ", "_");
+        String[] aliasCandidates = ALIASES.get(normalized);
+        if (aliasCandidates != null) {
+            for (String candidate : aliasCandidates) {
+                Sound sound = tryParseSound(candidate);
+                if (sound != null) {
+                    return sound;
+                }
+            }
+        }
+        return tryParseSound(key);
+    }
+
+    private Sound tryParseSound(String name) {
         try {
-            return Optional.of(Sound.valueOf(normalized.toUpperCase()));
+            return Sound.valueOf(name.toUpperCase());
         } catch (IllegalArgumentException e) {
-            return Optional.empty();
+            return null;
         }
     }
 
@@ -119,7 +167,6 @@ public final class SoundResolver {
             try {
                 player.playSound(player.getLocation(), sound, volume, pitch);
             } catch (Exception e) {
-                // cosmetic sound, no-op
             }
         });
     }
@@ -129,7 +176,6 @@ public final class SoundResolver {
             try {
                 player.playEffect(effect);
             } catch (Exception e) {
-                // no-op for cosmetic entity effects
             }
         }
     }
@@ -143,9 +189,9 @@ public final class SoundResolver {
     public List<String> getGroup(final String groupName) {
         final Set<String> group = SOUND_GROUPS.get(groupName.toLowerCase());
         if (group == null) {
-            return Collections.emptyList();
+            return java.util.Collections.emptyList();
         }
-        return Collections.unmodifiableList(new java.util.ArrayList<>(group));
+        return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(group));
     }
 
     public boolean hasGroup(final String groupName) {
@@ -155,9 +201,13 @@ public final class SoundResolver {
     public Map<String, Set<String>> getSoundGroups() {
         final Map<String, Set<String>> copy = new HashMap<>();
         for (final Map.Entry<String, Set<String>> entry : SOUND_GROUPS.entrySet()) {
-            copy.put(entry.getKey(), Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
+            copy.put(entry.getKey(), java.util.Collections.unmodifiableSet(new HashSet<>(entry.getValue())));
         }
-        return Collections.unmodifiableMap(copy);
+        return java.util.Collections.unmodifiableMap(copy);
+    }
+
+    public void clearCache() {
+        CACHE.clear();
     }
 
     private static class Optional<T> {
@@ -165,6 +215,7 @@ public final class SoundResolver {
         private Optional(T value) { this.value = value; }
         static <T> Optional<T> of(T value) { return new Optional<>(value); }
         static <T> Optional<T> empty() { return new Optional<>(null); }
+        static <T> Optional<T> ofNullable(T value) { return new Optional<>(value); }
         T orElse(T defaultValue) { return value != null ? value : defaultValue; }
         T orElseThrow(java.util.function.Supplier<RuntimeException> ex) {
             if (value == null) throw ex.get();

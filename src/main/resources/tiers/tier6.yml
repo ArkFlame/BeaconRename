@@ -1,430 +1,152 @@
-schema-version: 1
+schema-version: 2
 id: tier6
-priority: 5
-display:
-  name: "&4&lTier VI"
-  material: NETHER_STAR
-  lore:
-    - "&4Legendary forging"
-    - "&7XP: &a75 &7or &6$10000.00"
+level: 6
 enabled: true
-cost:
-  mode: XP_OR_MONEY
-  xp: 75
-  money: 10000.00
-cooldown-seconds: 5
-pity:
-  enabled: false
-  threshold: 0
-  bonus-weight: "1.000000"
+display:
+  name: "<gradient:#ff7a18:#ffd166><bold>Tier 6</bold></gradient>"
+  lore:
+    - "<gray>Automatic upgrade target: <white>Tier 6"
+    - "<gray>The original item material is always retained."
+cooldown-seconds: 25
+input:
+  allowed-groups:
+    - ANY
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 100
+  money:
+    enabled: false
+    amount: 10000.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "65.0"
+  break: "20.0"
+  curse: "15.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>☠ This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
 animation:
-  success-duration: 40
-  fail-duration: 20
-outcomes:
-  curse_sword:
-    type: BREAK
-    weight: "6.250000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&4☠ Infernal Blade"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 30
-          max-level: 50
-  curse_axe:
-    type: BREAK
-    weight: "6.250000"
-    mutation:
-      material: DIAMOND_AXE
-      name: "&4☠ Infernal Axe"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 30
-          max-level: 50
-  curse_tool:
-    type: BREAK
-    weight: "6.250000"
-    mutation:
-      material: DIAMOND_PICKAXE
-      name: "&4☠ Infernal Pickaxe"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 30
-          max-level: 50
-  curse_armor:
-    type: BREAK
-    weight: "6.250000"
-    mutation:
-      material: DIAMOND_HELMET
-      name: "&4☠ Infernal Crown"
-      amount: 1
-      enchants:
-        unbreaking:
-          name: unbreaking
-          min-level: 30
-          max-level: 50
-  no_change:
-    type: RETURN_UNCHANGED
-    weight: "26.000000"
-  basic_sword:
-    type: MODIFY_INPUT
-    weight: "10.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&4Legendary Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 4
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 2
-          max-level: 2
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  basic_axe:
-    type: MODIFY_INPUT
-    weight: "8.000000"
-    mutation:
-      material: DIAMOND_AXE
-      name: "&4Legendary Axe"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 4
-          max-level: 5
-        efficiency:
-          name: efficiency
-          min-level: 5
-          max-level: 5
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  basic_tool:
-    type: MODIFY_INPUT
-    weight: "6.000000"
-    mutation:
-      material: DIAMOND_PICKAXE
-      name: "&4Legendary Pickaxe"
-      amount: 1
-      enchants:
-        efficiency:
-          name: efficiency
-          min-level: 5
-          max-level: 5
-        fortune:
-          name: fortune
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  basic_armor:
-    type: MODIFY_INPUT
-    weight: "5.000000"
-    mutation:
-      material: DIAMOND_CHESTPLATE
-      name: "&4Legendary Chestplate"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 4
-          max-level: 5
-        thorns:
-          name: thorns
-          min-level: 2
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  rare_sword:
-    type: MODIFY_INPUT
-    weight: "14.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&bMythic Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 5
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 2
-          max-level: 2
-        thorns:
-          name: thorns
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  rare_axe:
-    type: MODIFY_INPUT
-    weight: "12.000000"
-    mutation:
-      material: DIAMOND_AXE
-      name: "&bMythic Axe"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 5
-          max-level: 5
-        efficiency:
-          name: efficiency
-          min-level: 5
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 1
-          max-level: 1
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  rare_tool:
-    type: MODIFY_INPUT
-    weight: "10.000000"
-    mutation:
-      material: DIAMOND_PICKAXE
-      name: "&bMythic Pickaxe"
-      amount: 1
-      enchants:
-        efficiency:
-          name: efficiency
-          min-level: 5
-          max-level: 5
-        fortune:
-          name: fortune
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  rare_armor:
-    type: MODIFY_INPUT
-    weight: "10.000000"
-    mutation:
-      material: DIAMOND_LEGGINGS
-      name: "&bMythic Leggings"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 5
-          max-level: 5
-        thorns:
-          name: thorns
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 5
-          max-level: 5
-  epic_sword:
-    type: MODIFY_INPUT
-    weight: "10.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&5Arcane Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 5
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 2
-          max-level: 2
-        thorns:
-          name: thorns
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 10
-          max-level: 10
-  epic_axe:
-    type: MODIFY_INPUT
-    weight: "8.000000"
-    mutation:
-      material: DIAMOND_AXE
-      name: "&5Arcane Axe"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 5
-          max-level: 5
-        efficiency:
-          name: efficiency
-          min-level: 5
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        unbreaking:
-          name: unbreaking
-          min-level: 10
-          max-level: 10
-  epic_tool:
-    type: MODIFY_INPUT
-    weight: "6.000000"
-    mutation:
-      material: DIAMOND_PICKAXE
-      name: "&5Arcane Pickaxe"
-      amount: 1
-      enchants:
-        efficiency:
-          name: efficiency
-          min-level: 5
-          max-level: 5
-        fortune:
-          name: fortune
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 10
-          max-level: 10
-  epic_armor:
-    type: MODIFY_INPUT
-    weight: "6.000000"
-    mutation:
-      material: DIAMOND_CHESTPLATE
-      name: "&5Arcane Chestplate"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 5
-          max-level: 5
-        thorns:
-          name: thorns
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 10
-          max-level: 10
-  legendary_sword:
-    type: MODIFY_INPUT
-    weight: "1.000000"
-    mutation:
-      material: DIAMOND_SWORD
-      name: "&6&lCelestial Blade"
-      amount: 1
-      enchants:
-        sharpness:
-          name: sharpness
-          min-level: 5
-          max-level: 5
-        fire_aspect:
-          name: fire_aspect
-          min-level: 2
-          max-level: 2
-        knockback:
-          name: knockback
-          min-level: 2
-          max-level: 2
-        thorns:
-          name: thorns
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 20
-          max-level: 20
-  legendary_armor:
-    type: MODIFY_INPUT
-    weight: "1.000000"
-    mutation:
-      material: DIAMOND_BOOTS
-      name: "&6&lCelestial Boots"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 5
-          max-level: 5
-        feather_falling:
-          name: feather_falling
-          min-level: 4
-          max-level: 4
-        thorns:
-          name: thorns
-          min-level: 3
-          max-level: 3
-        unbreaking:
-          name: unbreaking
-          min-level: 20
-          max-level: 20
-  smpweapons_dash_sword:
-    type: COMMANDS
-    weight: "0.500000"
-    commands:
-      - "sm weapons give %player% dash_sword 1"
-  smpweapons_venom_sword:
-    type: COMMANDS
-    weight: "0.500000"
-    commands:
-      - "sm weapons give %player% venom_sword 1"
-  smpweapons_gravity_axe:
-    type: COMMANDS
-    weight: "0.500000"
-    commands:
-      - "sm weapons give %player% gravity_axe 1"
-  smpweapons_cobweb_axe:
-    type: COMMANDS
-    weight: "0.500000"
-    commands:
-      - "sm weapons give %player% cobweb_axe 1"
-  loot_legendary:
-    type: CREATE_ITEM
-    weight: "5.000000"
-    mutation:
-      material: DIAMOND_HELMET
-      name: "&6Legendary Forged Helmet"
-      amount: 1
-      enchants:
-        protection:
-          name: protection
-          min-level: 4
-          max-level: 4
-        thorns:
-          name: thorns
-          min-level: 2
-          max-level: 2
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - BLOCK
+      - BLOCK_CRACK
+      - TILE_BREAK
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  plaguebringer:
+    weight: "30.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#84cc16:#14532d><bold>Plaguebringer %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier VI forged variant"
+      - "<dark_gray>● <green>25% Poison II strike"
+      - "<dark_gray>● <white>60 tick cooldown"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: plague_hit
+        type: ON_HIT_POTION
+        cooldown-ticks: 60
+        chance: "0.25"
+        effect-candidates:
+          - POISON
+        duration-ticks: 80
+        amplifier: 1
+  executioner:
+    weight: "40.0"
+    applicable-groups:
+      - ANY
+    display-name: "<gradient:#fca5a5:#450a0a><bold>Executioner %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier VI forged variant"
+      - "<dark_gray>● <red>+4 raw attack damage"
+      - "<dark_gray>● <white>Original enchantments retained"
+    enchantments: []
+    attributes:
+      - id: executioner_damage
+        type: ATTACK_DAMAGE_FLAT
+        value: "4.0"
+    powers: []
+  restoration:
+    weight: "30.0"
+    applicable-groups:
+      - ANY
+    display-name: "<gradient:#f0abfc:#a21caf><bold>Restoration %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier VI forged variant"
+      - "<dark_gray>● <light_purple>Shift + right click to restore 6 health"
+      - "<dark_gray>● <white>160 tick cooldown"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: restoration_heal
+        type: SHIFT_RIGHT_CLICK_HEAL
+        cooldown-ticks: 160
+        heal-amount: "6.0"

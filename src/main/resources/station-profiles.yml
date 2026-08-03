@@ -1,0 +1,24 @@
+# FlameForge Station Profiles Configuration
+# Station profiles define behavior and permissions for forge stations
+# No tier definitions here - tiers are in the tiers/ directory
+
+# ============================================================
+# STATION PROFILES
+# ============================================================
+
+# Default profile - standard MMO forge experience
+default:
+  # Station identifier (can be same as profile id or custom)
+  station-id: default
+  # Maximum tier level accessible at stations with this profile (-1 = all tiers)
+  max-tier: -1
+  # Required permissions to use stations with this profile (empty = anyone)
+  permissions: []
+  # Menu profile to use
+  menu: default
+  # Animation profile to use
+  animation: default
+  # Announcement broadcast radius (0 = global, >0 = local)
+  announcement-radius: 0
+
+

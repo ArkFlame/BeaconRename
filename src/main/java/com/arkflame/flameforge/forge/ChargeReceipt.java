@@ -1,64 +1,64 @@
 package com.arkflame.flameforge.forge;
 
-import com.arkflame.flameforge.model.CostMode;
+import org.bukkit.inventory.ItemStack;
 
 import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ChargeReceipt {
 
     private final boolean success;
-    private final CostMode mode;
-    private final BigDecimal xpCharged;
+    private final int xpCharged;
     private final BigDecimal moneyCharged;
-    private final String failureReason;
+    private final List<RemovedItemStack> removedItems;
+    private final String failureReasonKey;
+    private final AtomicBoolean refunded;
 
-    private ChargeReceipt(boolean success, CostMode mode, BigDecimal xpCharged,
-                          BigDecimal moneyCharged, String failureReason) {
+    private ChargeReceipt(boolean success, int xpCharged, BigDecimal moneyCharged,
+                          List<RemovedItemStack> removedItems, String failureReasonKey) {
         this.success = success;
-        this.mode = mode;
-        this.xpCharged = xpCharged != null ? xpCharged : BigDecimal.ZERO;
+        this.xpCharged = xpCharged;
         this.moneyCharged = moneyCharged != null ? moneyCharged : BigDecimal.ZERO;
-        this.failureReason = failureReason;
+        this.removedItems = removedItems != null ? Collections.unmodifiableList(removedItems) : Collections.emptyList();
+        this.failureReasonKey = failureReasonKey;
+        this.refunded = new AtomicBoolean(false);
     }
 
-    public static ChargeReceipt success(CostMode mode, BigDecimal xpCharged, BigDecimal moneyCharged) {
-        return new ChargeReceipt(true, mode, xpCharged, moneyCharged, null);
+    public static ChargeReceipt success(int xpCharged, BigDecimal moneyCharged, List<RemovedItemStack> removedItems) {
+        return new ChargeReceipt(true, xpCharged, moneyCharged, removedItems, null);
     }
 
-    public static ChargeReceipt failure(CostMode mode, String reason) {
-        return new ChargeReceipt(false, mode, BigDecimal.ZERO, BigDecimal.ZERO, Objects.requireNonNull(reason));
+    public static ChargeReceipt failure(String reasonKey) {
+        return new ChargeReceipt(false, 0, BigDecimal.ZERO, Collections.emptyList(), Objects.requireNonNull(reasonKey));
     }
 
     public static ChargeReceipt zero() {
-        return new ChargeReceipt(true, CostMode.XP_ONLY, BigDecimal.ZERO, BigDecimal.ZERO, null);
+        return new ChargeReceipt(true, 0, BigDecimal.ZERO, Collections.emptyList(), null);
     }
 
-    public boolean isSuccess() {
-        return success;
-    }
+    public boolean isSuccess() { return success; }
+    public int getXpCharged() { return xpCharged; }
+    public BigDecimal getMoneyCharged() { return moneyCharged; }
+    public List<RemovedItemStack> getRemovedItems() { return removedItems; }
+    public String getFailureReasonKey() { return failureReasonKey; }
+    public String getFailureReason() { return failureReasonKey; }
+    public boolean isRefunded() { return refunded.get(); }
 
-    public CostMode getMode() {
-        return mode;
-    }
+    public void markRefunded() { refunded.set(true); }
 
-    public BigDecimal getXpCharged() {
-        return xpCharged;
-    }
+    public static final class RemovedItemStack {
+        private final int sourceSlot;
+        private final ItemStack clonedStack;
 
-    public BigDecimal getMoneyCharged() {
-        return moneyCharged;
-    }
+        public RemovedItemStack(int sourceSlot, ItemStack clonedStack) {
+            this.sourceSlot = sourceSlot;
+            this.clonedStack = clonedStack != null ? clonedStack.clone() : null;
+        }
 
-    public String getFailureReason() {
-        return failureReason;
-    }
-
-    public boolean hasXpCharge() {
-        return xpCharged.compareTo(BigDecimal.ZERO) > 0;
-    }
-
-    public boolean hasMoneyCharge() {
-        return moneyCharged.compareTo(BigDecimal.ZERO) > 0;
+        public int getSourceSlot() { return sourceSlot; }
+        public ItemStack getClonedStack() { return clonedStack != null ? clonedStack.clone() : null; }
     }
 }

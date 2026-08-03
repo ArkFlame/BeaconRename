@@ -1,7 +1,10 @@
 package com.arkflame.flameforge.chance;
 
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.OutcomeDefinition;
 import com.arkflame.flameforge.model.OutcomeType;
+import com.arkflame.flameforge.model.TierChances;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -15,176 +18,104 @@ class OutcomeSelectorTest {
     private static final BigDecimal W1 = new BigDecimal("1");
     private static final BigDecimal W2 = new BigDecimal("2");
 
-    private OutcomeDefinition def(String id, BigDecimal weight) {
-        return OutcomeDefinition.of(id, OutcomeType.BREAK, weight, null, Collections.emptyList(), 0);
+    private ChanceEntry entry(String id, BigDecimal weight, int yamlOrder) {
+        return ChanceEntry.of(id, weight, (long) (weight.doubleValue() * 1_000_000), weight, yamlOrder);
+    }
+
+    private ForgeVariant variant(String id, double weight) {
+        return new ForgeVariant(id, "", Collections.emptyList(), weight, null, Collections.emptyList(), Collections.emptyMap(), Collections.emptyList());
     }
 
     @Test
-    void buildChanceTable_nullOutcomes_throws() {
+    void buildChanceTableRejectsNullOrEmptyAndAcceptsSingleOutcome() {
         OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-
-        assertThrows(IllegalArgumentException.class, () -> selector.buildChanceTable(null));
+        for (String caseName : new String[] {"null", "empty", "single"}) {
+            switch (caseName) {
+                case "null":
+                    assertThrows(IllegalArgumentException.class, () -> selector.buildChanceTable(null));
+                    break;
+                case "empty":
+                    assertThrows(IllegalArgumentException.class,
+                        () -> selector.buildChanceTable(Collections.emptyList()));
+                    break;
+                case "single":
+                    List<ChanceEntry> single = Collections.singletonList(entry("only", W1, 0));
+                    ChanceTable table = selector.buildChanceTable(single);
+                    assertEquals(1, table.getEntries().size());
+                    assertEquals("only", table.getEntries().get(0).getOutcomeId());
+                    break;
+            }
+        }
     }
 
     @Test
-    void buildChanceTable_emptyOutcomes_throws() {
+    void rollCategoryReturnsBreakWhenChancesAreZero() {
         OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-
-        assertThrows(IllegalArgumentException.class, () -> selector.buildChanceTable(Collections.emptyList()));
+        TierChances zeroChances = new TierChances(0, 0, 0);
+        ForgeOutcomeCategory category = selector.rollCategory(zeroChances);
+        assertEquals(ForgeOutcomeCategory.BREAK, category);
     }
 
     @Test
-    void buildChanceTable_singleOutcome_buildsTable() {
+    void rollCategoryReturnsSuccessWhenRollIsBelowSuccessThreshold() {
         OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = Collections.singletonList(def("only", W1));
-
-        ChanceTable table = selector.buildChanceTable(outcomes);
-
-        assertEquals(1, table.getEntries().size());
-        assertEquals("only", table.getEntries().get(0).getOutcomeId());
+        TierChances chances = new TierChances(50.0, 25.0, 25.0);
+        ForgeOutcomeCategory category = selector.rollCategory(chances);
+        assertEquals(ForgeOutcomeCategory.SUCCESS, category);
     }
 
     @Test
-    void select_nullOutcomes_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-
-        assertThrows(IllegalArgumentException.class, () ->
-            selector.select(null, null, null, null, null, null, null));
+    void rollCategoryReturnsBreakWhenRollIsBetweenSuccessAndBreakThreshold() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(500000));
+        TierChances chances = new TierChances(50.0, 25.0, 25.0);
+        ForgeOutcomeCategory category = selector.rollCategory(chances);
+        assertEquals(ForgeOutcomeCategory.BREAK, category);
     }
 
     @Test
-    void select_emptyOutcomes_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-
-        assertThrows(IllegalArgumentException.class, () ->
-            selector.select(Collections.emptyList(), null, null, null, null, null, null));
+    void rollCategoryReturnsCurseWhenRollIsAboveBreakThreshold() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(900000));
+        TierChances chances = new TierChances(50.0, 25.0, 25.0);
+        ForgeOutcomeCategory category = selector.rollCategory(chances);
+        assertEquals(ForgeOutcomeCategory.CURSE, category);
     }
 
     @Test
-    void select_nullFilters_passesAll() {
+    void selectVariantReturnsNullForEmptyList() {
         OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
+        ForgeVariant variant = selector.selectVariant(Collections.emptyList());
+        assertNull(variant);
+    }
 
-        OutcomeDefinition selected = selector.select(outcomes, null, null, null, null, null, null);
+    @Test
+    void selectVariantReturnsFirstWhenAllWeightsAreZero() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
+        ForgeVariant variant1 = variant("v1", 0.0);
+        ForgeVariant variant2 = variant("v2", 0.0);
+        List<ForgeVariant> variants = java.util.Arrays.asList(variant1, variant2);
+        ForgeVariant selected = selector.selectVariant(variants);
+        assertEquals("v1", selected.getId());
+    }
 
+    @Test
+    void selectVariantSelectsBasedOnWeightDistribution() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
+        ForgeVariant variant1 = variant("v1", 1.0);
+        ForgeVariant variant2 = variant("v2", 1.0);
+        List<ForgeVariant> variants = java.util.Arrays.asList(variant1, variant2);
+        ForgeVariant selected = selector.selectVariant(variants);
         assertNotNull(selected);
-        assertEquals("a", selected.getId());
+        assertTrue(selected.getId().equals("v1") || selected.getId().equals("v2"));
     }
 
     @Test
-    void select_materialFilterExcludesAll_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.MaterialFilter filter = od -> false;
-
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
-            selector.select(outcomes, filter, null, null, null, null, null));
-
-        assertTrue(ex.getMessage().contains("No outcomes passed filters"));
-    }
-
-    @Test
-    void select_pluginFilterExcludesAll_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.PluginFilter filter = od -> false;
-
-        assertThrows(IllegalStateException.class, () ->
-            selector.select(outcomes, null, filter, null, null, null, null));
-    }
-
-    @Test
-    void select_capabilityFilterExcludesAll_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.CapabilityFilter filter = od -> false;
-
-        assertThrows(IllegalStateException.class, () ->
-            selector.select(outcomes, null, null, filter, null, null, null));
-    }
-
-    @Test
-    void select_playerFilterExcludesAll_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.PlayerFilter filter = od -> false;
-
-        assertThrows(IllegalStateException.class, () ->
-            selector.select(outcomes, null, null, null, filter, null, null));
-    }
-
-    @Test
-    void select_catalystFilterExcludesAll_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.CatalystFilter filter = od -> false;
-
-        assertThrows(IllegalStateException.class, () ->
-            selector.select(outcomes, null, null, null, null, filter, null));
-    }
-
-    @Test
-    void select_wardFilterExcludesAll_throws() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.WardFilter filter = od -> false;
-
-        assertThrows(IllegalStateException.class, () ->
-            selector.select(outcomes, null, null, null, null, null, filter));
-    }
-
-    @Test
-    void select_materialFilterExcludesOne_selectsOther() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.MaterialFilter filter = od -> od.getId().equals("b");
-
-        OutcomeDefinition selected = selector.select(outcomes, filter, null, null, null, null, null);
-
-        assertEquals("b", selected.getId());
-    }
-
-    @Test
-    void select_multipleFilters_allMustPass() {
-        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W2));
-
-        OutcomeSelector.MaterialFilter matFilter = od -> od.getId().equals("a");
-        OutcomeSelector.PluginFilter pluginFilter = od -> od.getId().equals("a");
-
-        OutcomeDefinition selected = selector.select(outcomes, matFilter, pluginFilter, null, null, null, null);
-
-        assertEquals("a", selected.getId());
-    }
-
-    @Test
-    void select_deterministicFixedRandom_sameOutcome() {
-        DeterministicRandom rng = new DeterministicRandom(500_000); // mid-point for 1M total
+    void deterministicRandomProducesConsistentResults() {
+        DeterministicRandom rng = new DeterministicRandom(500_000);
         OutcomeSelector selector = new OutcomeSelector(rng);
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W1));
-
-        OutcomeDefinition first = selector.select(outcomes, null, null, null, null, null, null);
-        OutcomeDefinition second = selector.select(outcomes, null, null, null, null, null, null);
-
-        assertEquals(first.getId(), second.getId());
-    }
-
-    @Test
-    void select_lastBoundaryValue_selectsLastEntry() {
-        DeterministicRandom rng = new DeterministicRandom(1_999_999); // last micro for 2M total
-        OutcomeSelector selector = new OutcomeSelector(rng);
-        List<OutcomeDefinition> outcomes = java.util.Arrays.asList(def("a", W1), def("b", W1));
-
-        OutcomeDefinition selected = selector.select(outcomes, null, null, null, null, null, null);
-
-        assertEquals("b", selected.getId());
+        TierChances chances = new TierChances(50.0, 50.0, 0.0);
+        ForgeOutcomeCategory first = selector.rollCategory(chances);
+        ForgeOutcomeCategory second = selector.rollCategory(chances);
+        assertEquals(first, second);
     }
 
     private static class DeterministicRandom implements RandomSource {
@@ -195,6 +126,16 @@ class OutcomeSelectorTest {
         @Override
         public long nextLong(long bound) {
             return value % bound;
+        }
+
+        @Override
+        public double nextDouble() {
+            return (double) (value % 1000000) / 1000000.0;
+        }
+
+        @Override
+        public double nextDouble(double bound) {
+            return nextDouble() * bound;
         }
     }
 }

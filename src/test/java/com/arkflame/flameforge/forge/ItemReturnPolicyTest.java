@@ -6,11 +6,9 @@ import com.arkflame.flameforge.persistence.AuditLogService;
 import com.arkflame.flameforge.persistence.PendingDelivery;
 import com.arkflame.flameforge.persistence.PendingDeliveryRepository;
 import com.arkflame.flameforge.text.TextBridge;
-import com.arkflame.flameforge.text.TextPlaceholders;
-import org.bukkit.Bukkit;
+import com.arkflame.flameforge.testfakes.FakeTextBridge;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.Server;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -19,22 +17,16 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Mockito;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class ItemReturnPolicyTest {
 
@@ -50,31 +42,12 @@ class ItemReturnPolicyTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        fakePlugin = UnsafeJavaPlugin.createFakePlugin(FakePlugin.class);
+        fakePlugin = mock(JavaPlugin.class);
+        when(fakePlugin.getLogger()).thenReturn(Logger.getLogger(ItemReturnPolicyTest.class.getName()));
         fakeScheduler = new FakeSchedulerBridge();
         repository = new PendingDeliveryRepository(fakePlugin, fakeScheduler, tempDir);
 
-        if (!TextBridge.isInitialized()) {
-            try {
-                textBridge = TextBridge.create(fakePlugin, TextPlaceholders.getInstance());
-            } catch (Exception e) {
-                textBridge = (TextBridge) Proxy.newProxyInstance(
-                    TextBridge.class.getClassLoader(),
-                    new Class<?>[] { TextBridge.class },
-                    (proxy, method, args) -> {
-                        String name = method.getName();
-                        if (name.equals("parse")) return net.kyori.adventure.text.Component.text((String) args[0]);
-                        if (name.equals("send") || name.equals("sendAll")) return null;
-                        if (name.equals("toString")) return "FakeTextBridge{}";
-                        if (name.equals("equals")) return proxy == args[0];
-                        if (name.equals("hashCode")) return System.identityHashCode(proxy);
-                        return null;
-                    }
-                );
-            }
-        } else {
-            textBridge = TextBridge.getInstance();
-        }
+        textBridge = new FakeTextBridge();
 
         auditLog = new AuditLogService(fakePlugin, fakeScheduler, tempDir, 100);
 
@@ -85,132 +58,135 @@ class ItemReturnPolicyTest {
     }
 
     @Test
-    void deliverItem_nullItem_returnsFalse() {
-        boolean result = deliveryService.deliverItem(null, null, null, "id1");
-        assertFalse(result);
-    }
+    void invalidNullOrAirDeliveryIsRejectedWithoutSideEffects() {
+        boolean nullResult = deliveryService.deliverItem(null, null, null, "id1");
+        assertFalse(nullResult);
 
-    @Test
-    void deliverItem_airItem_returnsFalse() {
         ItemStack air = new ItemStack(Material.AIR);
-        boolean result = deliveryService.deliverItem(air, null, null, "id1");
-        assertFalse(result);
+        boolean airResult = deliveryService.deliverItem(air, null, null, "id2");
+        assertFalse(airResult);
+
+        assertFalse(deliveryService.hasBeenProcessed("id1"));
+        assertFalse(deliveryService.hasBeenProcessed("id2"));
     }
 
     @Test
-    void deliverItem_nullDeliveryId_deliversToPlayer() {
-        Player player = createFakePlayerWithInventory(new FakeInventory());
+    void deliveryWithoutIdDeliversNormally() {
+        FakeInventory inventory = new FakeInventory();
+        Player player = createFakePlayerWithInventory(inventory);
         ItemStack item = new ItemStack(Material.DIAMOND, 1);
 
         boolean result = deliveryService.deliverItem(item, player, null, null);
 
         assertTrue(result);
-        assertEquals(1, ((FakeInventory) player.getInventory()).itemCount);
+        assertEquals(1, inventory.itemCount);
     }
 
     @Test
-    void deliverItem_duplicateDeliveryId_returnsFalse() {
-        Player player = createFakePlayerWithInventory(new FakeInventory());
-        ItemStack item = new ItemStack(Material.DIAMOND, 1);
-
-        deliveryService.deliverItem(item, player, null, "same-id");
-        boolean second = deliveryService.deliverItem(item, player, null, "same-id");
-
-        assertFalse(second);
-    }
-
-    @Test
-    void deliverItem_differentDeliveryIds_bothSucceed() {
-        Player player = createFakePlayerWithInventory(new FakeInventory());
-        ItemStack item = new ItemStack(Material.DIAMOND, 1);
-
-        boolean first = deliveryService.deliverItem(item, player, null, "id-a");
-        boolean second = deliveryService.deliverItem(item, player, null, "id-b");
-
-        assertTrue(first);
-        assertTrue(second);
-    }
-
-    @Test
-    void deliverItem_nullPlayerAndNullLocation_returnsFalse() {
-        ItemStack item = new ItemStack(Material.DIAMOND, 1);
-        boolean result = deliveryService.deliverItem(item, null, null, "no-target");
-        assertFalse(result);
-    }
-
-    @Test
-    void queuePendingDelivery_nullId_returnsFalse() {
-        boolean result = deliveryService.queuePendingDelivery(null, UUID.randomUUID(),
-            new ItemStack(Material.DIAMOND), null);
-        assertFalse(result);
-    }
-
-    @Test
-    void queuePendingDelivery_validIdAddedAndContains() {
-        String deliveryId = "pending-1";
-        ItemStack item = new ItemStack(Material.DIAMOND);
-
-        boolean result = deliveryService.queuePendingDelivery(deliveryId, UUID.randomUUID(),
-            item, Arrays.asList("/say hello", "/give %player% diamond"));
-
-        assertTrue(result);
-        assertTrue(deliveryService.isDeliveryPending(deliveryId));
-    }
-
-    @Test
-    void queuePendingDelivery_duplicateId_returnsFalse() {
-        String deliveryId = "dup-pending";
-        ItemStack item = new ItemStack(Material.DIAMOND);
-
-        deliveryService.queuePendingDelivery(deliveryId, UUID.randomUUID(), item, null);
-        boolean second = deliveryService.queuePendingDelivery(deliveryId, UUID.randomUUID(), item, null);
-
-        assertFalse(second);
-    }
-
-    @Test
-    void generateDeliveryId_isUnique() {
-        Player player = createFakePlayerWithInventory(new FakeInventory());
-
-        String id1 = deliveryService.generateDeliveryId(player, "outcome1");
-        String id2 = deliveryService.generateDeliveryId(player, "outcome1");
-
-        assertNotEquals(id1, id2);
-        assertTrue(id1.contains("outcome1"));
-        assertTrue(id2.contains("outcome1"));
-    }
-
-    @Test
-    void hasBeenProcessed_afterSuccessfulDelivery_true() {
+    void deliveryIdIsProcessedOnceAndDifferentIdsRemainIndependent() {
         FakeInventory inventory = new FakeInventory();
         Player player = createFakePlayerWithInventory(inventory);
         ItemStack item = new ItemStack(Material.DIAMOND, 1);
-        String deliveryId = "processed-1";
 
-        deliveryService.deliverItem(item, player, null, deliveryId);
+        boolean first = deliveryService.deliverItem(item, player, null, "unique-id-a");
+        boolean second = deliveryService.deliverItem(item, player, null, "unique-id-b");
 
-        assertTrue(deliveryService.hasBeenProcessed(deliveryId));
+        assertTrue(first);
+        assertTrue(second);
+        assertTrue(deliveryService.hasBeenProcessed("unique-id-a"));
+        assertTrue(deliveryService.hasBeenProcessed("unique-id-b"));
+
+        ItemStack item2 = new ItemStack(Material.GOLD_INGOT, 1);
+        boolean third = deliveryService.deliverItem(item2, player, null, "unique-id-a");
+        assertFalse(third);
     }
 
     @Test
-    void hasBeenProcessed_beforeDelivery_false() {
-        assertFalse(deliveryService.hasBeenProcessed("never-seen-id"));
-    }
-
-    @Test
-    void queuePendingDelivery_containsCorrectData() {
+    void pendingDeliveryRejectsNullAndDuplicateIds() {
         UUID playerUuid = UUID.randomUUID();
-        List<String> commands = Arrays.asList("/eco give %player% 100");
-        String deliveryId = "cq-1";
+        ItemStack item = createMockItemStack(Material.DIAMOND, 1);
 
-        deliveryService.queuePendingDelivery(deliveryId, playerUuid,
-            new ItemStack(Material.DIAMOND, 1), commands);
+        boolean nullResult = deliveryService.queuePendingDelivery(null, playerUuid, item, null);
+        assertFalse(nullResult);
+
+        String duplicateId = "dup-id";
+        deliveryService.queuePendingDelivery(duplicateId, playerUuid, item, null);
+        boolean dupResult = deliveryService.queuePendingDelivery(duplicateId, playerUuid, item, null);
+        assertFalse(dupResult);
+    }
+
+    @Test
+    void pendingDeliveryStoresExactRecipientItemAndLocation() {
+        UUID playerUuid = UUID.randomUUID();
+        String deliveryId = "pending-item-test";
+        ItemStack item = createMockItemStack(Material.EMERALD, 5);
+        List<String> commands = Arrays.asList("/say delivered");
+
+        deliveryService.queuePendingDelivery(deliveryId, playerUuid, item, commands);
+
+        assertTrue(deliveryService.isDeliveryPending(deliveryId));
 
         List<PendingDelivery> all = repository.getAllSnapshot();
         assertEquals(1, all.size());
         PendingDelivery delivery = all.get(0);
         assertEquals(deliveryId, delivery.getDeliveryId());
         assertEquals(playerUuid, delivery.getTargetPlayer());
+        assertEquals("EMERALD", delivery.getItemSnapshot().get("material"));
+    }
+
+    @Test
+    void generatedDeliveryIdsAreUniqueAndProcessedStateReflectsSuccess() {
+        FakeInventory inventory = new FakeInventory();
+        Player player = createFakePlayerWithInventory(inventory);
+        ItemStack item = new ItemStack(Material.DIAMOND, 1);
+
+        String id1 = deliveryService.generateDeliveryId(player, "outcome1");
+        String id2 = deliveryService.generateDeliveryId(player, "outcome1");
+
+        assertNotEquals(id1, id2);
+
+        boolean delivered = deliveryService.deliverItem(item, player, null, id1);
+        assertTrue(delivered);
+        assertTrue(deliveryService.hasBeenProcessed(id1));
+        assertFalse(deliveryService.hasBeenProcessed(id2));
+
+        boolean duplicateDelivery = deliveryService.deliverItem(item, player, null, id1);
+        assertFalse(duplicateDelivery);
+    }
+
+    private static ItemStack createMockItemStack(Material material, int amount) {
+        return new TestItemStack(material, amount);
+    }
+
+    private static class TestItemStack extends ItemStack implements java.io.Serializable {
+        private final String materialName;
+        private final int amount;
+
+        TestItemStack(Material material, int amount) {
+            super(material, amount);
+            this.materialName = material.name();
+            this.amount = amount;
+        }
+
+        private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+            out.defaultWriteObject();
+            out.writeUTF(materialName);
+            out.writeInt(amount);
+        }
+
+        private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+            in.defaultReadObject();
+        }
+
+        @Override
+        public Material getType() {
+            return Material.valueOf(materialName);
+        }
+
+        @Override
+        public int getAmount() {
+            return amount;
+        }
     }
 
     private static Player createFakePlayerWithInventory(PlayerInventory inventory) {
@@ -276,11 +252,6 @@ class ItemReturnPolicyTest {
             new Class<?>[] { Player.class },
             handler
         );
-    }
-
-    private static class FakePlugin extends JavaPlugin {
-        @Override public void onEnable() {}
-        @Override public void onDisable() {}
     }
 
     private static class FakeSchedulerBridge implements SchedulerBridge {

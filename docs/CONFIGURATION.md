@@ -4,9 +4,10 @@
 
 | File                  | Auto-generated | Purpose                                      |
 |-----------------------|----------------|----------------------------------------------|
-| `config.yml`          | Yes (first run)| Root settings, catalysts, wards, announcements |
+| `config.yml`          | Yes (first run)| Root settings, announcements                 |
 | `stations.yml`        | No             | Registered station data (managed by plugin)  |
-| `tiers/*.yml`         | On bootstrap   | Tier definitions                              |
+| `station-profiles.yml`| No             | Forge station profiles                       |
+| `tiers/*.yml`         | On bootstrap   | Tier definitions (schema v2)                   |
 | `messages.yml`        | No             | Custom message strings                       |
 | `menus.yml`           | No             | GUI layout and styling                       |
 
@@ -18,14 +19,14 @@ Root configuration file. Located at `plugins/FlameForge/config.yml`.
 
 ```yaml
 # Schema version — do not modify
-schema-version: 1
+schema-version: 2
 
 # Plugin enabled state
 enabled: true
 
 # Station behavior mode
-# REGISTERED_ONLY: only registered beacons work
-# ANY_BEACON: any beacon block is a forge station
+# REGISTERED_ONLY: only registered forges work
+# ANY_BLOCK: any non-air block is a forge station
 station-mode: REGISTERED_ONLY
 
 # Audit log settings
@@ -50,33 +51,6 @@ item-groups:
     materials:
       - <material>
       - <material>
-
-# Catalyst definitions
-catalysts:
-  <catalyst-id>:
-    enabled: true
-    material: <material>
-    name: "<MiniMessage>"
-    lore:
-      - "<MiniMessage>"
-    chance-modifier: <decimal>  # bonus weight multiplier
-    consume: true|false
-    protected-outcomes:
-      - <outcome-id>
-
-# Ward (break-protection) definitions
-wards:
-  <ward-id>:
-    enabled: true
-    material: <material>
-    name: "<MiniMessage>"
-    lore:
-      - "<MiniMessage>"
-    protected-outcomes:
-      - <outcome-id>
-    convert_to_unchanged:
-      - BREAK
-    protect_all: false
 
 # Announcement settings
 announcements:
@@ -107,12 +81,6 @@ announcements:
 animation-profile: default
 menu-profile: default
 
-# Pity system defaults (can be overridden per tier)
-pity:
-  enabled: true
-  default-threshold: 10
-  default-bonus-weight: 2.0
-
 # Cost display formatting
 cost-colors:
   xp: "<light_purple>"
@@ -125,43 +93,95 @@ cost-display:
   money-format: "${value}"
   show-zero-xp: false
   show-zero-money: false
+
+# Hologram settings
+holograms:
+  enabled: true
+  provider-order:
+    - FancyHolograms  # v2+
+    - DecentHolograms
+  offset-y: 1.75
+  transparent-background: true
+  lines:
+    - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
+    - "<gray>%forge_id%"
+
+# Tier migration settings
+tier-migration:
+  auto-upgrade: true
+  backup-original: true
 ```
 
-### Example: Catalyst Configuration
+### Config Overlay Behavior
+
+FlameForge uses a bundled-default overlay strategy for `config.yml`. The bundled `config.yml` inside the JAR is loaded first as defaults. The operator's `config.yml` is then overlaid, with operator values taking precedence for leaf keys. This means:
+
+- An operator `config.yml` without a `holograms` section inherits the full bundled defaults for holograms.
+- Only explicitly set leaf keys are overridden; absent sections are filled from bundled defaults.
+- This applies to all root-level leaf keys including holograms settings.
+
+### Hologram `enabled: false`
+
+Setting `holograms.enabled: false` disables hologram creation entirely. The plugin logs `disabled by configuration` and uses a no-op provider. Existing holograms from prior sessions are not automatically removed unless the plugin is reloaded or restarted.
+
+### Hologram Provider Order
+
+The `provider-order` list specifies the priority for hologram library selection. Default order:
 
 ```yaml
-catalysts:
-  lucky_dust:
-    enabled: true
-    material: GLOWSTONE_DUST
-    name: "<reset><white>Lucky Dust"
-    lore:
-      - "<gray>Optional catalyst"
-      - "<gray>Place to modify outcomes"
-    chance-modifier: 0.1
-    consume: true
-    protected-outcomes:
-      - legendary_ward
-      - epic_ward
+holograms:
+  provider-order:
+    - FancyHolograms
+    - DecentHolograms
 ```
 
-### Example: Ward Configuration
+Selection iterates through the list in order. Each entry must match a known provider name (`FancyHolograms` or `DecentHolograms`) and the corresponding plugin must be enabled. The first available provider is used. If the list is empty or no provider is available, no holograms are created.
+
+### Supported Hologram Providers
+
+FlameForge supports two hologram libraries via soft-depend:
+
+- **FancyHolograms** (v2+) — preferred; uses MiniMessage text formatting
+- **DecentHolograms** — fallback; uses legacy color code formatting
+
+If `holograms.enabled` is `true`, the plugin queries the server for available hologram providers in the order specified by `provider-order` and creates floating text displays at forge stations.
+
+### Tier Migration Settings
 
 ```yaml
-wards:
-  safety_rune:
-    enabled: true
-    material: PRISMARINE_SHARD
-    name: "<reset><aqua>Safety Rune"
-    lore:
-      - "<gray>Optional ward"
-      - "<gray>Place to protect your item"
-    protected-outcomes:
-      - legendary_ward
-      - epic_ward
-    convert_to_unchanged:
-      - BREAK
-    protect_all: false
+tier-migration:
+  auto-upgrade: true      # automatically upgrade schema v1 tiers to v2
+  backup-original: true   # backup original files before migration
+```
+
+When `auto-upgrade` is enabled, schema v1 tier files are automatically converted to schema v2 format on load.
+
+### Material Candidate Syntax
+
+Materials in configuration accept two forms:
+
+| Syntax | Example | Behavior |
+|--------|---------|----------|
+| `MATERIAL_NAME` | `DIAMOND_SWORD` | Resolves to the modern Bukkit material |
+| `MATERIAL_NAME:legacyData` | `STAINED_GLASS_PANE:15` | Resolves material with legacy data value (for version-specific variants) |
+
+The colon syntax is used for legacy data values. Example aliases in `MaterialResolver`:
+
+```yaml
+black_stained_glass_pane:
+  - BLACK_STAINED_GLASS_PANE
+  - STAINED_GLASS_PANE:15
+```
+
+When multiple candidates are specified (e.g., menu filler items), FlameForge uses the first valid material from the candidate list.
+
+### Menu Icon Material Resolution
+
+Menu icons use fallback material chains via `MaterialResolver.itemOrThrow()`. The first valid material in the candidate list is used. If no candidate resolves, an exception is thrown and the menu fails to open.
+
+Example filler resolution:
+```java
+MATERIAL_RESOLVER.itemOrThrow(1, "GRAY_STAINED_GLASS_PANE", "STAINED_GLASS_PANE:7", "GLASS_PANE");
 ```
 
 ### Example: Announcement Configuration
@@ -185,6 +205,8 @@ announcements:
 ## stations.yml
 
 Station registry. Managed by the plugin; manual editing is not recommended.
+
+Any non-air block can be registered. In `REGISTERED_ONLY` mode, only registered forge blocks accept interaction.
 
 ### Schema
 
@@ -214,23 +236,24 @@ world_100_64_-200:
 
 Each tier is defined in its own YAML file under `plugins/FlameForge/tiers/`.
 
-### Schema
+### Schema v2
 
 ```yaml
-# Schema version — must be 1
-schema-version: 1
+# Schema version — must be 2
+schema-version: 2
 
 # Unique tier identifier
 id: <string>
 
-# Priority for sorting (higher = appears first in menu)
-priority: <integer>
+# Tier level for automatic progression (replaces priority)
+level: <integer>
 
-# Whether this tier is enabled
-enabled: true
-
-# Permission required to use this tier (empty = no permission)
-permission: ""
+# Tier requirements for input items
+requirements:
+  items:
+    - material: <material>
+      required: true|false
+  strict-match: false
 
 display:
   name: "<MiniMessage>"
@@ -248,12 +271,6 @@ cost:
 # Cooldown in seconds (0 = no cooldown)
 cooldown-seconds: 0
 
-# Pity system
-pity:
-  enabled: true|false
-  threshold: <integer>
-  bonus-weight: <decimal>
-
 # Animation durations (in ticks)
 animation:
   success-duration: 40
@@ -269,12 +286,30 @@ animation:
       type: <step-type>
       data: <string>
 
+# Powers definitions
+powers:
+  <power-id>:
+    enchants:
+      <enchant-id>:
+        name: <enchantment>
+        min-level: <integer>
+        max-level: <integer>
+    attributes:
+      <attr-id>:
+        name: <attribute>
+        min-value: <double>
+        max-value: <double>
+        operation: ADD_NUMBER|ADD_SCALAR_1|ADD_SCALAR_2
+
 # Outcomes
 outcomes:
   <outcome-id>:
-    type: BREAK|RETURN_UNCHANGED|MODIFY_INPUT|CREATE_ITEM|COMMANDS
+    type: MODIFY_INPUT|BREAK|CURSE
+    category: SUCCESS|BREAK|CURSE
     weight: <decimal>
+    power: <power-id>
     mutation:
+      same-material: true|false
       material: <material>
       name: "<MiniMessage>"
       amount: <integer>
@@ -289,28 +324,37 @@ outcomes:
           min-value: <double>
           max-value: <double>
           operation: ADD_NUMBER|ADD_SCALAR_1|ADD_SCALAR_2
-    commands:
-      - "<console command>"
+    curse:
+      type: VOID|DECAY|DRAIN
+      description: "<MiniMessage>"
 ```
 
 ### Outcome Types
 
-| Type             | Description                                           | Requires mutation |
-|------------------|-------------------------------------------------------|-------------------|
-| `BREAK`          | Item is destroyed                                     | No                |
-| `RETURN_UNCHANGED` | Original item returned                             | No                |
-| `MODIFY_INPUT`   | Original item mutated and returned                    | Yes               |
-| `CREATE_ITEM`    | New item created and delivered                        | Yes               |
-| `COMMANDS`       | Console commands dispatched                           | No                |
+| Type             | Category | Description                                           |
+|------------------|----------|-------------------------------------------------------|
+| `MODIFY_INPUT`   | SUCCESS  | Original item mutated and returned                    |
+| `BREAK`          | BREAK    | Item is destroyed                                     |
+| `CURSE`          | CURSE    | Negative effect applied                               |
 
-### Example: Simple Tier with Break and Modify Outcomes
+### CURSE Variants
+
+| Variant | Effect |
+|---------|--------|
+| `VOID`  | Marks item with void curse |
+| `DECAY` | Reduces item durability on each reforge |
+| `DRAIN` | Reduces item stats |
+
+### Example: Simple Tier
 
 ```yaml
-schema-version: 1
+schema-version: 2
 id: common
-priority: 10
-enabled: true
-permission: ""
+level: 1
+requirements:
+  items:
+    - material: DIAMOND_SWORD
+      required: true
 display:
   name: "<white>Common Forge"
   lore:
@@ -319,41 +363,53 @@ display:
 cost:
   mode: XP_ONLY
   xp: 10
-  money: 0
 cooldown-seconds: 60
-pity:
-  enabled: true
-  threshold: 5
-  bonus-weight: 1.5
-animation:
-  success-duration: 30
-  fail-duration: 15
 outcomes:
-  return_unchanged:
-    type: RETURN_UNCHANGED
-    weight: 50
-  add_sharpness:
+  success_modify:
     type: MODIFY_INPUT
-    weight: 45
+    category: SUCCESS
+    weight: 70
     mutation:
+      same_material: true
       enchants:
         sharpness_1:
           name: DAMAGE_ALL
           min-level: 1
-          max-level: 1
   break_item:
     type: BREAK
+    category: BREAK
+    weight: 25
+  curse_drain:
+    type: CURSE
+    category: CURSE
     weight: 5
+    curse:
+      type: DRAIN
+      description: "<red>Stats drained"
 ```
 
-### Example: Tier with CREATE_ITEM Outcome
+### Example: Tier with Powers
 
 ```yaml
-schema-version: 1
+schema-version: 2
 id: legendary
-priority: 100
-enabled: true
-permission: ""
+level: 100
+requirements:
+  items:
+    - material: DIAMOND_SWORD
+      required: true
+powers:
+  blazing:
+    enchants:
+      fire_aspect_boost:
+        name: FIRE_ASPECT
+        min-level: 2
+    attributes:
+      damage:
+        name: GENERIC_ATTACK_DAMAGE
+        min-value: 3.0
+        max-value: 5.0
+        operation: ADD_NUMBER
 display:
   name: "<gold>Legendary Forge"
   lore:
@@ -364,52 +420,16 @@ cost:
   xp: 500
   money: 1000
 cooldown-seconds: 3600
-pity:
-  enabled: true
-  threshold: 10
-  bonus-weight: 2.0
-animation:
-  success-duration: 80
-  fail-duration: 40
 outcomes:
-  legendary_sword:
-    type: CREATE_ITEM
-    weight: 1
-    mutation:
-      material: DIAMOND_SWORD
-      name: "<gold>Legendary Blade"
-  epic_sword:
-    type: CREATE_ITEM
-    weight: 4
-    mutation:
-      material: DIAMOND_SWORD
-      name: "<aqua>Epic Blade"
+  legendary_blazing:
+    type: MODIFY_INPUT
+    category: SUCCESS
+    weight: 10
+    power: blazing
   break_item:
     type: BREAK
-    weight: 95
-```
-
-### Example: Tier with Commands Outcome
-
-```yaml
-schema-version: 1
-id: reward_tier
-priority: 50
-enabled: true
-display:
-  name: "<green>Reward Tier"
-  material: EMERALD
-cost:
-  mode: XP_ONLY
-  xp: 100
-cooldown-seconds: 0
-outcomes:
-  give_reward:
-    type: COMMANDS
-    weight: 100
-    commands:
-      - "give %player_name% diamond 1"
-      - "eco give %player_name% 500"
+    category: BREAK
+    weight: 90
 ```
 
 ## Station Profiles (stations.yml section)

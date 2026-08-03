@@ -1,21 +1,22 @@
 package com.arkflame.flameforge.forge;
 
 import com.arkflame.flameforge.hook.EconomyService;
-import com.arkflame.flameforge.model.CostMode;
-import com.arkflame.flameforge.model.TierCost;
+import com.arkflame.flameforge.model.TierRequirements;
+import org.bukkit.Material;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 public final class CostService {
 
     private static final String BYPASS_PERMISSION = "flameforge.bypass.cost";
-    private static final int XP_SCALE = 6;
-    private static final RoundingMode XP_ROUNDING = RoundingMode.HALF_UP;
     private static final int MONEY_SCALE = 2;
     private static final RoundingMode MONEY_ROUNDING = RoundingMode.HALF_UP;
 
@@ -27,46 +28,163 @@ public final class CostService {
         this.economyService = Objects.requireNonNull(economyService);
     }
 
-    public CostQuote quote(Player player, TierCost tierCost) {
+    public CostQuote quote(Player player, TierRequirements requirements) {
         Objects.requireNonNull(player);
-        Objects.requireNonNull(tierCost);
+        Objects.requireNonNull(requirements);
 
         if (hasBypassPermission(player)) {
             return CostQuote.zero();
         }
 
-        final CostMode mode = tierCost.getMode();
-        final BigDecimal xpCost = normalizeXp(tierCost.getXpCost());
-        final BigDecimal moneyCost = normalizeMoney(tierCost.getMoneyCost());
+        final boolean economyAvailable = economyService.available();
+        final List<String> missingReasonKeys = new ArrayList<>();
+        final List<CostQuote.ItemRequirementQuote> itemQuotes = new ArrayList<>();
 
-        final boolean xpAffordable = checkXpAffordable(player, xpCost);
-        final boolean moneyAffordable = checkMoneyAffordable(player, moneyCost);
+        final TierRequirements.XpRequirement xpReq = requirements.getXp();
+        final int xpRequired = xpReq.isEnabled() ? xpReq.getLevel() : 0;
+        final int xpAvailable = player.getLevel();
+        if (xpReq.isEnabled() && xpAvailable < xpRequired) {
+            missingReasonKeys.add("forge.error.insufficient_xp");
+        }
 
-        return CostQuote.of(mode, xpCost, moneyCost, xpAffordable, moneyAffordable);
+        final TierRequirements.MoneyRequirement moneyReq = requirements.getMoney();
+        final BigDecimal moneyRequired = moneyReq.isEnabled() ? moneyReq.getAmount().setScale(MONEY_SCALE, MONEY_ROUNDING) : BigDecimal.ZERO;
+        final BigDecimal moneyAvailable = economyAvailable ? economyService.balance(player) : BigDecimal.ZERO;
+        if (moneyReq.isEnabled() && moneyAvailable.compareTo(moneyRequired) < 0) {
+            missingReasonKeys.add("forge.error.insufficient_money");
+        }
+
+        final TierRequirements.ItemsRequirement itemsReq = requirements.getItems();
+        if (itemsReq.isEnabled()) {
+            for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
+                int amountNeeded = itemReq.getAmount();
+                int amountHave = countItems(player, itemReq.getMaterialCandidates());
+                boolean available = amountHave >= amountNeeded;
+                itemQuotes.add(new CostQuote.ItemRequirementQuote(
+                        itemReq.getMaterialCandidates(), amountNeeded, itemReq.getDisplayName(), available));
+                if (!available) {
+                    missingReasonKeys.add("forge.error.insufficient_items");
+                    break;
+                }
+            }
+        }
+
+        final boolean ready = missingReasonKeys.isEmpty();
+        return CostQuote.of(requirements, ready, economyAvailable, xpRequired, xpAvailable,
+                moneyRequired, moneyAvailable, itemQuotes, missingReasonKeys);
     }
 
-    public ChargeReceipt charge(Player player, TierCost tierCost) {
+    public ChargeReceipt charge(Player player, TierRequirements requirements, List<ItemStack> inputItems) {
         Objects.requireNonNull(player);
-        Objects.requireNonNull(tierCost);
+        Objects.requireNonNull(requirements);
+        Objects.requireNonNull(inputItems);
 
         if (hasBypassPermission(player)) {
             return ChargeReceipt.zero();
         }
 
-        final CostMode mode = tierCost.getMode();
+        final TierRequirements.Combine combine = requirements.getCombine();
+        final List<ChargeReceipt.RemovedItemStack> removedItems = new ArrayList<>();
 
-        switch (mode) {
-            case XP_ONLY:
-                return chargeXpOnly(player, tierCost);
-            case MONEY_ONLY:
-                return chargeMoneyOnly(player, tierCost);
-            case XP_AND_MONEY:
-                return chargeXpAndMoney(player, tierCost);
-            case XP_OR_MONEY:
-                return chargeXpOrMoney(player, tierCost);
-            default:
-                return ChargeReceipt.failure(mode, "Unknown cost mode");
+        if (combine == TierRequirements.Combine.ALL) {
+            return chargeAll(player, requirements, inputItems, removedItems);
+        } else {
+            return chargeAny(player, requirements, inputItems, removedItems);
         }
+    }
+
+    private ChargeReceipt chargeAll(Player player, TierRequirements requirements,
+                                    List<ItemStack> inputItems, List<ChargeReceipt.RemovedItemStack> removedItems) {
+        final TierRequirements.XpRequirement xpReq = requirements.getXp();
+        final int xpRequired = xpReq.isEnabled() ? xpReq.getLevel() : 0;
+        final TierRequirements.MoneyRequirement moneyReq = requirements.getMoney();
+        final BigDecimal moneyRequired = moneyReq.isEnabled() ? moneyReq.getAmount().setScale(MONEY_SCALE, MONEY_ROUNDING) : BigDecimal.ZERO;
+        final TierRequirements.ItemsRequirement itemsReq = requirements.getItems();
+
+        if (xpReq.isEnabled() && player.getLevel() < xpRequired) {
+            return ChargeReceipt.failure("forge.error.insufficient_xp");
+        }
+        if (moneyReq.isEnabled() && economyService.balance(player).compareTo(moneyRequired) < 0) {
+            return ChargeReceipt.failure("forge.error.insufficient_money");
+        }
+        if (itemsReq.isEnabled()) {
+            for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
+                int amountHave = countItems(player, itemReq.getMaterialCandidates());
+                if (amountHave < itemReq.getAmount()) {
+                    return ChargeReceipt.failure("forge.error.insufficient_items");
+                }
+            }
+        }
+
+        if (xpReq.isEnabled()) {
+            deductXp(player, xpRequired);
+        }
+
+        if (moneyReq.isEnabled()) {
+            if (!economyService.withdraw(player, moneyRequired)) {
+                refundXp(player, xpRequired);
+                return ChargeReceipt.failure("forge.error.money_withdrawal_failed");
+            }
+        }
+
+        if (itemsReq.isEnabled()) {
+            for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
+                int removed = removeRequiredItems(player, itemReq.getMaterialCandidates(), itemReq.getAmount(), removedItems);
+                if (removed < itemReq.getAmount()) {
+                    refundRemovedItems(player, removedItems);
+                    refundMoney(player, moneyRequired);
+                    refundXp(player, xpRequired);
+                    return ChargeReceipt.failure("forge.error.insufficient_items");
+                }
+            }
+        }
+
+        return ChargeReceipt.success(xpRequired, moneyRequired, new ArrayList<>(removedItems));
+    }
+
+    private ChargeReceipt chargeAny(Player player, TierRequirements requirements,
+                                     List<ItemStack> inputItems, List<ChargeReceipt.RemovedItemStack> removedItems) {
+        final TierRequirements.XpRequirement xpReq = requirements.getXp();
+        final TierRequirements.MoneyRequirement moneyReq = requirements.getMoney();
+        final TierRequirements.ItemsRequirement itemsReq = requirements.getItems();
+
+        boolean anyEnabled = xpReq.isEnabled() || moneyReq.isEnabled() || itemsReq.isEnabled();
+        if (!anyEnabled) {
+            return ChargeReceipt.zero();
+        }
+
+        if (xpReq.isEnabled()) {
+            final int xpRequired = xpReq.getLevel();
+            if (player.getLevel() >= xpRequired) {
+                if (deductXp(player, xpRequired) == xpRequired) {
+                    return ChargeReceipt.success(xpRequired, BigDecimal.ZERO, new ArrayList<>(removedItems));
+                }
+            }
+        }
+
+        if (moneyReq.isEnabled()) {
+            final BigDecimal moneyRequired = moneyReq.getAmount().setScale(MONEY_SCALE, MONEY_ROUNDING);
+            if (economyService.balance(player).compareTo(moneyRequired) >= 0) {
+                if (economyService.withdraw(player, moneyRequired)) {
+                    return ChargeReceipt.success(0, moneyRequired, new ArrayList<>(removedItems));
+                }
+            }
+        }
+
+        if (itemsReq.isEnabled()) {
+            for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
+                int amountHave = countItems(player, itemReq.getMaterialCandidates());
+                if (amountHave < itemReq.getAmount()) {
+                    return ChargeReceipt.failure("forge.error.insufficient_items");
+                }
+            }
+            for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
+                removeRequiredItems(player, itemReq.getMaterialCandidates(), itemReq.getAmount(), removedItems);
+            }
+            return ChargeReceipt.success(0, BigDecimal.ZERO, new ArrayList<>(removedItems));
+        }
+
+        return ChargeReceipt.failure("forge.error.no_affordable_option");
     }
 
     public ChargeReceipt refund(Player player, ChargeReceipt receipt) {
@@ -77,17 +195,23 @@ public final class CostService {
             return receipt;
         }
 
-        final BigDecimal xpToRefund = receipt.getXpCharged();
-        final BigDecimal moneyToRefund = receipt.getMoneyCharged();
-
-        if (xpToRefund.compareTo(BigDecimal.ZERO) > 0) {
-            refundXp(player, xpToRefund);
+        if (receipt.isRefunded()) {
+            return receipt;
         }
 
-        if (moneyToRefund.compareTo(BigDecimal.ZERO) > 0) {
-            economyService.deposit(player, moneyToRefund);
+        if (!receipt.getRemovedItems().isEmpty()) {
+            refundRemovedItems(player, receipt.getRemovedItems());
         }
 
+        if (receipt.getMoneyCharged().compareTo(BigDecimal.ZERO) > 0) {
+            economyService.deposit(player, receipt.getMoneyCharged());
+        }
+
+        if (receipt.getXpCharged() > 0) {
+            refundXp(player, receipt.getXpCharged());
+        }
+
+        receipt.markRefunded();
         return receipt;
     }
 
@@ -95,165 +219,75 @@ public final class CostService {
         return player.hasPermission(BYPASS_PERMISSION);
     }
 
-    private boolean checkXpAffordable(Player player, BigDecimal xpCost) {
-        if (xpCost == null || xpCost.compareTo(BigDecimal.ZERO) <= 0) {
-            return true;
+    private int countItems(Player player, List<String> materialCandidates) {
+        int total = 0;
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() != Material.AIR) {
+                String materialName = item.getType().name();
+                for (String candidate : materialCandidates) {
+                    if (materialName.equalsIgnoreCase(candidate)) {
+                        total += item.getAmount();
+                        break;
+                    }
+                }
+            }
         }
-        final int playerLevel = player.getLevel();
-        final BigDecimal playerXp = levelToXp(playerLevel);
-        return playerXp.compareTo(xpCost) >= 0;
+        return total;
     }
 
-    private boolean checkMoneyAffordable(Player player, BigDecimal moneyCost) {
-        if (moneyCost == null || moneyCost.compareTo(BigDecimal.ZERO) <= 0) {
-            return true;
+    private int removeRequiredItems(Player player, List<String> materialCandidates, int amountNeeded,
+                                    List<ChargeReceipt.RemovedItemStack> removedItems) {
+        int remaining = amountNeeded;
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length && remaining > 0; i++) {
+            ItemStack item = contents[i];
+            if (item != null && item.getType() != Material.AIR) {
+                String materialName = item.getType().name();
+                for (String candidate : materialCandidates) {
+                    if (materialName.equalsIgnoreCase(candidate)) {
+                        int toRemove = Math.min(remaining, item.getAmount());
+                        removedItems.add(new ChargeReceipt.RemovedItemStack(i, item.clone()));
+                        item.setAmount(item.getAmount() - toRemove);
+                        remaining -= toRemove;
+                        break;
+                    }
+                }
+            }
         }
-        if (!economyService.available()) {
-            return false;
-        }
-        final BigDecimal balance = economyService.balance(player);
-        return balance.compareTo(moneyCost) >= 0;
+        return amountNeeded - remaining;
     }
 
-    private ChargeReceipt chargeXpOnly(Player player, TierCost tierCost) {
-        final BigDecimal xpCost = normalizeXp(tierCost.getXpCost());
-        if (!checkXpAffordable(player, xpCost)) {
-            return ChargeReceipt.failure(CostMode.XP_ONLY, "Insufficient XP");
-        }
-        final boolean deducted = deductXp(player, xpCost);
-        if (!deducted) {
-            return ChargeReceipt.failure(CostMode.XP_ONLY, "XP deduction failed");
-        }
-        return ChargeReceipt.success(CostMode.XP_ONLY, xpCost, BigDecimal.ZERO);
-    }
-
-    private ChargeReceipt chargeMoneyOnly(Player player, TierCost tierCost) {
-        final BigDecimal moneyCost = normalizeMoney(tierCost.getMoneyCost());
-        if (!checkMoneyAffordable(player, moneyCost)) {
-            return ChargeReceipt.failure(CostMode.MONEY_ONLY, "Insufficient funds");
-        }
-        final boolean withdrawn = economyService.withdraw(player, moneyCost);
-        if (!withdrawn) {
-            return ChargeReceipt.failure(CostMode.MONEY_ONLY, "Money withdrawal failed");
-        }
-        return ChargeReceipt.success(CostMode.MONEY_ONLY, BigDecimal.ZERO, moneyCost);
-    }
-
-    private ChargeReceipt chargeXpAndMoney(Player player, TierCost tierCost) {
-        final BigDecimal xpCost = normalizeXp(tierCost.getXpCost());
-        final BigDecimal moneyCost = normalizeMoney(tierCost.getMoneyCost());
-
-        if (!checkXpAffordable(player, xpCost)) {
-            return ChargeReceipt.failure(CostMode.XP_AND_MONEY, "Insufficient XP");
-        }
-        if (!checkMoneyAffordable(player, moneyCost)) {
-            return ChargeReceipt.failure(CostMode.XP_AND_MONEY, "Insufficient funds");
-        }
-
-        final boolean moneyWithdrawn = economyService.withdraw(player, moneyCost);
-        if (!moneyWithdrawn) {
-            return ChargeReceipt.failure(CostMode.XP_AND_MONEY, "Money withdrawal failed");
-        }
-
-        final boolean xpDeducted = deductXp(player, xpCost);
-        if (!xpDeducted) {
-            economyService.deposit(player, moneyCost);
-            return ChargeReceipt.failure(CostMode.XP_AND_MONEY, "XP deduction failed, money refunded");
-        }
-
-        return ChargeReceipt.success(CostMode.XP_AND_MONEY, xpCost, moneyCost);
-    }
-
-    private ChargeReceipt chargeXpOrMoney(Player player, TierCost tierCost) {
-        final BigDecimal xpCost = normalizeXp(tierCost.getXpCost());
-        final BigDecimal moneyCost = normalizeMoney(tierCost.getMoneyCost());
-
-        final boolean xpAffordable = checkXpAffordable(player, xpCost);
-        final boolean moneyAffordable = checkMoneyAffordable(player, moneyCost);
-
-        if (xpAffordable && moneyAffordable) {
-            return chargeXpFirst(player, xpCost, moneyCost);
-        } else if (xpAffordable) {
-            return chargeXpOnly(player, tierCost);
-        } else if (moneyAffordable) {
-            return chargeMoneyOnly(player, tierCost);
-        } else {
-            return ChargeReceipt.failure(CostMode.XP_OR_MONEY, "Neither XP nor money affordable");
+    private void refundRemovedItems(Player player, List<ChargeReceipt.RemovedItemStack> removedItems) {
+        for (ChargeReceipt.RemovedItemStack removed : removedItems) {
+            ItemStack clone = removed.getClonedStack();
+            if (clone != null) {
+                player.getInventory().setItem(removed.getSourceSlot(), clone);
+            }
         }
     }
 
-    private ChargeReceipt chargeXpFirst(Player player, BigDecimal xpCost, BigDecimal moneyCost) {
-        final boolean xpDeducted = deductXp(player, xpCost);
-        if (!xpDeducted) {
-            return ChargeReceipt.failure(CostMode.XP_OR_MONEY, "XP deduction failed");
+    private int deductXp(Player player, int levels) {
+        if (levels <= 0) {
+            return 0;
         }
-
-        final boolean moneyWithdrawn = economyService.withdraw(player, moneyCost);
-        if (!moneyWithdrawn) {
-            refundXp(player, xpCost);
-            return ChargeReceipt.failure(CostMode.XP_OR_MONEY, "Money withdrawal failed, XP refunded");
-        }
-
-        return ChargeReceipt.success(CostMode.XP_OR_MONEY, xpCost, moneyCost);
-    }
-
-    private boolean deductXp(Player player, BigDecimal xpCost) {
-        if (xpCost == null || xpCost.compareTo(BigDecimal.ZERO) <= 0) {
-            return true;
-        }
-        final int currentLevel = player.getLevel();
-        final BigDecimal currentXp = levelToXp(currentLevel);
-        final BigDecimal newXp = currentXp.subtract(xpCost);
-        final int newLevel = xpToLevel(newXp);
+        int currentLevel = player.getLevel();
+        int newLevel = Math.max(0, currentLevel - levels);
         player.setLevel(newLevel);
-        return true;
+        return levels;
     }
 
-    private void refundXp(Player player, BigDecimal xpAmount) {
-        if (xpAmount == null || xpAmount.compareTo(BigDecimal.ZERO) <= 0) {
+    private void refundXp(Player player, int levels) {
+        if (levels <= 0) {
             return;
         }
-        final int currentLevel = player.getLevel();
-        final BigDecimal currentXp = levelToXp(currentLevel);
-        final BigDecimal newXp = currentXp.add(xpAmount);
-        final int newLevel = xpToLevel(newXp);
-        player.setLevel(newLevel);
+        int currentLevel = player.getLevel();
+        player.setLevel(currentLevel + levels);
     }
 
-    private BigDecimal levelToXp(int level) {
-        if (level <= 16) {
-            return BigDecimal.valueOf(level).multiply(BigDecimal.valueOf(level)).add(BigDecimal.valueOf(level * 6));
-        } else if (level <= 31) {
-            return BigDecimal.valueOf((level * level * 2.5) - (40.5 * level) + 360).setScale(XP_SCALE, XP_ROUNDING);
-        } else {
-            return BigDecimal.valueOf((level * level * 4.5) - (162.5 * level) + 2220).setScale(XP_SCALE, XP_ROUNDING);
+    private void refundMoney(Player player, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
         }
-    }
-
-    private int xpToLevel(BigDecimal xp) {
-        if (xp.compareTo(BigDecimal.valueOf(1395)) <= 0) {
-            double d = Math.sqrt(xp.doubleValue() + 9);
-            return (int) Math.floor(-1 + d) / 2;
-        } else if (xp.compareTo(BigDecimal.valueOf(4345)) <= 0) {
-            double x = xp.doubleValue();
-            return (int) Math.floor(9.5 + Math.sqrt(0.25 * x - 179.25));
-        } else {
-            double x = xp.doubleValue();
-            return (int) Math.floor(29.5 + Math.sqrt(0.125 * x - 1006.375));
-        }
-    }
-
-    private BigDecimal normalizeXp(BigDecimal xp) {
-        if (xp == null) {
-            return BigDecimal.ZERO;
-        }
-        return xp.setScale(XP_SCALE, XP_ROUNDING);
-    }
-
-    private BigDecimal normalizeMoney(BigDecimal money) {
-        if (money == null) {
-            return BigDecimal.ZERO;
-        }
-        return money.setScale(MONEY_SCALE, MONEY_ROUNDING);
+        economyService.deposit(player, amount);
     }
 }

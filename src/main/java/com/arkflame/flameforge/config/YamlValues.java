@@ -29,19 +29,31 @@ public class YamlValues {
     }
 
     public ConfigurationSection getSection(String path) {
+        if (section == null) {
+            return null;
+        }
         return section.getConfigurationSection(path);
     }
 
     public YamlValues sub(String path) {
+        if (section == null) {
+            return new YamlValues(extendPath(path), null, report);
+        }
         ConfigurationSection sub = section.getConfigurationSection(path);
         return new YamlValues(extendPath(path), sub, report);
     }
 
     public boolean contains(String path) {
+        if (section == null) {
+            return false;
+        }
         return section.contains(path);
     }
 
     public String getString(String path, String def) {
+        if (section == null) {
+            return def;
+        }
         Object value = section.get(path);
         if (value == null) {
             return def;
@@ -58,6 +70,9 @@ public class YamlValues {
     }
 
     public int getInt(String path, int def) {
+        if (section == null) {
+            return def;
+        }
         Object value = section.get(path);
         if (value == null) {
             return def;
@@ -77,6 +92,9 @@ public class YamlValues {
     }
 
     public long getLong(String path, long def) {
+        if (section == null) {
+            return def;
+        }
         Object value = section.get(path);
         if (value == null) {
             return def;
@@ -96,6 +114,9 @@ public class YamlValues {
     }
 
     public double getDouble(String path, double def) {
+        if (section == null) {
+            return def;
+        }
         Object value = section.get(path);
         if (value == null) {
             return def;
@@ -118,6 +139,9 @@ public class YamlValues {
     }
 
     public boolean getBoolean(String path, boolean def) {
+        if (section == null) {
+            return def;
+        }
         Object value = section.get(path);
         if (value == null) {
             return def;
@@ -134,6 +158,9 @@ public class YamlValues {
     }
 
     public List<String> getStringList(String path, List<String> def) {
+        if (section == null) {
+            return def;
+        }
         Object value = section.get(path);
         if (value == null) {
             return def;
@@ -161,6 +188,9 @@ public class YamlValues {
     }
 
     public List<?> getList(String path) {
+        if (section == null) {
+            return null;
+        }
         Object value = section.get(path);
         if (value == null) {
             return null;
@@ -173,6 +203,9 @@ public class YamlValues {
     }
 
     public Map<String, Object> getValues(String path, boolean deep) {
+        if (section == null) {
+            return null;
+        }
         Object value = section.get(path);
         if (value == null) {
             return null;

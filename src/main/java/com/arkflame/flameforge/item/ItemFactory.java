@@ -5,6 +5,9 @@ import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.EnchantSpec;
 import com.arkflame.flameforge.model.ItemMutationSpec;
+import com.arkflame.flameforge.text.TextRenderer;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemStack;
@@ -17,15 +20,23 @@ import java.util.Optional;
 
 public final class ItemFactory {
     private static final ItemFactory INSTANCE = new ItemFactory();
+    private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
+
     private final MaterialResolver materialResolver = MaterialResolver.getInstance();
-    private final EnchantmentResolver enchantResolver = EnchantmentResolver.getInstance();
+    private final EnchantmentResolver enchantResolver = new EnchantmentResolver();
     private final RuntimeCapabilities capabilities = RuntimeCapabilities.getInstance();
+
+    private TextRenderer textRenderer;
 
     private ItemFactory() {
     }
 
     public static ItemFactory getInstance() {
         return INSTANCE;
+    }
+
+    public static void setTextRenderer(TextRenderer textRenderer) {
+        INSTANCE.textRenderer = textRenderer;
     }
 
     public Optional<ItemStack> createPreview(final ItemMutationSpec spec, final ItemStack baseItem) {
@@ -44,7 +55,7 @@ public final class ItemFactory {
             materialResolver.resolve(spec.getResultMaterial()).ifPresent(preview::setType);
         }
         if (spec.getResultName() != null) {
-            meta.setDisplayName(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', spec.getResultName()));
+            meta.setDisplayName(renderText(spec.getResultName()));
         }
         if (spec.getAmount() > 0) {
             preview.setAmount(spec.getAmount());
@@ -182,8 +193,7 @@ public final class ItemFactory {
             return;
         }
         try {
-            final String translated = net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', name);
-            meta.setDisplayName(translated);
+            meta.setDisplayName(renderText(name));
         } catch (Exception e) {
         }
     }
@@ -206,14 +216,14 @@ public final class ItemFactory {
                 newLore.clear();
                 if (content != null) {
                     for (final String line : content) {
-                        newLore.add(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', line));
+                        newLore.add(renderText(line));
                     }
                 }
                 break;
             case APPEND:
                 if (content != null) {
                     for (final String line : content) {
-                        newLore.add(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', line));
+                        newLore.add(renderText(line));
                     }
                 }
                 break;
@@ -221,7 +231,7 @@ public final class ItemFactory {
                 if (content != null) {
                     final List<String> combined = new ArrayList<>();
                     for (final String line : content) {
-                        combined.add(net.md_5.bungee.api.ChatColor.translateAlternateColorCodes('&', line));
+                        combined.add(renderText(line));
                     }
                     combined.addAll(newLore);
                     newLore.clear();
@@ -233,6 +243,13 @@ public final class ItemFactory {
             meta.setLore(newLore);
         } catch (Exception e) {
         }
+    }
+
+    private String renderText(String input) {
+        if (input == null) return "";
+        if (textRenderer == null) return input;
+        Component component = textRenderer.renderToComponent(input);
+        return LEGACY_SERIALIZER.serialize(component);
     }
 
     private void applyEnchantments(final ItemMeta meta, final List<EnchantSpec> specs) {

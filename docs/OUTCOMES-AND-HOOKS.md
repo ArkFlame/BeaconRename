@@ -1,36 +1,20 @@
 # FlameForge Outcomes and Hooks
 
+## Outcome Categories
+
+All outcomes fall into three categories based on their effect on the input item:
+
+| Category | Description |
+|----------|-------------|
+| **SUCCESS** | Item is returned in modified form |
+| **BREAK** | Input item is destroyed |
+| **CURSE** | Negative effect applied to item |
+
 ## Outcome Types
 
-Outcomes define what happens when a forge tier is executed. Each tier has one or more outcomes with assigned weights that determine probability via weighted random selection.
+### SUCCESS — Modify Input
 
-### BREAK
-
-The input item is consumed and no output is returned.
-
-```yaml
-break_item:
-  type: BREAK
-  weight: 10
-```
-
-**Effect:** Input slot items are removed. No item is returned to the player unless a ward converts this to `RETURN_UNCHANGED`.
-
-### RETURN_UNCHANGED
-
-The input item is returned in its original state.
-
-```yaml
-no_change:
-  type: RETURN_UNCHANGED
-  weight: 25
-```
-
-**Effect:** Input items are cloned and returned to the player's inventory.
-
-### MODIFY_INPUT
-
-The input item is mutated according to the mutation spec and returned.
+The input item is mutated and returned.
 
 ```yaml
 upgrade_sharpness:
@@ -43,17 +27,18 @@ upgrade_sharpness:
         min-level: 1
 ```
 
-**Effect:** The input item has its enchantments, attributes, name, lore, or material changed per the mutation spec, then returned.
+**Effect:** The input item has enchantments, attributes, name, lore, or material changed per the mutation spec, then returned. If `same_material` is true, the material is preserved.
 
 #### Mutation Spec Fields
 
-| Field       | Type             | Description                                   |
-|-------------|------------------|-----------------------------------------------|
-| `material`  | Material key     | Changes the item's material type              |
-| `name`      | MiniMessage      | Sets the display name                         |
-| `amount`    | Integer          | Sets stack size (default: 1)                  |
-| `enchants`  | Map              | Enchantments to add/remove                    |
-| `attributes`| Map              | Attribute modifiers to add                    |
+| Field          | Type             | Description                                      |
+|----------------|------------------|--------------------------------------------------|
+| `same_material` | Boolean          | If true, material is preserved (default: false) |
+| `material`     | Material key     | Changes the item's material type                 |
+| `name`         | MiniMessage      | Sets the display name                            |
+| `amount`       | Integer          | Sets stack size (default: 1)                    |
+| `enchants`     | Map              | Enchantments to add/remove                       |
+| `attributes`   | Map              | Attribute modifiers to add                       |
 
 #### Enchantment Spec
 
@@ -76,39 +61,79 @@ attributes:
     operation: ADD_NUMBER|ADD_SCALAR_1|ADD_SCALAR_2
 ```
 
-### CREATE_ITEM
+### BREAK
 
-A new item is created from the mutation spec and delivered to the player. The original input is consumed.
+The input item is consumed and no output is returned.
 
 ```yaml
-spawn_legendary:
-  type: CREATE_ITEM
+break_item:
+  type: BREAK
+  weight: 10
+```
+
+**Effect:** Input slot items are removed. No item is returned.
+
+### CURSE — Apply Curse
+
+Negative effects applied to the input item.
+
+```yaml
+curse_void:
+  type: CURSE
   weight: 5
-  mutation:
-    material: DIAMOND_SWORD
-    name: "<gold>Legendary Blade"
-    enchants:
-      sharpness_5:
-        name: DAMAGE_ALL
-        min-level: 5
+  curse:
+    type: VOID
+    description: "<red>Void corruption"
 ```
 
-**Effect:** A new ItemStack is created and delivered. If the player's inventory is full, the item is dropped at their location.
+**CURSE variants:**
 
-### COMMANDS
+| Type    | Effect |
+|---------|--------|
+| `VOID`  | Marks item with void curse |
+| `DECAY` | Reduces item durability on each reforge |
+| `DRAIN` | Reduces item stats |
 
-Console commands are dispatched. Placeholders `%player_name%`, `%player%`, and `%player_uuid%` are substituted.
+### Same-Material Variants
+
+When `same_material: true` is set, the item's material is preserved through the mutation. This allows enchantment upgrades without changing the base item type.
 
 ```yaml
-reward_commands:
-  type: COMMANDS
-  weight: 15
-  commands:
-    - "give %player_name% diamond 1"
-    - "eco give %player_name% 100"
+preserve_diamond:
+  type: MODIFY_INPUT
+  weight: 30
+  mutation:
+    same_material: true
+    enchants:
+      sharpness_boost:
+        name: DAMAGE_ALL
+        min-level: 1
 ```
 
-**Effect:** Commands are dispatched via `Bukkit.dispatchCommand()` on the console sender. Commands are scheduled asynchronously and logged to the audit trail.
+## Powers
+
+Powers are named stat bundles applied via outcomes. A power is a collection of enchantments, attributes, and display modifications.
+
+```yaml
+powers:
+  blazing:
+    enchants:
+      fire_aspect_boost:
+        name: FIRE_ASPECT
+        min-level: 2
+    attributes:
+      damage:
+        name: GENERIC_ATTACK_DAMAGE
+        min-value: 3.0
+        max-value: 5.0
+        operation: ADD_NUMBER
+
+outcomes:
+  apply_blazing:
+    type: MODIFY_INPUT
+    weight: 25
+    power: blazing
+```
 
 ## Hook System
 
@@ -136,15 +161,9 @@ public interface EconomyService {
 
 **NoEconomyService** is the fallback when Vault is absent; `available()` returns false and all withdraw calls fail.
 
-### SMPWeapons Integration
-
-FlameForge detects SMPWeapons via `PluginConditionService.isPluginEnabled("SMPWeapons")`. This information is displayed in the server startup log and can be used by external plugins to coordinate.
-
-SMPWeapons is a soft dependency. FlameForge does not directly call SMPWeapons APIs.
-
 ### Command-Based Reward Hooks
 
-The `COMMANDS` outcome type serves as the generic reward integration point. External plugins can register custom commands that grant rewards (e.g., from other plugins' reward systems).
+External plugins can register custom commands via the `COMMANDS` outcome type for reward integration.
 
 **Example: Integration with a custom reward plugin**
 
@@ -173,64 +192,3 @@ public boolean isVaultEnabled();
 ```
 
 This allows FlameForge to adapt behavior based on available plugins without hard dependencies.
-
-### Generic Command Hook (SMPWeapons Compatible)
-
-For direct SMPWeapons API integration (if the SMPWeapons hook is not available), the generic `COMMANDS` outcome type dispatches:
-
-```yaml
-outcomes:
-  smpweapons_grant:
-    type: COMMANDS
-    weight: 10
-    commands:
-      - "smpweapons give %player_name% rare_sword"
-```
-
-This approach works with or without SMPWeapons present.
-
-## Catalyst and Ward Hooks
-
-### Catalyst Processing
-
-Catalysts are processed before outcome selection. The `catalyst` section in `config.yml` defines:
-
-- `chance-modifier`: A decimal bonus applied to the total weight table
-- `protected-outcomes`: Outcome IDs that the catalyst blocks
-
-**Flow:**
-1. Player places catalyst in designated slot
-2. On forge confirm, catalyst is validated against tier catalyst requirements
-3. If valid, `chance-modifier` adjusts the chance table
-4. If outcome selected is in `protected-outcomes`, re-roll
-5. If `consume: true`, catalyst item is consumed
-
-### Ward Processing
-
-Wards are evaluated after outcome selection. The `ward` section in `config.yml` defines:
-
-- `protected-outcomes`: Outcome IDs the ward blocks
-- `convert_to_unchanged`: Outcome types (e.g., `BREAK`) converted to `RETURN_UNCHANGED`
-- `protect_all`: Boolean to protect against all BREAK outcomes
-
-**Flow:**
-1. Outcome is selected from chance table
-2. Ward is checked against `protected-outcomes`
-3. If matched and `convert_to_unchanged` contains the outcome type, outcome is converted to `RETURN_UNCHANGED`
-4. Ward item is consumed
-
-## Outcome Filtering
-
-The `OutcomeSelector` class supports pluggable filters:
-
-```java
-public interface CatalystFilter {
-    boolean test(OutcomeDefinition outcome);
-}
-
-public interface WardFilter {
-    boolean test(OutcomeDefinition outcome);
-}
-```
-
-These filters are applied before weight calculation, allowing dynamic outcome exclusion based on item properties, player state, or server conditions.

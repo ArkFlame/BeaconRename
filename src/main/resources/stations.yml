@@ -1,5 +1,5 @@
 # FlameForge Stations Configuration
-# Station profiles define behavior and permissions for rename stations
+# Station profiles define behavior and permissions for forge stations
 # No tier definitions here - tiers are in the tiers/ directory
 
 # ============================================================
@@ -40,7 +40,7 @@ premium:
   animation: default
   announcement-radius: 16
 
-# Admin profile - bypasses all restrictions
+# Admin profile - grants all command access
 admin:
   station-id: admin
   max-tier: -1
@@ -62,7 +62,7 @@ compact-profile:
 # ============================================================
 # REGISTERED STATIONS
 # ============================================================
-# Stations are registered via /flameforge station add <id> [profile]
+# Stations are registered via /flameforge station add [id] [profile]
 # They are persisted to plugins/FlameForge/stations.yml
 # This file serves as the template/definition for available profiles
 
@@ -72,5 +72,5 @@ compact-profile:
 # default: Standard forge experience with access to all tiers
 # basic: New player friendly, limited to lower tiers
 # premium: Full access with permission requirement
-# admin: Full admin access with bypass permissions
+# admin: Full admin command access
 # compact-profile: Smaller menu interface for limited spaces

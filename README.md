@@ -1,6 +1,6 @@
 # FlameForge
 
-FlameForge is a highly customizable Minecraft forge/reforge plugin for Spigot, Paper, and Folia servers. Players interact with beacon blocks to open a GUI-based forge menu where they can reforge weapons, armor, and tools with configurable outcomes, costs, cooldowns, and visual effects.
+FlameForge is a highly customizable Minecraft forge/reforge plugin for Spigot, Paper, and Folia servers. Players interact with forge stations to open a GUI-based forge menu where they can reforge weapons, armor, and tools with configurable outcomes, costs, cooldowns, and visual effects.
 
 ## Compatibility
 
@@ -31,36 +31,100 @@ The compiled JAR will be at `target/FlameForge-1.0.0.jar`.
 2. Place the JAR in `plugins/`.
 3. Start the server. Default configuration and tier files will be generated.
 4. Review `plugins/FlameForge/config.yml` and `plugins/FlameForge/tiers/` directory.
-5. Register beacon stations using `/flameforge station add <id> [profile]`.
+5. Register forge stations using `/flameforge station add [id] [profile]`.
 6. Restart or use `/flameforge reload`.
 
 ## Quick Start
 
-1. Create beacon blocks where you want forge stations.
-2. Run `/flameforge station add myforge default` while looking at a beacon.
+1. Create forge stations where you want forges.
+2. Run `/flameforge station add myforge default` while looking at any non-air block.
 3. Edit tier files in `plugins/FlameForge/tiers/` to define outcomes.
-4. Open the forge by right-clicking a registered beacon.
+4. Open the forge by right-clicking a registered forge.
+
+Any non-air block can be registered as a forge; no specific block material is required. In `REGISTERED_ONLY` mode, players interact only with blocks registered as forges.
 
 ## Optional Dependencies
 
 | Plugin         | Purpose                                | Hook Type        |
 |----------------|----------------------------------------|------------------|
 | Vault          | Economy integration (money costs)      | Soft dependency  |
-| SMPWeapons     | Custom weapon attribute integration     | Soft dependency  |
 
-FlameForge will operate without these plugins. Economy features require Vault and a compatible economy provider.
+FlameForge will operate without Vault. Economy features require Vault and a compatible economy provider.
 
 ## Menu
 
-The forge GUI (45-slot inventory) contains:
+The forge GUI (27-slot single-input menu) contains:
 
-- **Input slot** (center-left): Place the item to reforge.
-- **Catalyst slot** (above input): Optional catalyst item to modify outcomes.
-- **Ward slot** (below input): Optional ward to protect against BREAK outcomes.
-- **Tier buttons** (right side): Multi-page tier selection.
+- **Input slot** (center): Place the item to reforge.
+- **Tier buttons** (right side): Tier selection with automatic next-tier progression.
 - **Confirm button** (bottom-center): Execute the forge with selected tier.
-- **Pity history** (bottom-left): Shows pity counter status.
 - **Navigation** (bottom corners): Previous/Next page, Close.
+
+**Note:** Catalyst, ward, and pity UI slots have been removed. Tier requirements replace catalyst mechanics. Automatic tier progression replaces manual tier selection.
+
+## Tier Schema v2
+
+Tier files use schema version 2 with per-tier requirements:
+
+```yaml
+schema-version: 2
+id: tier_1
+level: 1
+requirements:
+  items:
+    - material: DIAMOND_SWORD
+      required: true
+display:
+  name: "<white>Common Forge"
+  lore:
+    - "<gray>Basic reforge"
+  material: IRON_INGOT
+cost:
+  mode: XP_ONLY
+  xp: 10
+cooldown-seconds: 60
+outcomes:
+  success_modify:
+    type: MODIFY_INPUT
+    category: SUCCESS
+    weight: 70
+    mutation:
+      same_material: true
+      enchants:
+        sharpness_1:
+          name: DAMAGE_ALL
+          min-level: 1
+  break_item:
+    type: BREAK
+    category: BREAK
+    weight: 25
+  curse_drain:
+    type: CURSE
+    category: CURSE
+    weight: 5
+    curse:
+      type: DRAIN
+```
+
+### Tier Requirements
+
+| Field        | Type   | Description |
+|--------------|--------|-------------|
+| `items`      | List   | Required items to use this tier |
+| `items[].material` | Material | Item material |
+| `items[].required` | Boolean | Must be present in input |
+
+### Outcome Categories
+
+| Category | Description |
+|----------|-------------|
+| `SUCCESS` | Item returned in modified form |
+| `BREAK`  | Input item destroyed |
+| `CURSE`  | Negative effect applied |
+
+### Tier Levels
+
+Tiers have a `level` field instead of `priority`. Automatic next-tier progression uses level ordering.
 
 ## Commands
 
@@ -69,26 +133,26 @@ The forge GUI (45-slot inventory) contains:
 | `/flameforge help [page]`          | Show help menu                       | `flameforge.use` (all)   |
 | `/flameforge open [player]`        | Open forge GUI                       | `flameforge.command.open` (all) |
 | `/flameforge reload`               | Reload configuration                  | `flameforge.command.reload` (op) |
-| `/flameforge validate`             | Validate configuration files          | `flameforge.command.validate` (op) |
+| `/flameforge validate`             | Validate configuration files            | `flameforge.command.validate` (op) |
 | `/flameforge tiers [page]`         | List all configured tiers            | `flameforge.command.tiers` (op) |
 | `/flameforge tier info <tier>`     | Show tier details                    | `flameforge.command.tier.info` (op) |
 | `/flameforge preview <tier> [mat]` | Preview outcome for held item        | `flameforge.command.preview` (op) |
 | `/flameforge history [player]`      | View reforge history                 | `flameforge.command.history` (all) |
-| `/flameforge station add <id> [profile]` | Register a beacon station       | `flameforge.command.station.add` (op) |
+| `/flameforge station add [id] [profile]` | Register a forge       | `flameforge.command.station.add` (op) |
 | `/flameforge station remove <id>`  | Remove a station                     | `flameforge.command.station.remove` (op) |
 | `/flameforge station list [page]`  | List all stations                    | `flameforge.command.station.list` (op) |
 | `/flameforge station info <id>`    | Show station details                 | `flameforge.command.station.info` (op) |
 | `/flameforge station teleport <id>` | Teleport to station                  | `flameforge.command.station.teleport` (op) |
-| `/flameforge setup tier create <id> <priority>` | Create empty tier     | `flameforge.command.setup.tier` (op) |
-| `/flameforge setup tier clone <source> <id> <priority>` | Clone existing tier | `flameforge.command.setup.tier` (op) |
+| `/flameforge setup tier create <id> <level>` | Create empty tier     | `flameforge.command.setup.tier` (op) |
+| `/flameforge setup tier clone <source> <id> <level>` | Clone existing tier | `flameforge.command.setup.tier` (op) |
 
 ## Configuration Files
 
 | File                    | Purpose                                      |
 |-------------------------|----------------------------------------------|
-| `config.yml`            | Root plugin settings, catalysts, wards, announcements |
+| `config.yml`            | Root plugin settings, announcements |
 | `stations.yml`          | Registered forge station locations (auto-managed) |
-| `tiers/*.yml`           | Individual tier definitions                   |
+| `tiers/*.yml`           | Individual tier definitions (schema v2)         |
 | `messages.yml`          | Custom message strings                       |
 | `menus.yml`             | GUI layout and styling                       |
 
@@ -103,7 +167,6 @@ On first startup, if the `tiers/` directory does not exist, FlameForge will copy
 FlameForge provides command-based hooks for reward integration and economy:
 
 - **Vault**: Money costs via `CostMode.MONEY_ONLY` or `CostMode.XP_AND_MONEY`.
-- **Custom commands**: Outcome `COMMANDS` type dispatches console commands as rewards.
 - **PlaceholderAPI**: Expansion support for scoreboard and chat integration (separate plugin required).
 
 ## Safety

@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.forge;
 
+import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.persistence.AuditLogService;
 import com.arkflame.flameforge.persistence.PendingDelivery;
@@ -14,11 +15,17 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -31,6 +38,7 @@ public final class DeliveryService {
     private final AuditLogService auditLog;
     private final Map<String, Object> announcementConfig;
     private final ConcurrentHashMap<String, Boolean> processedDeliveryIds = new ConcurrentHashMap<>();
+    private final Set<String> loggedMissingMaterials = new HashSet<>();
 
     public DeliveryService(JavaPlugin plugin, SchedulerBridge scheduler,
                           PendingDeliveryRepository deliveryRepository,
@@ -107,12 +115,18 @@ public final class DeliveryService {
         }
 
         Map<String, Object> itemSnapshot = new HashMap<>();
-        if (item != null) {
+        if (item != null && item.getType() != Material.AIR) {
+            try {
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                java.io.ObjectOutputStream oos = new java.io.ObjectOutputStream(baos);
+                oos.writeObject(item);
+                oos.flush();
+                itemSnapshot.put("serialized", Base64.getEncoder().encodeToString(baos.toByteArray()));
+            } catch (IOException e) {
+                plugin.getLogger().warning("Failed to serialize item for delivery: " + e.getMessage());
+            }
             itemSnapshot.put("material", item.getType().name());
             itemSnapshot.put("amount", item.getAmount());
-            if (item.hasItemMeta() && item.getItemMeta().hasDisplayName()) {
-                itemSnapshot.put("displayName", item.getItemMeta().getDisplayName());
-            }
         }
 
         List<String> deferredCommands = commands != null ? new ArrayList<>(commands) : new ArrayList<>();
@@ -236,29 +250,46 @@ public final class DeliveryService {
             return null;
         }
 
-        String materialStr = (String) snapshot.get("material");
-        int amount = snapshot.get("amount") instanceof Number ?
-            ((Number) snapshot.get("amount")).intValue() : 1;
+        String serialized = (String) snapshot.get("serialized");
+        if (serialized != null) {
+            try {
+                byte[] data = Base64.getDecoder().decode(serialized);
+                ByteArrayInputStream bais = new ByteArrayInputStream(data);
+                java.io.ObjectInputStream ois = new java.io.ObjectInputStream(bais);
+                ItemStack item = (ItemStack) ois.readObject();
+                return item;
+            } catch (IOException | ClassNotFoundException e) {
+                plugin.getLogger().warning("Failed to deserialize item: " + e.getMessage());
+                return null;
+            }
+        }
 
+        String materialStr = (String) snapshot.get("material");
         if (materialStr == null) {
             return null;
         }
 
-        try {
-            org.bukkit.Material material = org.bukkit.Material.valueOf(materialStr);
-            ItemStack item = new ItemStack(material, amount);
+        int amount = snapshot.get("amount") instanceof Number ?
+            ((Number) snapshot.get("amount")).intValue() : 1;
 
-            String displayName = (String) snapshot.get("displayName");
-            if (displayName != null && item.hasItemMeta()) {
-                org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
-                meta.setDisplayName(displayName);
-                item.setItemMeta(meta);
+        java.util.Optional<MaterialResolver.ResolvedMaterial> resolved =
+                MaterialResolver.getInstance().get(materialStr);
+        if (!resolved.isPresent()) {
+            if (loggedMissingMaterials.add(materialStr)) {
+                plugin.getLogger().warning("Invalid persisted material: " + materialStr);
             }
-
-            return item;
-        } catch (IllegalArgumentException e) {
             return null;
         }
+        ItemStack item = resolved.get().toItemStack(amount);
+
+        String displayName = (String) snapshot.get("displayName");
+        if (displayName != null && item.hasItemMeta()) {
+            org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+            meta.setDisplayName(displayName);
+            item.setItemMeta(meta);
+        }
+
+        return item;
     }
 
     private String resolveCommandPlaceholders(String command, String playerName, UUID playerUuid) {
@@ -275,7 +306,7 @@ public final class DeliveryService {
         }
 
         String scope = getAnnouncementScope();
-        Component component = textBridge.parse(message);
+        Component component = textBridge.render(message);
 
         if ("global".equals(scope)) {
             textBridge.sendAll(component);

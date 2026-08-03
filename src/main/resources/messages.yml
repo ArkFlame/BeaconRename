@@ -6,79 +6,111 @@
 #               %food%, %xp_level%, %item_name%, %item_in_hand%
 
 # ============================================================
+# STARTUP MESSAGES
+# ============================================================
+
+startup:
+  loading: "<yellow>FlameForge is still loading: <white>%pending_components%"
+  failed: "<red>FlameForge startup failed in <white>%component%<red>: <white>%reason% <gray>(reference: %reference%)"
+  failed-retryable: "<yellow>Run <white>/flameforge reload <yellow>after correcting the data/configuration problem."
+  restart-required: "<red>This startup failure requires a full server restart after correcting the console error."
+  unavailable: "<red>FlameForge is disabled or shutting down."
+
+# ============================================================
 # COMMAND MESSAGES
 # ============================================================
 
 # Main command
 command:
   unknown: "<red>Unknown command. Use <white>/flameforge help <gray>for available commands."
-  no-permission: "<red>You don't have permission to use this command."
-  player-only: "<red>This command can only be used by players."
-  reload-success: "<green>Configuration reloaded successfully."
-  reload-started: "<yellow>Reloading configuration..."
-  validate-started: "<yellow>Validating configuration..."
-  validate-success: "<green>Validation passed: No errors or warnings found."
-  console-sender: "<gray>Console"
 
 # Help command
 help:
-  header: "<gold>=== <white>FlameForge Help <gray>(%page%/%total_pages%)<gold> ==="
-  usage-format: "<yellow>%usage% <gray>- <white>%description%"
-  footer: "<gray>Use <white>/flameforge help <page> <gray>for more pages."
-  no-permission: "<red>You don't have permission to use this command."
+  no-permission: "<red>Permission required: <white>%permission%"
+  border: "<dark_gray>========================================"
+  root-header: "<gradient:#ff5f00:#ffd166><bold>%plugin_name% %plugin_version%</bold></gradient> <gray>by <white>%plugin_authors%"
+  group-header: "<gradient:#ff5f00:#ffd166><bold>%plugin_name% %group_name%</bold></gradient>"
+  entry: "<gradient:#ff8a00:#ffe29a>/%label% %usage%</gradient> <dark_gray>- <gray>%description%"
+  hover: "<gray>Click to insert <white>/%label% %suggestion%"
+  empty: "<yellow>No commands are available for this path."
+  unknown-path: "<red>Unknown help path: <white>%path%"
   descriptions:
-    help: "Show this help menu"
-    open: "Open the beacon menu"
-    open-others: "Open the beacon menu for another player"
+    help: "Show this help message"
+    open: "Open the forge menu"
+    open-others: "Open forge menu for another player"
+    tiers: "List all forge tiers"
+    tier-info: "Show tier details"
+    preview: "Preview forge outcomes"
+    history: "View your forge history"
+    history-others: "View another player's forge history"
+    station-teleport: "Teleport to a forge station"
+    station-add: "Add a new forge station"
+    station-remove: "Remove a forge station"
+    station-list: "List all forge stations"
+    station-info: "Show station details"
     reload: "Reload configuration"
-    validate: "Validate configurations"
-    tiers: "List all tiers"
-    tier-info: "Show tier information"
-    preview: "Preview forge outcome"
-    history: "View rename history"
-    history-others: "View another player's history"
-    station-add: "Add a rename station"
-    station-remove: "Remove a rename station"
-    station-list: "List rename stations"
-    station-info: "Show station information"
-    station-teleport: "Teleport to a station"
+    validate: "Validate configuration"
     setup-tier-create: "Create a new tier"
     setup-tier-clone: "Clone an existing tier"
+  categories:
+    general: "General"
+    forging: "Forging"
+    forge-management: "Forge Management"
+    administration: "Administration"
 
 # Open command
 open:
-  success: "<green>Opening beacon menu for <white>%player_name%<green>..."
-  no-target: "<red>Player not found."
-  no-permission: "<red>You don't have permission to open menus for other players."
-  no-beacon: "<red>You must be looking at a beacon to open the menu."
-  menu-opened: "<green>Beacon menu opened at station: <white>%station_id%"
+  no-permission: "<red>Permission required to open your forge menu: <white>%permission%"
+  no-permission-others: "<red>Permission required to open another player's forge menu: <white>%permission%"
+  player-only: "<red>This command can only be used by a player."
+  player-offline: "<red>Target player is offline."
+  forge-not-found: "<red>No forge found with id: <white>%station_id%"
+  profile-not-found: "<red>Forge '<white>%station_id%<red>' has no valid station profile."
+  station-permission-required: "<red>You do not have permission to use this forge. Required: <white>%permission%"
+  no-allowed-tier: "<red>You do not have an allowed tier for this forge."
+  scheduler-rejected: "<red>The scheduler rejected the forge open task. Reference: %reference%"
+  menu-open-failed: "<red>Failed to open forge menu. Reference: %reference%"
+  player-retired: "<red>The player disconnected before the forge could be opened."
+  menu-opened: "<green>Forge menu opened."
 
 # Reload command
 reload:
-  no-permission: "<red>You don't have permission to reload configuration."
-  started: "<yellow>Reloading configuration..."
-  success: "<green>Configuration reloaded successfully."
+  no-permission: "<red>Permission required: <white>%permission%"
+  started: "<yellow>Reloading FlameForge configuration..."
+  success: "<green>Configuration applied. Runtime services refreshed."
+  validation-rejected: "<red>Reload rejected because configuration validation found errors. The previous configuration remains active."
+  validation-error-entry: "<red>%path%: %message%"
+  already-running: "<yellow>A FlameForge reload is already running."
+  already-loading: "<yellow>FlameForge startup is already running."
+  startup-retry-started: "<yellow>Retrying FlameForge startup data loads..."
+  restart-required: "<red>The startup failure occurred during %component% and cannot be safely retried. Correct the console error and restart the server. Reference: %reference%"
+  scheduler-rejected: "<red>The scheduler rejected the reload task. Reference: %reference%"
+  load-failed: "<red>Configuration reload could not read/parse the files: %reason% <gray>(%reference%)"
+  runtime-refresh-failed: "<red>Configuration loaded, but runtime refresh failed: %reason% <gray>(%reference%)"
+  unavailable: "<red>FlameForge is disabled or shutting down."
 
 # Validate command
 validate:
-  no-permission: "<red>You don't have permission to validate configurations."
-  started: "<yellow>Validating configuration..."
-  passed: "<green>Validation passed: No errors or warnings found."
-  error-prefix: "<red>[ERROR]"
-  warn-prefix: "<yellow>[WARN]"
-  path-separator: "<white>: "
+  no-permission: "<red>Permission required: <white>%permission%"
+  started: "<yellow>Validating FlameForge configuration without applying changes..."
+  passed: "<green>Configuration validation passed with no errors."
+  error: "<red>%path%: %message%"
+  warning: "<yellow>%path%: %message%"
+  already-running: "<yellow>A configuration validation is already running."
+  scheduler-rejected: "<red>The scheduler rejected the validation task. Reference: %reference%"
+  load-failed: "<red>Configuration validation could not read/parse the files: %reason% <gray>(%reference%)"
 
 # Tiers command
 tiers:
-  no-permission: "<red>You don't have permission to list tiers."
-  header: "<gold>=== <white>Tiers <gray>(%page%/%total_pages%)<gold> ==="
+  no-permission: "<red>Permission required: <white>%permission%"
+  header: "<gold>=== <white>Tiers</white></gold> ==="
   entry: "<yellow>%tier_id% <gray>(Priority: <white>%priority%<gray>)"
   empty: "<yellow>No tiers configured."
   footer: "<gray>Use <white>/flameforge tiers <page> <gray>for more pages."
 
 # Tier info command
 tier-info:
-  no-permission: "<red>You don't have permission to view tier information."
+  no-permission: "<red>Permission required: <white>%permission%"
   usage: "<red>Usage: <white>/flameforge tier info <tier>"
   header: "<gold>=== <white>Tier: %tier_id% <gold>==="
   priority: "<white>Priority: <yellow>%priority%"
@@ -93,7 +125,8 @@ tier-info:
 
 # Preview command
 preview:
-  no-permission: "<red>You don't have permission to preview outcomes."
+  no-permission: "<red>Permission required: <white>%permission%"
+  player-only: "<red>This command can only be used by a player."
   usage: "<red>Usage: <white>/flameforge preview <tier> [material]"
   tier-not-found: "<red>Tier not found: <white>%tier_id%"
   no-item: "<red>You must be holding an item to preview."
@@ -105,7 +138,7 @@ preview:
 
 # History command
 history:
-  no-permission: "<red>You don't have permission to view history."
+  no-permission: "<red>Permission required: <white>%permission%"
   usage: "<red>Usage: <white>/flameforge history <player>"
   header: "<gold>History for <white>%player_name%<gold>:"
   no-history: "<yellow>No history found for <white>%player_name%"
@@ -121,31 +154,51 @@ station:
 
 # Station add
 station-add:
-  no-permission: "<red>You don't have permission to add stations."
-  player-only: "<red>This command can only be used by players."
-  usage: "<red>Usage: <white>/flameforge station add <id> [profile]"
-  no-beacon: "<red>You must be looking at a beacon block."
-  success: "<green>Station '<white>%station_id%<green>' added successfully."
-  failure: "<red>Failed to add station. ID may already exist or coordinates are invalid."
+  no-permission: "<red>Permission required to register a forge: <white>%permission%"
+  player-only: "<red>This command can only be used by a player."
+  invalid-id: "<red>Invalid forge id '<white>%station_id%<red>'. Use letters, numbers, underscore, and hyphen only."
+  unknown-profile: "<red>Unknown station profile: <white>%profile%"
+  no-block: "<red>You must be looking at a non-air block."
+  target-unavailable: "<red>The targeted block's world/chunk is unavailable. Move closer and retry."
+  duplicate-id: "<red>A forge already uses id: <white>%station_id%"
+  duplicate-location: "<red>A forge is already registered at that block."
+  persistence-failed: "<red>The forge could not be saved to stations.yml. No forge was registered. Reference: %reference%"
+  id-generation-exhausted: "<red>Could not generate a unique forge id after eight attempts."
+  player-retired: "<red>The player disconnected before the target block could be resolved."
+  success: "<green>Forge registered: <white>%station_id%"
+
+# Teleport command alias
+tp:
+  no-permission: "<red>Permission required: <white>%permission%"
+  player-only: "<red>This command can only be used by a player."
+  success: "<green>Teleported to forge: <white>%station_id%"
+  player-offline: "<red>Target player is offline."
+  station-missing: "<red>No forge found with id: <white>%station_id%"
+  world-not-found: "<red>Forge world '<white>%world%<red>' could not be found."
+  world-not-loaded: "<red>Forge world '<white>%world%<red>' is not loaded. Move closer and retry."
+  teleport-rejected: "<red>Teleport was rejected by the server."
+  teleport-exception: "<red>Teleport failed: <white>%reason% <gray>(reference: %reference%)"
+  player-retired: "<red>The player disconnected before teleport could complete."
+  scheduler-rejected: "<red>The scheduler rejected the teleport task. Reference: %reference%"
 
 # Station remove
 station-remove:
-  no-permission: "<red>You don't have permission to remove stations."
-  usage: "<red>Usage: <white>/flameforge station remove <id>"
-  success: "<green>Station '<white>%station_id%<green>' removed successfully."
-  not-found: "<red>Station not found: <white>%station_id%"
+  no-permission: "<red>Permission required: <white>%permission%"
+  success: "<green>Forge removed: <white>%station_id%"
+  not-found: "<red>No forge found with id: <white>%station_id%"
+  persistence-failed: "<red>Forge '<white>%station_id%<red>' exists, but stations.yml could not be updated. The forge remains registered. Reference: %reference%"
 
 # Station list
 station-list:
-  no-permission: "<red>You don't have permission to list stations."
-  header: "<gold>=== <white>Stations <gray>(%page%/%total_pages%)<gold> ==="
+  no-permission: "<red>Permission required: <white>%permission%"
+  header: "<gold>=== <white>Stations</white></gold> ==="
   entry: "<yellow>%station_id% <gray>[<white>%world% %x%,%y%,%z%<gray>] <gray>(Profile: <white>%profile%<gray>)"
   empty: "<yellow>No stations configured."
   footer: "<gray>Use <white>/flameforge station list <page> <gray>for more pages."
 
 # Station info
 station-info:
-  no-permission: "<red>You don't have permission to view station information."
+  no-permission: "<red>Permission required: <white>%permission%"
   usage: "<red>Usage: <white>/flameforge station info <id>"
   header: "<gold>=== <white>Station: %station_id% <gold>==="
   world: "<white>World: <yellow>%world%"
@@ -156,18 +209,13 @@ station-info:
 
 # Station teleport
 station-teleport:
-  no-permission: "<red>You don't have permission to teleport to stations."
-  player-only: "<red>This command can only be used by players."
-  usage: "<red>Usage: <white>/flameforge station teleport <id>"
-  success: "<green>Teleporting to station '<white>%station_id%<green>'..."
-  not-found: "<red>Station not found: <white>%station_id%"
-  world-not-found: "<red>World not found for station."
-  world-not-loaded: "<red>World is not loaded. Teleport failed."
-  failure: "<red>Teleport failed."
+  no-permission: "<red>Permission required: <white>%permission%"
+  player-only: "<red>This command can only be used by a player."
+  success: "<green>Teleported to forge: <white>%station_id%"
 
 # Setup tier command
 setup:
-  no-permission: "<red>You don't have permission to set up tiers."
+  no-permission: "<red>Permission required: <white>%permission%"
   usage: "<red>Usage: <white>/flameforge setup tier <create|clone> [args]"
   unknown: "<red>Unknown setup command. Use <white>/flameforge setup tier create|clone"
 
@@ -182,12 +230,11 @@ setup-tier-create:
 
 # Setup tier clone
 setup-tier-clone:
+  source-not-found: "<red>Source tier not found: <white>%source_id%"
   no-permission: "<red>You don't have permission to clone tiers."
   usage: "<red>Usage: <white>/flameforge setup tier clone <source> <id> <priority>"
   priority-invalid: "<red>Priority must be a number."
-  source-not-found: "<red>Source tier not found: <white>%source_id%"
   already-exists: "<red>Tier already exists: <white>%new_id%"
-  failure: "<red>Failed to clone tier."
   success: "<green>Tier '<white>%new_id%<green>' cloned from '<white>%source_id%<green>' with priority <white>%priority%<green>."
   note: "<yellow>Note: Cloned tiers inherit all settings. Edit the tier file manually to adjust."
 
@@ -212,11 +259,7 @@ cooldown:
   active: "<red>You are on cooldown. Wait <yellow>%remaining%s<red>."
   expired: "<green>Cooldown expired. You can forge again."
 
-# Pity messages
-pity:
-  incremented: "<gray>Pity: <purple>%count%/%threshold%"
-  bonus-activated: "<gold><bold>PITY BONUS ACTIVATED! <green>Increased chance!"
-  reset: "<gray>Pity counter reset."
+
 
 # Insufficient funds / XP
 cost:
@@ -235,17 +278,7 @@ validation:
   tier-locked: "<red>This tier is locked at your station. Upgrade to access."
   tier-unavailable: "<red>This tier is currently unavailable."
 
-# Ward messages
-ward:
-  protected: "<aqua>Your item is protected by a ward!"
-  converted: "<aqua>Ward converted outcome to RETURN_UNCHANGED."
-  no-protection: "<gray>No ward protection active."
 
-# Catalyst messages
-catalyst:
-  applied: "<cyan>Catalyst applied: <white>%catalyst_name%<cyan>. Modifying outcomes."
-  consumed: "<gray>%catalyst_name% <gray>consumed."
-  no-effect: "<gray>Catalyst had no effect on outcomes."
 
 # Announcement titles (for title/subtitle broadcasts)
 announcements:
@@ -268,16 +301,7 @@ menu:
     lore:
       - "<gray>Place your item here"
       - "<gray>(Stack size must be exactly 1)"
-  catalyst-placeholder:
-    name: "<aqua><bold>Catalyst"
-    lore:
-      - "<gray>Optional: Place a catalyst"
-      - "<gray>to modify outcomes"
-  ward-placeholder:
-    name: "<light_purple><bold>Ward"
-    lore:
-      - "<gray>Optional: Place a ward"
-      - "<gray>to protect your item"
+
   confirm-available:
     name: "<green><bold>Confirm Forge"
   confirm-unavailable:
@@ -302,11 +326,6 @@ menu:
     name: "<red><bold>Close"
     lore:
       - "<gray>Click to close the menu"
-  pity-history:
-    name: "<light_purple><bold>Pity / History"
-    lore:
-      - "<gray>Current Pity: <light_purple>%pity%"
-      - "<gray>Click to view history"
   info:
     name: "<gold><bold>FlameForge"
     lore:

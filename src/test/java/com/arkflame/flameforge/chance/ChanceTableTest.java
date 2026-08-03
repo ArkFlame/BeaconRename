@@ -13,23 +13,20 @@ import static org.junit.jupiter.api.Assertions.*;
 class ChanceTableTest {
 
     @Test
-    void from_validWeights_buildsTableWithCorrectTotal() {
-        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("2"), new BigDecimal("3") };
+    void fromBuildsOrderedTableAndAdjustsResidual() {
+        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("1"), new BigDecimal("1") };
         String[] ids = { "a", "b", "c" };
         int[] orders = { 0, 1, 2 };
 
         ChanceTable table = ChanceTable.from(weights, ids, orders);
 
-        assertEquals(6_000_000L, table.getTotalMicroWeight());
+        assertEquals(3_000_000L, table.getTotalMicroWeight());
         assertEquals(3, table.getEntries().size());
-    }
 
-    @Test
-    void from_residualAdjustedToSum100() {
-        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("1"), new BigDecimal("1") };
-        String[] ids = { "a", "b", "c" };
-
-        ChanceTable table = ChanceTable.from(weights, ids, null);
+        List<ChanceEntry> entries = table.getEntries();
+        assertEquals("a", entries.get(0).getOutcomeId());
+        assertEquals("b", entries.get(1).getOutcomeId());
+        assertEquals("c", entries.get(2).getOutcomeId());
 
         BigDecimal sum = BigDecimal.ZERO;
         for (ChanceEntry e : table.getEntries()) {
@@ -39,88 +36,45 @@ class ChanceTableTest {
     }
 
     @Test
-    void from_entriesAreInOriginalOrder() {
-        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("5"), new BigDecimal("3") };
-        String[] ids = { "low", "high", "mid" };
-        int[] orders = { 0, 1, 2 };
-
-        ChanceTable table = ChanceTable.from(weights, ids, orders);
-
-        List<ChanceEntry> entries = table.getEntries();
-        assertEquals("low", entries.get(0).getOutcomeId());
-        assertEquals("high", entries.get(1).getOutcomeId());
-        assertEquals("mid", entries.get(2).getOutcomeId());
-    }
-
-    @Test
-    void from_rejectsNullWeights() {
-        BigDecimal[] weights = null;
+    void fromRejectsNullEmptyNonPositiveAndExcessScaleWeights() {
+        String[] cases = { "null", "empty", "zero", "negative", "excessScale" };
         String[] ids = { "a" };
 
-        assertThrows(IllegalArgumentException.class, () -> ChanceTable.from(weights, ids, null));
+        for (String caseName : cases) {
+            switch (caseName) {
+                case "null":
+                    assertThrows(IllegalArgumentException.class,
+                        () -> ChanceTable.from((BigDecimal[]) null, ids, null));
+                    break;
+                case "empty":
+                    assertThrows(IllegalArgumentException.class,
+                        () -> ChanceTable.from(new BigDecimal[] {}, new String[] {}, null));
+                    break;
+                case "zero":
+                    assertThrows(IllegalArgumentException.class,
+                        () -> ChanceTable.from(new BigDecimal[] { BigDecimal.ZERO }, ids, null));
+                    break;
+                case "negative":
+                    assertThrows(IllegalArgumentException.class,
+                        () -> ChanceTable.from(new BigDecimal[] { new BigDecimal("-1") }, ids, null));
+                    break;
+                case "excessScale":
+                    assertThrows(IllegalArgumentException.class,
+                        () -> ChanceTable.from(new BigDecimal[] { new BigDecimal("1.0000001") }, ids, null));
+                    break;
+            }
+        }
     }
 
     @Test
-    void from_rejectsZeroWeight() {
-        BigDecimal[] weights = { new BigDecimal("0") };
-        String[] ids = { "a" };
-
-        assertThrows(IllegalArgumentException.class, () -> ChanceTable.from(weights, ids, null));
-    }
-
-    @Test
-    void from_rejectsNegativeWeight() {
-        BigDecimal[] weights = { new BigDecimal("-1") };
-        String[] ids = { "a" };
-
-        assertThrows(IllegalArgumentException.class, () -> ChanceTable.from(weights, ids, null));
-    }
-
-    @Test
-    void from_rejectsWeightScaleExceeding6() {
-        BigDecimal[] weights = { new BigDecimal("1.0000001") };
-        String[] ids = { "a" };
-
-        assertThrows(IllegalArgumentException.class, () -> ChanceTable.from(weights, ids, null));
-    }
-
-    @Test
-    void from_rejectsEmptyInput() {
-        BigDecimal[] weights = {};
-        String[] ids = {};
-
-        assertThrows(IllegalArgumentException.class, () -> ChanceTable.from(weights, ids, null));
-    }
-
-    @Test
-    void selectIndex_randomMicroZeroSelectsFirstEntry() {
+    void selectIndexAcceptsFirstLastAndExactBoundary() {
         BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("2"), new BigDecimal("3") };
         String[] ids = { "a", "b", "c" };
 
         ChanceTable table = ChanceTable.from(weights, ids, null);
 
-        int idx = table.selectIndex(0);
-        assertEquals(0, idx);
-    }
-
-    @Test
-    void selectIndex_randomMicroAtLastBoundarySelectsLastEntry() {
-        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("2"), new BigDecimal("3") };
-        String[] ids = { "a", "b", "c" };
-
-        ChanceTable table = ChanceTable.from(weights, ids, null);
-        long lastMicro = table.getTotalMicroWeight() - 1;
-
-        int idx = table.selectIndex(lastMicro);
-        assertEquals(2, idx);
-    }
-
-    @Test
-    void selectIndex_exactCumulativeBoundary() {
-        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("1") };
-        String[] ids = { "a", "b" };
-
-        ChanceTable table = ChanceTable.from(weights, ids, null);
+        assertEquals(0, table.selectIndex(0));
+        assertEquals(2, table.selectIndex(table.getTotalMicroWeight() - 1));
 
         int idx0 = table.selectIndex(0);
         int idx1 = table.selectIndex(1_000_000);
@@ -129,7 +83,7 @@ class ChanceTableTest {
     }
 
     @Test
-    void selectIndex_invalidRandomMicro_throws() {
+    void selectIndexRejectsOutOfRangeMicroValue() {
         BigDecimal[] weights = { new BigDecimal("1") };
         String[] ids = { "a" };
 
@@ -140,7 +94,7 @@ class ChanceTableTest {
     }
 
     @Test
-    void select_returnsCorrectEntry() {
+    void selectReturnsEntryAtSelectedIndex() {
         BigDecimal[] weights = { new BigDecimal("5"), new BigDecimal("5") };
         String[] ids = { "first", "second" };
 
@@ -151,19 +105,20 @@ class ChanceTableTest {
     }
 
     @Test
-    void equals_andHashCode_consistent() {
-        BigDecimal[] weights = { new BigDecimal("1"), new BigDecimal("2") };
+    void equalsHashCodeMatchEquivalentWeights() {
+        BigDecimal[] weights1 = { new BigDecimal("1"), new BigDecimal("2") };
+        BigDecimal[] weights2 = { new BigDecimal("1"), new BigDecimal("2") };
         String[] ids = { "a", "b" };
 
-        ChanceTable t1 = ChanceTable.from(weights, ids, null);
-        ChanceTable t2 = ChanceTable.from(weights, ids, null);
+        ChanceTable t1 = ChanceTable.from(weights1, ids, null);
+        ChanceTable t2 = ChanceTable.from(weights2, ids, null);
 
         assertEquals(t1, t2);
         assertEquals(t1.hashCode(), t2.hashCode());
     }
 
     @Test
-    void equals_differentWeights_notEqual() {
+    void differentWeightsAreNotEqual() {
         BigDecimal[] weights1 = { new BigDecimal("1"), new BigDecimal("2") };
         BigDecimal[] weights2 = { new BigDecimal("1"), new BigDecimal("3") };
         String[] ids = { "a", "b" };

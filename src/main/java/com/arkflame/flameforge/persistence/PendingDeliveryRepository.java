@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -23,6 +24,8 @@ public final class PendingDeliveryRepository {
     private final Path deliveriesFile;
     private final ConcurrentHashMap<String, PendingDelivery> byId = new ConcurrentHashMap<>();
     private final AtomicBoolean dropsLogged = new AtomicBoolean(false);
+    private final Object writeLock = new Object();
+    private CompletableFuture<Void> currentWrite = CompletableFuture.completedFuture(null);
 
     public PendingDeliveryRepository(JavaPlugin plugin, SchedulerBridge scheduler, Path dataFolder) {
         this.plugin = Objects.requireNonNull(plugin);
@@ -31,25 +34,55 @@ public final class PendingDeliveryRepository {
     }
 
     public void load() {
-        if (!Files.exists(deliveriesFile)) {
-            return;
-        }
         try {
-            org.bukkit.configuration.file.YamlConfiguration config = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(deliveriesFile.toFile());
-            List<?> list = config.getList("deliveries", Collections.emptyList());
-            for (Object item : list) {
-                if (item instanceof Map) {
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> map = (Map<String, Object>) item;
-                    PendingDelivery delivery = fromMap(map);
-                    if (delivery != null) {
-                        byId.put(delivery.getDeliveryId(), delivery);
-                    }
-                }
-            }
+            loadFromDisk();
         } catch (Exception e) {
             plugin.getLogger().severe("Failed to load pending deliveries: " + e.getMessage());
         }
+    }
+
+    public CompletableFuture<Void> loadAsync() {
+        return scheduleAsync(this::loadFromDisk);
+    }
+
+    private void loadFromDisk() {
+        Map<String, PendingDelivery> loaded = new java.util.HashMap<>();
+        if (!Files.exists(deliveriesFile)) {
+            byId.clear();
+            return;
+        }
+
+        org.bukkit.configuration.file.YamlConfiguration config = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(deliveriesFile.toFile());
+        List<?> list = config.getList("deliveries", Collections.emptyList());
+        for (Object item : list) {
+            if (item instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> map = (Map<String, Object>) item;
+                PendingDelivery delivery = fromMap(map);
+                if (delivery != null) {
+                    loaded.put(delivery.getDeliveryId(), delivery);
+                }
+            }
+        }
+        byId.clear();
+        byId.putAll(loaded);
+    }
+
+    private CompletableFuture<Void> scheduleAsync(Runnable action) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        try {
+            scheduler.runAsync(plugin, () -> {
+                try {
+                    action.run();
+                    future.complete(null);
+                } catch (Throwable failure) {
+                    future.completeExceptionally(failure);
+                }
+            });
+        } catch (Throwable failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
     }
 
     private PendingDelivery fromMap(Map<String, Object> map) {
@@ -103,12 +136,32 @@ public final class PendingDeliveryRepository {
         return commands;
     }
 
-    public void saveAsync() {
-        scheduler.runAsync(plugin, this::save);
+    public CompletableFuture<Void> saveAsync() {
+        synchronized (writeLock) {
+            CompletableFuture<Void> previous = currentWrite;
+            CompletableFuture<Void> next = new CompletableFuture<>();
+            currentWrite = next;
+            previous.whenComplete((ignored, failure) -> scheduleSave(next));
+            return next;
+        }
     }
 
-    private synchronized void save() {
+    private void scheduleSave(CompletableFuture<Void> result) {
         try {
+            scheduler.runAsync(plugin, () -> {
+                try {
+                    save();
+                    result.complete(null);
+                } catch (Throwable failure) {
+                    result.completeExceptionally(failure);
+                }
+            });
+        } catch (Throwable failure) {
+            result.completeExceptionally(failure);
+        }
+    }
+
+    private void save() throws IOException {
             Files.createDirectories(deliveriesFile.getParent());
             org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
             List<Map<String, Object>> list = new ArrayList<>();
@@ -117,8 +170,11 @@ public final class PendingDeliveryRepository {
             }
             config.set("deliveries", list);
             config.save(deliveriesFile.toFile());
-        } catch (IOException e) {
-            plugin.getLogger().severe("Failed to save pending deliveries: " + e.getMessage());
+    }
+
+    public CompletableFuture<Void> currentWrite() {
+        synchronized (writeLock) {
+            return currentWrite;
         }
     }
 

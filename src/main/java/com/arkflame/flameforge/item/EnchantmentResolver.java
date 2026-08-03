@@ -10,78 +10,136 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class EnchantmentResolver {
-    private static final EnchantmentResolver INSTANCE = new EnchantmentResolver();
-    private static final Map<String, Enchantment> ALIASES = new ConcurrentHashMap<>();
-    private static final Map<String, Enchantment> NAME_CACHE = new ConcurrentHashMap<>();
+    private static final int MAX_CACHE_ENTRIES = 256;
+    private static final Map<String, String> LEGACY_ALIASES = new ConcurrentHashMap<>();
+    private static final Map<String, Object> NAME_CACHE = new ConcurrentHashMap<>(MAX_CACHE_ENTRIES);
+    private static final Object NOT_FOUND = new Object();
 
     static {
-        ALIASES.put("sharpness", Enchantment.DAMAGE_ALL);
-        ALIASES.put("sharp", Enchantment.DAMAGE_ALL);
-        ALIASES.put("power", Enchantment.ARROW_DAMAGE);
-        ALIASES.put("fireaspect", Enchantment.FIRE_ASPECT);
-        ALIASES.put("fire_aspect", Enchantment.FIRE_ASPECT);
-        ALIASES.put("knockback", Enchantment.KNOCKBACK);
-        ALIASES.put("kb", Enchantment.KNOCKBACK);
-        ALIASES.put("protection", Enchantment.PROTECTION_ENVIRONMENTAL);
-        ALIASES.put("prot", Enchantment.PROTECTION_ENVIRONMENTAL);
-        ALIASES.put("fire_protection", Enchantment.PROTECTION_FIRE);
-        ALIASES.put("fire_prot", Enchantment.PROTECTION_FIRE);
-        ALIASES.put("feather_falling", Enchantment.PROTECTION_FALL);
-        ALIASES.put("feather_fall", Enchantment.PROTECTION_FALL);
-        ALIASES.put("blast_protection", Enchantment.PROTECTION_EXPLOSIONS);
-        ALIASES.put("blast_prot", Enchantment.PROTECTION_EXPLOSIONS);
-        ALIASES.put("projectile_protection", Enchantment.PROTECTION_PROJECTILE);
-        ALIASES.put("projectile_prot", Enchantment.PROTECTION_PROJECTILE);
-        ALIASES.put("respiration", Enchantment.OXYGEN);
-        ALIASES.put("breathing", Enchantment.OXYGEN);
-        ALIASES.put("aqua_affinity", Enchantment.WATER_WORKER);
-        ALIASES.put("aqua_infinity", Enchantment.ARROW_INFINITE);
-        ALIASES.put("infinity", Enchantment.ARROW_INFINITE);
-        ALIASES.put("efficiency", Enchantment.DIG_SPEED);
-        ALIASES.put("eff", Enchantment.DIG_SPEED);
-        ALIASES.put("unbreaking", Enchantment.DURABILITY);
-        ALIASES.put("unbr", Enchantment.DURABILITY);
-        ALIASES.put("fortune", Enchantment.LOOT_BONUS_BLOCKS);
-        ALIASES.put("loot_bonus_blocks", Enchantment.LOOT_BONUS_BLOCKS);
-        ALIASES.put("silk_touch", Enchantment.SILK_TOUCH);
-        ALIASES.put("thorns", Enchantment.THORNS);
-        ALIASES.put("lure", Enchantment.LURE);
-        ALIASES.put("luck", Enchantment.LUCK);
-        ALIASES.put("luck_of_the_sea", Enchantment.LUCK);
-        ALIASES.put("lucks", Enchantment.LUCK);
-        ALIASES.put("impaling", Enchantment.ARROW_DAMAGE);
+        LEGACY_ALIASES.put("DURABILITY", "DURABILITY");
+        LEGACY_ALIASES.put("UNBREAKING", "DURABILITY");
+        LEGACY_ALIASES.put("PROTECTION", "PROTECTION_ENVIRONMENTAL");
+        LEGACY_ALIASES.put("FIRE_PROTECTION", "PROTECTION_FIRE");
+        LEGACY_ALIASES.put("FEATHER_FALLING", "PROTECTION_FALL");
+        LEGACY_ALIASES.put("BLAST_PROTECTION", "PROTECTION_EXPLOSIONS");
+        LEGACY_ALIASES.put("PROJECTILE_PROTECTION", "PROTECTION_PROJECTILE");
+        LEGACY_ALIASES.put("THORNS", "THORNS");
+        LEGACY_ALIASES.put("RESPIRATION", "OXYGEN");
+        LEGACY_ALIASES.put("AQUA_AFFINITY", "WATER_WORKER");
+        LEGACY_ALIASES.put("INFINITY", "ARROW_INFINITE");
+        LEGACY_ALIASES.put("POWER", "ARROW_DAMAGE");
+        LEGACY_ALIASES.put("PUNCH", "ARROW_KNOCKBACK");
+        LEGACY_ALIASES.put("FLAME", "ARROW_FIRE");
+        LEGACY_ALIASES.put("SHARPNESS", "DAMAGE_ALL");
+        LEGACY_ALIASES.put("SMITE", "DAMAGE_UNDEAD");
+        LEGACY_ALIASES.put("BANE_OF_ARTHROPODS", "DAMAGE_ARTHROPODS");
+        LEGACY_ALIASES.put("KNOCKBACK", "KNOCKBACK");
+        LEGACY_ALIASES.put("FIRE_ASPECT", "FIRE_ASPECT");
+        LEGACY_ALIASES.put("LOOTING", "LOOT_BONUS_MOBS");
+        LEGACY_ALIASES.put("EFFICIENCY", "DIG_SPEED");
+        LEGACY_ALIASES.put("SILK_TOUCH", "SILK_TOUCH");
+        LEGACY_ALIASES.put("FORTUNE", "LOOT_BONUS_BLOCKS");
+        LEGACY_ALIASES.put("LUCK", "LUCK");
+        LEGACY_ALIASES.put("LUCK_OF_THE_SEA", "LUCK");
+        LEGACY_ALIASES.put("LURE", "LURE");
+        LEGACY_ALIASES.put("VANISHING_CURSE", "VANISHING_CURSE");
+        LEGACY_ALIASES.put("CURSE_OF_VANISHING", "VANISHING_CURSE");
+        LEGACY_ALIASES.put("BINDING_CURSE", "BINDING_CURSE");
+        LEGACY_ALIASES.put("CURSE_OF_BINDING", "BINDING_CURSE");
     }
 
-    private EnchantmentResolver() {
+    public EnchantmentResolver() {
     }
 
-    public static EnchantmentResolver getInstance() {
-        return INSTANCE;
+    public Enchantment resolve(String... candidates) {
+        if (candidates == null || candidates.length == 0) {
+            return null;
+        }
+        for (String candidate : candidates) {
+            Enchantment result = resolveSingle(candidate);
+            if (result != null) {
+                return result;
+            }
+        }
+        return null;
     }
 
     public Optional<Enchantment> resolve(final String key) {
         if (key == null || key.isEmpty()) {
             return Optional.empty();
         }
-        final String normalized = key.toLowerCase().replace(" ", "_").replace("-", "_");
-        if (NAME_CACHE.containsKey(normalized)) {
-            return Optional.ofNullable(NAME_CACHE.get(normalized));
+        final String normalized = normalize(key);
+        Object cached = NAME_CACHE.get(normalized);
+        if (cached == NOT_FOUND) {
+            return Optional.empty();
+        }
+        if (cached instanceof Enchantment) {
+            return Optional.of((Enchantment) cached);
         }
         Enchantment enchant = resolveEnchantment(normalized);
-        NAME_CACHE.put(normalized, enchant);
-        return Optional.ofNullable(enchant);
+        if (enchant != null) {
+            putInCache(normalized, enchant);
+            return Optional.of(enchant);
+        }
+        putInCache(normalized, NOT_FOUND);
+        return Optional.empty();
+    }
+
+    private void putInCache(String key, Object value) {
+        if (NAME_CACHE.size() >= MAX_CACHE_ENTRIES && !NAME_CACHE.containsKey(key)) {
+            evictOneEntry();
+        }
+        NAME_CACHE.put(key, value);
+    }
+
+    private void evictOneEntry() {
+        for (Map.Entry<String, Object> entry : NAME_CACHE.entrySet()) {
+            if (entry.getValue() != NOT_FOUND) {
+                NAME_CACHE.remove(entry.getKey());
+                break;
+            }
+        }
+    }
+
+    private Enchantment resolveSingle(String key) {
+        if (key == null || key.isEmpty()) {
+            return null;
+        }
+        final String normalized = normalize(key);
+        Object cached = NAME_CACHE.get(normalized);
+        if (cached == NOT_FOUND) {
+            return null;
+        }
+        if (cached instanceof Enchantment) {
+            return (Enchantment) cached;
+        }
+        Enchantment enchant = resolveEnchantment(normalized);
+        if (enchant != null) {
+            putInCache(normalized, enchant);
+        } else {
+            putInCache(normalized, NOT_FOUND);
+        }
+        return enchant;
     }
 
     private Enchantment resolveEnchantment(final String key) {
-        Enchantment alias = ALIASES.get(key);
-        if (alias != null) {
-            return alias;
+        String aliased = LEGACY_ALIASES.get(key);
+        if (aliased != null) {
+            try {
+                return Enchantment.getByName(aliased);
+            } catch (Exception e) {
+                return null;
+            }
         }
         try {
-            return Enchantment.getByName(key.toUpperCase());
+            return Enchantment.getByName(key);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String normalize(String key) {
+        return key.toUpperCase().replace("-", "_").replace(" ", "_");
     }
 
     public boolean isApplicable(final Enchantment enchant, final Material material) {
@@ -181,5 +239,17 @@ public final class EnchantmentResolver {
             }
         } catch (Exception e) {
         }
+    }
+
+    public void clearCache() {
+        NAME_CACHE.clear();
+    }
+
+    public boolean isCursed(final Enchantment enchant) {
+        if (enchant == null) {
+            return false;
+        }
+        String name = enchant.getName();
+        return "VANISHING_CURSE".equals(name) || "BINDING_CURSE".equals(name);
     }
 }

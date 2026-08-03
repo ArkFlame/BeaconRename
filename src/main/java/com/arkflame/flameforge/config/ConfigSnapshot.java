@@ -2,10 +2,13 @@ package com.arkflame.flameforge.config;
 
 import com.arkflame.flameforge.model.TierDefinition;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 
 public final class ConfigSnapshot {
     private final Map<String, Object> rootSettings;
@@ -90,6 +93,22 @@ public final class ConfigSnapshot {
         return def;
     }
 
+    @SuppressWarnings("unchecked")
+    public List<String> getRootStringList(String key) {
+        Object val = rootSettings.get(key);
+        if (val instanceof List) {
+            List<Object> raw = (List<Object>) val;
+            List<String> result = new ArrayList<>();
+            for (Object item : raw) {
+                if (item != null) {
+                    result.add(item.toString());
+                }
+            }
+            return Collections.unmodifiableList(result);
+        }
+        return Collections.emptyList();
+    }
+
     public Map<String, Object> getMenuSettings(String menuId) {
         Map<String, Object> menu = menuSettings.get(menuId);
         return menu != null ? Collections.unmodifiableMap(menu) : null;
@@ -159,6 +178,31 @@ public final class ConfigSnapshot {
 
     public boolean hasValidationErrors() {
         return validationReport != null && validationReport.hasErrors();
+    }
+
+    public Optional<String> findMessageString(String dottedKey) {
+        Map<String, Object> settings = messageSettings.get(dottedKey);
+        if (settings == null) return Optional.empty();
+        Object msg = settings.get("message");
+        return Optional.ofNullable(msg == null ? null : msg.toString());
+    }
+
+    public List<String> findMessageLines(String dottedKey) {
+        Map<String, Object> settings = messageSettings.get(dottedKey);
+        if (settings == null) return Collections.emptyList();
+        Object lines = settings.get("lines");
+        if (lines instanceof List) {
+            List<String> result = new ArrayList<>();
+            for (Object line : (List<?>) lines) {
+                if (line != null) result.add(line.toString());
+            }
+            return result;
+        }
+        return Collections.emptyList();
+    }
+
+    public Set<String> getStationProfileIds() {
+        return stationProfiles.keySet();
     }
 
     private Map<String, Map<String, Object>> deepCopy(Map<String, Map<String, Object>> source) {

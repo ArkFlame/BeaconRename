@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,7 +40,7 @@ class TierFolderPolicyTest {
     }
 
     @Test
-    void testAbsentFolderCopiesSeven() throws IOException {
+    void absentFolderCopiesExactlySevenBundledTiersAndMarksNew() throws IOException {
         tierRepository = new TierRepository(mockPlugin);
 
         for (int i = 1; i <= 7; i++) {
@@ -59,44 +58,24 @@ class TierFolderPolicyTest {
     }
 
     @Test
-    void testExistingEmptyFolderCopiesZero() throws IOException {
+    void existingEmptyOrPartialFolderCopiesNothing() throws IOException {
         Files.createDirectories(tiersDirectory.toPath());
 
         tierRepository = new TierRepository(mockPlugin);
         tierRepository.bootstrapDefaultsIfDirectoryAbsent();
 
         assertEquals(0, tiersDirectory.listFiles().length, "No files should be copied when directory already exists");
-    }
 
-    @Test
-    void testExistingPartialFolderDoesNotRestoreDeletedFile() throws IOException {
-        Files.createDirectories(tiersDirectory.toPath());
-
-        for (int i = 1; i <= 3; i++) {
-            String resourceName = "tiers/tier" + i + ".yml";
-            InputStream stream = getClass().getClassLoader().getResourceAsStream(resourceName);
-            if (stream != null) {
-                when(mockPlugin.getResource("tiers/tier" + i + ".yml")).thenReturn(stream);
-            }
-        }
-
-        tierRepository = new TierRepository(mockPlugin);
-        tierRepository.bootstrapDefaultsIfDirectoryAbsent();
-
-        File[] filesAfterFirstBootstrap = tiersDirectory.listFiles();
-        assertEquals(3, filesAfterFirstBootstrap.length, "Three tiers should exist after first bootstrap");
-
-        for (File f : filesAfterFirstBootstrap) {
+        for (File f : tiersDirectory.listFiles()) {
             Files.deleteIfExists(f.toPath());
         }
 
         tierRepository.bootstrapDefaultsIfDirectoryAbsent();
-
-        assertEquals(0, tiersDirectory.listFiles().length, "Deleted files should NOT be restored");
+        assertEquals(0, tiersDirectory.listFiles().length, "Deleted files should NOT be restored after partial bootstrap");
     }
 
     @Test
-    void testPrioritySorting() {
+    void prioritySortingUsesParsedPriorityThenId() {
         tierRepository = new TierRepository(mockPlugin);
 
         tierRepository.create("low_priority", 1);
@@ -105,26 +84,21 @@ class TierFolderPolicyTest {
 
         java.util.List<com.arkflame.flameforge.model.TierDefinition> tiers = tierRepository.all();
 
-        assertEquals("high_priority", tiers.get(0).getId(), "Highest priority should be first");
+        assertEquals("low_priority", tiers.get(0).getId(), "Lowest priority should be first");
         assertEquals("medium_priority", tiers.get(1).getId(), "Medium priority should be second");
-        assertEquals("low_priority", tiers.get(2).getId(), "Lowest priority should be last");
+        assertEquals("high_priority", tiers.get(2).getId(), "Highest priority should be last");
     }
 
     @Test
-    void testDidDirectoryExistBeforeStartup_WhenAbsent() {
+    void directoryExistenceFlagReflectsPreStartupState() throws IOException {
         tierRepository = new TierRepository(mockPlugin);
-        tierRepository.bootstrapDefaultsIfDirectoryAbsent();
 
-        assertTrue(tiersDirectory.exists(), "Directory should exist after bootstrap");
-    }
+        assertFalse(tierRepository.didDirectoryExistBeforeStartup(), "Flag should be false when directory does not exist initially");
 
-    @Test
-    void testDidDirectoryExistBeforeStartup_WhenPreExisted() throws IOException {
         Files.createDirectories(tiersDirectory.toPath());
 
-        tierRepository = new TierRepository(mockPlugin);
         tierRepository.bootstrapDefaultsIfDirectoryAbsent();
 
-        assertFalse(tierRepository.didDirectoryExistBeforeStartup(), "Should report directory did not exist before startup");
+        assertTrue(tierRepository.didDirectoryExistBeforeStartup(), "Flag should be true when directory existed before startup");
     }
 }

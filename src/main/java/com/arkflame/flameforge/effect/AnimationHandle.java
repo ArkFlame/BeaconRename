@@ -6,6 +6,7 @@ public final class AnimationHandle {
     private final String transactionId;
     private final AtomicBoolean cancelled = new AtomicBoolean(false);
     private final AtomicBoolean completed = new AtomicBoolean(false);
+    private final AtomicBoolean failed = new AtomicBoolean(false);
 
     public AnimationHandle(String transactionId) {
         this.transactionId = transactionId;
@@ -23,6 +24,10 @@ public final class AnimationHandle {
         return completed.get();
     }
 
+    public boolean isFailed() {
+        return failed.get();
+    }
+
     public boolean cancel() {
         return cancelled.compareAndSet(false, true);
     }
@@ -31,7 +36,11 @@ public final class AnimationHandle {
         return completed.compareAndSet(false, true);
     }
 
+    public boolean fail() {
+        return failed.compareAndSet(false, true);
+    }
+
     public boolean isTerminal() {
-        return cancelled.get() || completed.get();
+        return cancelled.get() || completed.get() || failed.get();
     }
 }

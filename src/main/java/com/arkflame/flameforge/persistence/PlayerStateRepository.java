@@ -8,9 +8,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.HashMap;
+import java.util.Map;
 
 public final class PlayerStateRepository {
     private final JavaPlugin plugin;
@@ -25,36 +27,32 @@ public final class PlayerStateRepository {
         this.playerDataFolder = dataFolder.resolve("player-data");
     }
 
-    public void loadAllBlocking() {
-        CountDownLatch latch = new CountDownLatch(1);
-        scheduler.runAsync(plugin, () -> {
+    public CompletableFuture<Void> loadAllAsync() {
+        initialized.set(false);
+        return scheduleAsync(() -> {
             loadAll();
-            latch.countDown();
+            initialized.set(true);
         });
-        try {
-            latch.await();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            plugin.getLogger().severe("Player state load interrupted");
-        }
-        initialized.set(true);
     }
 
     private void loadAll() {
         Path folder = playerDataFolder;
+        Map<UUID, PlayerState> loaded = new HashMap<>();
         if (!Files.exists(folder)) {
+            cache.clear();
             return;
         }
-        try {
-            Files.list(folder)
-                .filter(p -> p.toString().endsWith(".yml"))
-                .forEach(this::loadFile);
+        try (java.util.stream.Stream<Path> stream = Files.list(folder)) {
+            stream.filter(p -> p.toString().endsWith(".yml"))
+                .forEach(path -> loadFile(path, loaded));
         } catch (IOException e) {
-            plugin.getLogger().severe("Failed to load player states: " + e.getMessage());
+            throw new IllegalStateException("Failed to scan player states", e);
         }
+        cache.clear();
+        cache.putAll(loaded);
     }
 
-    private void loadFile(Path file) {
+    private void loadFile(Path file, Map<UUID, PlayerState> loaded) {
         try {
             org.bukkit.configuration.file.YamlConfiguration config = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file.toFile());
             String name = file.getFileName().toString();
@@ -63,10 +61,27 @@ public final class PlayerStateRepository {
             int tier = config.getInt("tier", 0);
             long pityCooldown = config.getLong("pityCooldown", 0L);
             PlayerState state = new PlayerState(uuid, tier, pityCooldown);
-            cache.put(uuid, state);
+            loaded.put(uuid, state);
         } catch (Exception e) {
             plugin.getLogger().warning("Failed to load player state from " + file + ": " + e.getMessage());
         }
+    }
+
+    private CompletableFuture<Void> scheduleAsync(Runnable action) {
+        CompletableFuture<Void> future = new CompletableFuture<>();
+        try {
+            scheduler.runAsync(plugin, () -> {
+                try {
+                    action.run();
+                    future.complete(null);
+                } catch (Throwable failure) {
+                    future.completeExceptionally(failure);
+                }
+            });
+        } catch (Throwable failure) {
+            future.completeExceptionally(failure);
+        }
+        return future;
     }
 
     public PlayerState getOrLoad(UUID uuid) {
@@ -79,8 +94,8 @@ public final class PlayerStateRepository {
         return raced != null ? raced : newState;
     }
 
-    public void saveAsync(UUID uuid, PlayerState state) {
-        scheduler.runAsync(plugin, () -> save(uuid, state));
+    public CompletableFuture<Void> saveAsync(UUID uuid, PlayerState state) {
+        return scheduleAsync(() -> save(uuid, state));
     }
 
     private void save(UUID uuid, PlayerState state) {
@@ -91,7 +106,7 @@ public final class PlayerStateRepository {
             config.set("pityCooldown", state.pityCooldown);
             config.save(playerDataFolder.resolve(uuid.toString() + ".yml").toFile());
         } catch (IOException e) {
-            plugin.getLogger().severe("Failed to save player state for " + uuid + ": " + e.getMessage());
+            throw new IllegalStateException("Failed to save player state for " + uuid, e);
         }
     }
 

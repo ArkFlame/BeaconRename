@@ -1,97 +1,93 @@
 package com.arkflame.flameforge.forge;
 
-import com.arkflame.flameforge.compat.material.MaterialResolver;
-import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
-import com.arkflame.flameforge.compat.scheduler.TaskHandle;
-import com.arkflame.flameforge.model.OutcomeDefinition;
-import com.arkflame.flameforge.model.OutcomeType;
+import com.arkflame.flameforge.item.ItemIdentityService;
+import com.arkflame.flameforge.item.ItemMutationService;
+import com.arkflame.flameforge.model.AttributeSpec;
+import com.arkflame.flameforge.model.BreakPolicy;
+import com.arkflame.flameforge.model.CurseDefinition;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.persistence.AuditLogService;
-import com.arkflame.flameforge.text.TextBridge;
-import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public final class OutcomeExecutor {
-    private final JavaPlugin plugin;
-    private final SchedulerBridge scheduler;
-    private final MaterialResolver materialResolver;
-    private final TextBridge textBridge;
+    private final ItemMutationService mutationService;
     private final AuditLogService auditLog;
-    private final DeliveryService deliveryService;
     private final Map<String, Object> wardConfig;
 
-    public OutcomeExecutor(JavaPlugin plugin, SchedulerBridge scheduler,
-                           MaterialResolver materialResolver, TextBridge textBridge,
-                           AuditLogService auditLog, DeliveryService deliveryService,
-                           Map<String, Object> wardConfig) {
-        this.plugin = Objects.requireNonNull(plugin);
-        this.scheduler = Objects.requireNonNull(scheduler);
-        this.materialResolver = Objects.requireNonNull(materialResolver);
-        this.textBridge = Objects.requireNonNull(textBridge);
+    public OutcomeExecutor(ItemMutationService mutationService, AuditLogService auditLog,
+                          Map<String, Object> wardConfig) {
+        this.mutationService = Objects.requireNonNull(mutationService);
         this.auditLog = Objects.requireNonNull(auditLog);
-        this.deliveryService = Objects.requireNonNull(deliveryService);
         this.wardConfig = wardConfig;
     }
 
-    public OutcomeExecutionResult execute(OutcomeDefinition outcome, ItemStack inputItem,
-                                          Player player, Location location) {
-        Objects.requireNonNull(outcome);
-        String outcomeId = outcome.getId();
+    public OutcomeExecutionResult execute(ForgePlan plan, ItemStack inputItem,
+                                        Player player, UUID forgeId) {
+        Objects.requireNonNull(plan);
         Set<String> executedIds = new HashSet<>();
-        executedIds.add(outcomeId);
+        executedIds.add("forge_execution");
 
-        boolean wardProtected = isWardProtected(outcome);
-        boolean wardConverted = false;
-
-        if (wardProtected && shouldConvertToUnchanged(outcome)) {
-            wardConverted = true;
+        boolean wardProtected = isWardProtected(plan);
+        if (wardProtected && shouldConvertToUnchanged(plan)) {
             auditLog.logAsync("WARD_CONVERT", player != null ? player.getName() : "console",
-                outcomeId, "Protected outcome converted to RETURN_UNCHANGED");
-            return OutcomeExecutionResult.wardConverted(outcomeId, executedIds);
+                "forge_execution", "Protected outcome converted to RETURN_UNCHANGED");
+            return OutcomeExecutionResult.wardConverted("forge_execution", executedIds);
         }
 
-        OutcomeType type = outcome.getType();
-        switch (type) {
+        ForgeOutcomeCategory category = plan.getSelectedVariant() != null ?
+            ForgeOutcomeCategory.SUCCESS : rollCategory(plan);
+
+        switch (category) {
+            case SUCCESS:
+                return executeSuccess(plan, inputItem, executedIds, player, forgeId);
             case BREAK:
-                return executeBreak(outcomeId, executedIds);
-            case RETURN_UNCHANGED:
-                return executeReturnUnchanged(outcomeId, executedIds, inputItem);
-            case MODIFY_INPUT:
-                return executeModifyInput(outcomeId, executedIds, outcome, inputItem, player, location);
-            case CREATE_ITEM:
-                return executeCreateItem(outcomeId, executedIds, outcome, player, location);
-            case COMMANDS:
-                return executeCommands(outcomeId, executedIds, outcome, player, location);
+                return executeBreak(plan, inputItem, executedIds, player, forgeId);
+            case CURSE:
+                return executeCurse(plan, inputItem, executedIds, player, forgeId);
             default:
-                return OutcomeExecutionResult.error(outcomeId, "Unknown outcome type: " + type);
+                return OutcomeExecutionResult.error("forge_execution", "Unknown outcome category: " + category);
         }
     }
 
-    private boolean isWardProtected(OutcomeDefinition outcome) {
+    private ForgeOutcomeCategory rollCategory(ForgePlan plan) {
+        if (plan.getChances() == null) {
+            return ForgeOutcomeCategory.BREAK;
+        }
+        double total = plan.getChances().getSuccessPercent() +
+                       plan.getChances().getBreakPercent() +
+                       plan.getChances().getCursePercent();
+        if (total <= 0) {
+            return ForgeOutcomeCategory.BREAK;
+        }
+        double roll = Math.random() * total;
+        double successThreshold = plan.getChances().getSuccessPercent();
+        double breakThreshold = successThreshold + plan.getChances().getBreakPercent();
+        if (roll < successThreshold) {
+            return ForgeOutcomeCategory.SUCCESS;
+        } else if (roll < breakThreshold) {
+            return ForgeOutcomeCategory.BREAK;
+        } else {
+            return ForgeOutcomeCategory.CURSE;
+        }
+    }
+
+    private boolean isWardProtected(ForgePlan plan) {
         if (wardConfig == null) {
             return false;
-        }
-        Object protectedTag = wardConfig.get("protected_outcomes");
-        if (protectedTag instanceof List) {
-            @SuppressWarnings("unchecked")
-            List<String> protectedList = (List<String>) protectedTag;
-            return protectedList.contains(outcome.getId());
         }
         return Boolean.TRUE.equals(wardConfig.get("protect_all"));
     }
 
-    private boolean shouldConvertToUnchanged(OutcomeDefinition outcome) {
+    private boolean shouldConvertToUnchanged(ForgePlan plan) {
         if (wardConfig == null) {
             return false;
         }
@@ -99,170 +95,172 @@ public final class OutcomeExecutor {
         if (convertTypes instanceof List) {
             @SuppressWarnings("unchecked")
             List<String> typeList = (List<String>) convertTypes;
-            return typeList.contains(outcome.getType().name());
+            return typeList.contains("SUCCESS") || typeList.contains("BREAK") ||
+                   typeList.contains("CURSE");
         }
         return false;
     }
 
-    private OutcomeExecutionResult executeBreak(String outcomeId, Set<String> executedIds) {
-        return OutcomeExecutionResult.success(outcomeId, executedIds);
-    }
-
-    private OutcomeExecutionResult executeReturnUnchanged(String outcomeId, Set<String> executedIds,
-                                                          ItemStack inputItem) {
+    private OutcomeExecutionResult executeSuccess(ForgePlan plan, ItemStack inputItem,
+                                                  Set<String> executedIds, Player player,
+                                                  UUID forgeId) {
         if (inputItem == null) {
-            return OutcomeExecutionResult.error(outcomeId, "Cannot return unchanged: null input");
+            return OutcomeExecutionResult.error("forge_execution", "Cannot success mutate: null input");
         }
-        ItemStack clone = inputItem.clone();
-        return OutcomeExecutionResult.successWithItem(outcomeId, executedIds, clone);
+
+        ItemIdentityService.IdentityData identity = readOrFreshIdentity(inputItem, forgeId);
+
+        Map<org.bukkit.enchantments.Enchantment, Integer> baselineEnchants =
+            readBaselineEnchants(inputItem);
+        List<AttributeSpec> baselineAttributes = readBaselineAttributes(inputItem);
+        List<String> baselinePowers = readBaselinePowers(inputItem);
+
+        ForgeVariant variant = plan.getSelectedVariant();
+        int targetTier = plan.getTargetTierLevel();
+
+        ItemMutationService.MutationResult result = mutationService.mutateSuccess(
+            inputItem, variant, baselineEnchants, baselineAttributes, baselinePowers,
+            targetTier, identity);
+
+        if (!result.isSuccess()) {
+            StringBuilder sb = new StringBuilder();
+            java.util.List<String> warnings = result.getWarnings();
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(warnings.get(i));
+            }
+            return OutcomeExecutionResult.error("forge_execution",
+                "Success mutation failed: " + sb.toString());
+        }
+
+        return OutcomeExecutionResult.successWithItem("forge_execution", executedIds, result.getResult());
     }
 
-    private OutcomeExecutionResult executeModifyInput(String outcomeId, Set<String> executedIds,
-                                                      OutcomeDefinition outcome, ItemStack inputItem,
-                                                      Player player, Location location) {
+    private OutcomeExecutionResult executeBreak(ForgePlan plan, ItemStack inputItem,
+                                               Set<String> executedIds, Player player,
+                                               UUID forgeId) {
         if (inputItem == null) {
-            return OutcomeExecutionResult.error(outcomeId, "Cannot modify: null input");
-        }
-        if (outcome.getMutation() == null) {
-            return OutcomeExecutionResult.error(outcomeId, "MODIFY_INPUT requires mutation spec");
+            return OutcomeExecutionResult.error("forge_execution", "Cannot break mutate: null input");
         }
 
-        ItemStack modified = mutateItem(inputItem, outcome.getMutation());
-        return OutcomeExecutionResult.successWithItem(outcomeId, executedIds, modified);
+        ItemIdentityService.IdentityData identity = readOrFreshIdentity(inputItem, forgeId);
+        BreakPolicy policy = getBreakPolicy(plan);
+
+        ItemMutationService.MutationResult result = mutationService.mutateBreak(
+            inputItem, policy, identity);
+
+        if (!result.isSuccess()) {
+            StringBuilder sb = new StringBuilder();
+            java.util.List<String> warnings = result.getWarnings();
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(warnings.get(i));
+            }
+            return OutcomeExecutionResult.error("forge_execution",
+                "Break mutation failed: " + sb.toString());
+        }
+
+        if (result.isDestroyed()) {
+            auditLog.logAsync("ITEM_DESTROYED", player != null ? player.getName() : "console",
+                "forge_execution", "Item destroyed on break");
+            return OutcomeExecutionResult.breakResult("forge_execution", executedIds, null);
+        }
+
+        return OutcomeExecutionResult.breakResult("forge_execution", executedIds, result.getResult());
     }
 
-    private OutcomeExecutionResult executeCreateItem(String outcomeId, Set<String> executedIds,
-                                                     OutcomeDefinition outcome, Player player,
-                                                     Location location) {
-        if (outcome.getMutation() == null) {
-            return OutcomeExecutionResult.error(outcomeId, "CREATE_ITEM requires mutation spec");
+    private OutcomeExecutionResult executeCurse(ForgePlan plan, ItemStack inputItem,
+                                                Set<String> executedIds, Player player,
+                                                UUID forgeId) {
+        if (inputItem == null) {
+            return OutcomeExecutionResult.error("forge_execution", "Cannot curse mutate: null input");
         }
 
-        ItemStack created = createItemFromSpec(outcome.getMutation());
-        if (created == null) {
-            return OutcomeExecutionResult.error(outcomeId, "Failed to create item");
+        ItemIdentityService.IdentityData identity = readOrFreshIdentity(inputItem, forgeId);
+        CurseDefinition curse = getCurseDefinition(plan);
+        boolean currentlyCursed = isCurrentlyCursed(inputItem);
+
+        ItemMutationService.MutationResult result = mutationService.mutateCurse(
+            inputItem, curse, currentlyCursed, identity);
+
+        if (!result.isSuccess()) {
+            StringBuilder sb = new StringBuilder();
+            java.util.List<String> warnings = result.getWarnings();
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(warnings.get(i));
+            }
+            return OutcomeExecutionResult.error("forge_execution",
+                "Curse mutation failed: " + sb.toString());
         }
 
-        String deliveryId = deliveryService.generateDeliveryId(player, outcomeId);
-        boolean delivered = deliveryService.deliverItem(created, player, location, deliveryId);
-
-        if (!delivered) {
-            deliveryService.queuePendingDelivery(deliveryId, player != null ? player.getUniqueId() : null,
-                created, null);
-        }
-
-        return OutcomeExecutionResult.successWithItem(outcomeId, executedIds, created);
+        return OutcomeExecutionResult.curseResult("forge_execution", executedIds, result.getResult());
     }
 
-    private OutcomeExecutionResult executeCommands(String outcomeId, Set<String> executedIds,
-                                                   OutcomeDefinition outcome, Player player,
-                                                   Location location) {
-        List<String> commands = outcome.getCommands();
-        if (commands == null || commands.isEmpty()) {
-            return OutcomeExecutionResult.error(outcomeId, "COMMANDS has no commands defined");
+    private ItemIdentityService.IdentityData readOrFreshIdentity(ItemStack item, UUID forgeId) {
+        if (item == null) {
+            return ItemIdentityService.IdentityData.fresh();
         }
-
-        Set<String> dispatchedCommands = new HashSet<>();
-        String playerName = player != null ? player.getName() : "console";
-        UUID playerUuid = player != null ? player.getUniqueId() : null;
-
-        for (int i = 0; i < commands.size(); i++) {
-            String rawCommand = commands.get(i);
-            String resolved = resolveCommandPlaceholders(rawCommand, playerName, playerUuid);
-
-            final int commandIndex = i;
-            final String commandToDispatch = resolved;
-
-            TaskHandle handle = scheduler.runGlobal(plugin, () -> {
-                boolean success = dispatchCommand(commandToDispatch, player);
-                if (!success) {
-                    auditLog.logAsync("COMMAND_FAIL", playerName, outcomeId,
-                        "Command failed at index " + commandIndex + ": " + commandToDispatch);
+        return ItemIdentityService.getInstance().readIdentity(item)
+            .map(id -> {
+                if (forgeId != null && id.getForgeId() == null) {
+                    return new ItemIdentityService.IdentityData(
+                        id.getReforgeCount(), id.getHighestTier(),
+                        id.getLastTier(), id.getLastOutcome(), forgeId);
                 }
-            });
-
-            if (handle == null) {
-                return OutcomeExecutionResult.commandFailed(outcomeId, executedIds,
-                    OutcomeExecutionResult.CommandStatus.FAILED,
-                    "Failed to schedule command at index " + i);
-            }
-
-            dispatchedCommands.add(rawCommand);
-            auditLog.logAsync("COMMAND_DISPATCH", playerName, outcomeId,
-                "Dispatched: " + rawCommand);
-        }
-
-        if (!dispatchedCommands.isEmpty()) {
-            String deliveryId = deliveryService.generateDeliveryId(player, outcomeId + "_commands");
-            if (player == null || !player.isOnline()) {
-                deliveryService.queuePendingDelivery(deliveryId, playerUuid, null,
-                    outcome.getCommands());
-            }
-        }
-
-        return OutcomeExecutionResult.commandSuccess(outcomeId, executedIds,
-            OutcomeExecutionResult.CommandStatus.DISPATCHED);
+                return id;
+            })
+            .orElse(ItemIdentityService.IdentityData.fresh());
     }
 
-    private String resolveCommandPlaceholders(String command, String playerName, UUID playerUuid) {
-        String resolved = command;
-        resolved = resolved.replace("%player_name%", playerName);
-        resolved = resolved.replace("%player%", playerName);
-        resolved = resolved.replace("%player_uuid%", playerUuid != null ? playerUuid.toString() : "");
-        return resolved;
-    }
-
-    private boolean dispatchCommand(String command, Player player) {
+    private Map<org.bukkit.enchantments.Enchantment, Integer> readBaselineEnchants(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return new java.util.HashMap<>();
+        }
         try {
-            if (command.startsWith("/")) {
-                command = command.substring(1);
-            }
-            if (player != null && player.isOnline()) {
-                boolean result = player.performCommand(command);
-                return result;
-            } else {
-                boolean result = Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
-                return result;
-            }
+            return new java.util.HashMap<>(item.getItemMeta().getEnchants());
         } catch (Exception e) {
+            return new java.util.HashMap<>();
+        }
+    }
+
+    private List<AttributeSpec> readBaselineAttributes(ItemStack item) {
+        return new java.util.ArrayList<>();
+    }
+
+    private List<String> readBaselinePowers(ItemStack item) {
+        return new java.util.ArrayList<>();
+    }
+
+    private BreakPolicy getBreakPolicy(ForgePlan plan) {
+        return BreakPolicy.none();
+    }
+
+    private CurseDefinition getCurseDefinition(ForgePlan plan) {
+        return new CurseDefinition("", java.util.Collections.emptyList(),
+            java.util.Collections.singletonList("VANISHING_CURSE"));
+    }
+
+    private boolean isCurrentlyCursed(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
             return false;
         }
-    }
-
-    private ItemStack mutateItem(ItemStack input, com.arkflame.flameforge.model.ItemMutationSpec mutation) {
-        ItemStack result = input.clone();
-
-        if (mutation.getResultMaterial() != null) {
-            materialResolver.resolve(mutation.getResultMaterial()).ifPresent(material -> {
-                result.setType(material);
-            });
-        }
-
-        if (mutation.getAmount() > 0) {
-            result.setAmount(mutation.getAmount());
-        }
-
-        if (mutation.getResultName() != null && result.hasItemMeta()) {
-            org.bukkit.inventory.meta.ItemMeta meta = result.getItemMeta();
-            meta.setDisplayName(mutation.getResultName());
-            result.setItemMeta(meta);
-        }
-
-        return result;
-    }
-
-    private ItemStack createItemFromSpec(com.arkflame.flameforge.model.ItemMutationSpec spec) {
-        if (spec.getResultMaterial() == null) {
-            return null;
-        }
-
-        return materialResolver.makeItem(spec.getResultMaterial(), spec.getAmount()).map(item -> {
-            if (spec.getResultName() != null && item.hasItemMeta()) {
-                org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
-                meta.setDisplayName(spec.getResultName());
-                item.setItemMeta(meta);
+        try {
+            for (org.bukkit.enchantments.Enchantment enchant : item.getItemMeta().getEnchants().keySet()) {
+                if (isEnchantmentCursed(enchant)) {
+                    return true;
+                }
             }
-            return item;
-        }).orElse(null);
+        } catch (Exception e) {
+        }
+        return false;
+    }
+
+    private boolean isEnchantmentCursed(org.bukkit.enchantments.Enchantment enchant) {
+        if (enchant == null) {
+            return false;
+        }
+        String name = enchant.getName();
+        return "VANISHING_CURSE".equals(name) || "BINDING_CURSE".equals(name);
     }
 }

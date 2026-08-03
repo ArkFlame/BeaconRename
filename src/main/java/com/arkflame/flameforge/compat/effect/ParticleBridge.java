@@ -4,7 +4,6 @@ import org.bukkit.Effect;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.HashMap;
@@ -13,172 +12,129 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class ParticleBridge {
     private static final ParticleBridge INSTANCE = new ParticleBridge();
-    private static final Map<String, ParticleEntry> MODERN_PARTICLES = new ConcurrentHashMap<>();
-    private static final Map<Integer, String> LEGACY_ID_MAP = new HashMap<>();
+    private static final int MAX_CACHE_ENTRIES = 256;
+    private static final Map<String, String> PARTICLE_ALIASES = new ConcurrentHashMap<>();
+    private static final Map<String, Integer> LEGACY_EFFECT_IDS = new HashMap<>();
+    private static final Map<String, Object> PARTICLE_CACHE = new ConcurrentHashMap<>(MAX_CACHE_ENTRIES);
+    private static final Object PARTICLE_NOT_FOUND = new Object();
 
     private final boolean modernAvailable;
-    private Class<?> particleClass;
-    private Method particleMethod;
-    private Method particlesMethod;
-    private Object defaultSampler;
+    private final Class<?> particleClass;
+    private final Method spawnParticleMethod;
 
     static {
-        MODERN_PARTICLES.put("explode", new ParticleEntry("explosion_normal", 0));
-        MODERN_PARTICLES.put("explosion", new ParticleEntry("explosion_normal", 0));
-        MODERN_PARTICLES.put("large_explosion", new ParticleEntry("explosion_large", 0));
-        MODERN_PARTICLES.put("huge_explosion", new ParticleEntry("explosion_large", 0));
-        MODERN_PARTICLES.put("firework", new ParticleEntry("firework", 0));
-        MODERN_PARTICLES.put("bubble", new ParticleEntry("bubble", 0));
-        MODERN_PARTICLES.put("bubble_pop", new ParticleEntry("bubble", 0));
-        MODERN_PARTICLES.put("underwater", new ParticleEntry("bubble", 0));
-        MODERN_PARTICLES.put("crit", new ParticleEntry("crit", 0));
-        MODERN_PARTICLES.put("magic_crit", new ParticleEntry("crit", 0));
-        MODERN_PARTICLES.put("smoke", new ParticleEntry("smoke", 0));
-        MODERN_PARTICLES.put("smoke_normal", new ParticleEntry("smoke", 0));
-        MODERN_PARTICLES.put("largesmoke", new ParticleEntry("smoke_large", 0));
-        MODERN_PARTICLES.put("large_smoke", new ParticleEntry("smoke_large", 0));
-        MODERN_PARTICLES.put("spell", new ParticleEntry("spell", 0));
-        MODERN_PARTICLES.put("spell_instant", new ParticleEntry("spell_instant", 0));
-        MODERN_PARTICLES.put("effect", new ParticleEntry("spell", 0));
-        MODERN_PARTICLES.put("witch", new ParticleEntry("spell_witch", 0));
-        MODERN_PARTICLES.put("note", new ParticleEntry("note", 0));
-        MODERN_PARTICLES.put("note_block", new ParticleEntry("note", 0));
-        MODERN_PARTICLES.put("portal", new ParticleEntry("portal", 0));
-        MODERN_PARTICLES.put("ender_portal", new ParticleEntry("portal", 0));
-        MODERN_PARTICLES.put("flame", new ParticleEntry("flame", 0));
-        MODERN_PARTICLES.put("lava", new ParticleEntry("lava", 0));
-        MODERN_PARTICLES.put("footstep", new ParticleEntry("footstep", 0));
-        MODERN_PARTICLES.put("midnight", new ParticleEntry("midnight", 0));
-        MODERN_PARTICLES.put("splash", new ParticleEntry("splash", 0));
-        MODERN_PARTICLES.put("splash_pool", new ParticleEntry("splash", 0));
-        MODERN_PARTICLES.put("particle_splash", new ParticleEntry("splash", 0));
-        MODERN_PARTICLES.put("eye_of_ender", new ParticleEntry("endRod", 0));
-        MODERN_PARTICLES.put("mobspawner", new ParticleEntry("smoke_large", 0));
-        MODERN_PARTICLES.put("item_crack", new ParticleEntry("item_slime", 0));
-        MODERN_PARTICLES.put("item_break", new ParticleEntry("item_slime", 0));
-        MODERN_PARTICLES.put("block_crack", new ParticleEntry("block_dust", 0));
-        MODERN_PARTICLES.put("block_dust", new ParticleEntry("block_dust", 0));
-        MODERN_PARTICLES.put("snowball", new ParticleEntry("snowball", 0));
-        MODERN_PARTICLES.put("snow_shovel", new ParticleEntry("snow_shovel", 0));
-        MODERN_PARTICLES.put("slime", new ParticleEntry("item_slime", 0));
-        MODERN_PARTICLES.put("heart", new ParticleEntry("heart", 0));
-        MODERN_PARTICLES.put("angry_villager", new ParticleEntry("villager_angry", 0));
-        MODERN_PARTICLES.put("angry Villager", new ParticleEntry("villager_angry", 0));
-        MODERN_PARTICLES.put("happy_villager", new ParticleEntry("villager_happy", 0));
-        MODERN_PARTICLES.put("happy Villager", new ParticleEntry("villager_happy", 0));
-        MODERN_PARTICLES.put("drip_water", new ParticleEntry("drip_water", 0));
-        MODERN_PARTICLES.put("drip_lava", new ParticleEntry("drip_lava", 0));
-        MODERN_PARTICLES.put("drip", new ParticleEntry("drip_water", 0));
-        MODERN_PARTICLES.put("spit", new ParticleEntry("spit", 0));
-        MODERN_PARTICLES.put("squid_ink", new ParticleEntry("squid_ink", 0));
-        MODERN_PARTICLES.put("bubble_column_up", new ParticleEntry("bubble_column_up", 0));
-        MODERN_PARTICLES.put("current_down", new ParticleEntry("current_down", 0));
-        MODERN_PARTICLES.put("dragon_breath", new ParticleEntry("dragon_breath", 0));
-        MODERN_PARTICLES.put("ash", new ParticleEntry("ash", 0));
-        MODERN_PARTICLES.put("crimson_spore", new ParticleEntry("crimson_spore", 0));
-        MODERN_PARTICLES.put("warped_spore", new ParticleEntry("warped_spore", 0));
-        MODERN_PARTICLES.put("soul", new ParticleEntry("soul", 0));
-        MODERN_PARTICLES.put("dust", new ParticleEntry("dust", 0));
-        MODERN_PARTICLES.put("item_crack_", new ParticleEntry("item", 0));
+        PARTICLE_ALIASES.put("explode", "explosion_normal");
+        PARTICLE_ALIASES.put("explosion", "explosion_normal");
+        PARTICLE_ALIASES.put("large_explosion", "explosion_large");
+        PARTICLE_ALIASES.put("huge_explosion", "explosion_large");
+        PARTICLE_ALIASES.put("firework", "firework");
+        PARTICLE_ALIASES.put("bubble", "bubble");
+        PARTICLE_ALIASES.put("bubble_pop", "bubble");
+        PARTICLE_ALIASES.put("underwater", "bubble");
+        PARTICLE_ALIASES.put("crit", "crit");
+        PARTICLE_ALIASES.put("magic_crit", "crit");
+        PARTICLE_ALIASES.put("smoke", "smoke");
+        PARTICLE_ALIASES.put("smoke_normal", "smoke");
+        PARTICLE_ALIASES.put("largesmoke", "smoke_large");
+        PARTICLE_ALIASES.put("large_smoke", "smoke_large");
+        PARTICLE_ALIASES.put("spell", "spell");
+        PARTICLE_ALIASES.put("spell_instant", "spell_instant");
+        PARTICLE_ALIASES.put("effect", "spell");
+        PARTICLE_ALIASES.put("witch", "witch");
+        PARTICLE_ALIASES.put("note", "note");
+        PARTICLE_ALIASES.put("note_block", "note");
+        PARTICLE_ALIASES.put("portal", "portal");
+        PARTICLE_ALIASES.put("ender_portal", "portal");
+        PARTICLE_ALIASES.put("flame", "flame");
+        PARTICLE_ALIASES.put("lava", "lava");
+        PARTICLE_ALIASES.put("footstep", "footstep");
+        PARTICLE_ALIASES.put("midnight", "midnight");
+        PARTICLE_ALIASES.put("splash", "splash");
+        PARTICLE_ALIASES.put("splash_pool", "splash");
+        PARTICLE_ALIASES.put("particle_splash", "splash");
+        PARTICLE_ALIASES.put("eye_of_ender", "end_rod");
+        PARTICLE_ALIASES.put("mobspawner", "smoke_large");
+        PARTICLE_ALIASES.put("item_crack", "item_slime");
+        PARTICLE_ALIASES.put("item_break", "item_slime");
+        PARTICLE_ALIASES.put("block_crack", "block_dust");
+        PARTICLE_ALIASES.put("block_dust", "block_dust");
+        PARTICLE_ALIASES.put("snowball", "snowball");
+        PARTICLE_ALIASES.put("snow_shovel", "snowball");
+        PARTICLE_ALIASES.put("slime", "item_slime");
+        PARTICLE_ALIASES.put("heart", "heart");
+        PARTICLE_ALIASES.put("angry_villager", "villager_angry");
+        PARTICLE_ALIASES.put("happy_villager", "villager_happy");
+        PARTICLE_ALIASES.put("drip_water", "drip_water");
+        PARTICLE_ALIASES.put("drip_lava", "drip_lava");
+        PARTICLE_ALIASES.put("drip", "drip_water");
+        PARTICLE_ALIASES.put("spit", "spit");
+        PARTICLE_ALIASES.put("squid_ink", "squid_ink");
+        PARTICLE_ALIASES.put("bubble_column_up", "bubble_column_up");
+        PARTICLE_ALIASES.put("current_down", "current_down");
+        PARTICLE_ALIASES.put("dragon_breath", "dragon_breath");
+        PARTICLE_ALIASES.put("ash", "ash");
+        PARTICLE_ALIASES.put("crimson_spore", "crimson_spore");
+        PARTICLE_ALIASES.put("warped_spore", "warped_spore");
+        PARTICLE_ALIASES.put("soul", "soul");
+        PARTICLE_ALIASES.put("dust", "dust");
+        PARTICLE_ALIASES.put("item_crack_", "item");
 
-        LEGACY_ID_MAP.put(1, "explosion_normal");
-        LEGACY_ID_MAP.put(2, "explosion_large");
-        LEGACY_ID_MAP.put(3, "explosion_fire");
-        LEGACY_ID_MAP.put(4, "bubble");
-        LEGACY_ID_MAP.put(5, "bubble_pop");
-        LEGACY_ID_MAP.put(6, "bubble_column_up");
-        LEGACY_ID_MAP.put(7, "current_down");
-        LEGACY_ID_MAP.put(8, "crit");
-        LEGACY_ID_MAP.put(9, "magic_crit");
-        LEGACY_ID_MAP.put(10, "smoke");
-        LEGACY_ID_MAP.put(11, "smoke_large");
-        LEGACY_ID_MAP.put(12, "spell");
-        LEGACY_ID_MAP.put(13, "spell_instant");
-        LEGACY_ID_MAP.put(14, "spell_witch");
-        LEGACY_ID_MAP.put(15, "note");
-        LEGACY_ID_MAP.put(16, "portal");
-        LEGACY_ID_MAP.put(17, "flame");
-        LEGACY_ID_MAP.put(18, "lava");
-        LEGACY_ID_MAP.put(19, "footstep");
-        LEGACY_ID_MAP.put(20, "midnight");
-        LEGACY_ID_MAP.put(21, "splash");
-        LEGACY_ID_MAP.put(22, "splash_pool");
-        LEGACY_ID_MAP.put(23, "particle_splash");
-        LEGACY_ID_MAP.put(24, "endRod");
-        LEGACY_ID_MAP.put(25, "mobspawner");
-        LEGACY_ID_MAP.put(26, "item_slime");
-        LEGACY_ID_MAP.put(27, "snowball");
-        LEGACY_ID_MAP.put(28, "snow_shovel");
-        LEGACY_ID_MAP.put(29, "heart");
-        LEGACY_ID_MAP.put(30, "villager_angry");
-        LEGACY_ID_MAP.put(31, "villager_happy");
-        LEGACY_ID_MAP.put(32, "drip_water");
-        LEGACY_ID_MAP.put(33, "drip_lava");
-        LEGACY_ID_MAP.put(34, "dust");
-        LEGACY_ID_MAP.put(35, "dragon_breath");
-        LEGACY_ID_MAP.put(36, "ash");
-        LEGACY_ID_MAP.put(37, "crimson_spore");
-        LEGACY_ID_MAP.put(38, "warped_spore");
-        LEGACY_ID_MAP.put(39, "soul");
-        LEGACY_ID_MAP.put(40, "spit");
-        LEGACY_ID_MAP.put(41, "squid_ink");
+        LEGACY_EFFECT_IDS.put("explosion_normal", 1);
+        LEGACY_EFFECT_IDS.put("explosion_large", 2);
+        LEGACY_EFFECT_IDS.put("explosion_fire", 3);
+        LEGACY_EFFECT_IDS.put("bubble", 4);
+        LEGACY_EFFECT_IDS.put("bubble_pop", 5);
+        LEGACY_EFFECT_IDS.put("bubble_column_up", 6);
+        LEGACY_EFFECT_IDS.put("current_down", 7);
+        LEGACY_EFFECT_IDS.put("crit", 8);
+        LEGACY_EFFECT_IDS.put("magic_crit", 9);
+        LEGACY_EFFECT_IDS.put("smoke", 10);
+        LEGACY_EFFECT_IDS.put("smoke_large", 11);
+        LEGACY_EFFECT_IDS.put("spell", 12);
+        LEGACY_EFFECT_IDS.put("spell_instant", 13);
+        LEGACY_EFFECT_IDS.put("witch", 14);
+        LEGACY_EFFECT_IDS.put("note", 15);
+        LEGACY_EFFECT_IDS.put("portal", 16);
+        LEGACY_EFFECT_IDS.put("flame", 17);
+        LEGACY_EFFECT_IDS.put("lava", 18);
+        LEGACY_EFFECT_IDS.put("footstep", 19);
+        LEGACY_EFFECT_IDS.put("midnight", 20);
+        LEGACY_EFFECT_IDS.put("splash", 21);
+        LEGACY_EFFECT_IDS.put("end_rod", 24);
+        LEGACY_EFFECT_IDS.put("smoke_large", 25);
+        LEGACY_EFFECT_IDS.put("item_slime", 26);
+        LEGACY_EFFECT_IDS.put("snowball", 27);
+        LEGACY_EFFECT_IDS.put("heart", 29);
+        LEGACY_EFFECT_IDS.put("villager_angry", 30);
+        LEGACY_EFFECT_IDS.put("villager_happy", 31);
+        LEGACY_EFFECT_IDS.put("drip_water", 32);
+        LEGACY_EFFECT_IDS.put("drip_lava", 33);
+        LEGACY_EFFECT_IDS.put("dust", 34);
+        LEGACY_EFFECT_IDS.put("dragon_breath", 35);
+        LEGACY_EFFECT_IDS.put("ash", 36);
+        LEGACY_EFFECT_IDS.put("crimson_spore", 37);
+        LEGACY_EFFECT_IDS.put("warped_spore", 38);
+        LEGACY_EFFECT_IDS.put("soul", 39);
+        LEGACY_EFFECT_IDS.put("spit", 40);
+        LEGACY_EFFECT_IDS.put("squid_ink", 41);
     }
 
     private ParticleBridge() {
-        this.modernAvailable = initializeModern();
-    }
-
-    private boolean initializeModern() {
+        Class<?> clazz = null;
+        Method method = null;
+        boolean modern = false;
         try {
-            final String nmsVersion = detectNMSVersion();
-            if (nmsVersion == null) {
-                return false;
-            }
-            final String packagePath = "net.minecraft.server." + nmsVersion;
-            particleClass = Class.forName(packagePath + ".Particle");
-            final String registryClassName = packagePath + ".ParticleRegistry";
-            Class<?> registryClass = Class.forName(registryClassName);
-            Field registryField = null;
-            for (Field field : registryClass.getDeclaredFields()) {
-                if (field.getType().getSimpleName().equals("ParticleRegistry")) {
-                    registryField = field;
-                    break;
-                }
-            }
-            if (registryField == null) {
-                return false;
-            }
-            registryField.setAccessible(true);
-            Object registry = registryField.get(null);
-            if (registry == null) {
-                return false;
-            }
-            particleMethod = registryClass.getMethod("getById", int.class);
-            particlesMethod = Class.forName(packagePath + ".PacketPlayOutWorldParticles")
-                    .getMethod("a", particleClass, boolean.class, float.class, float.class, float.class, float.class, float.class, float.class, float.class, int.class);
-            return true;
-        } catch (Exception e) {
-            return false;
+            clazz = Class.forName("org.bukkit.Particle");
+            method = Player.class.getMethod("spawnParticle", clazz, Location.class, int.class);
+            modern = true;
+        } catch (NoSuchMethodException | ClassNotFoundException e) {
+            clazz = null;
+            method = null;
+            modern = false;
         }
-    }
-
-    private String detectNMSVersion() {
-        String[] possibleVersions = {
-                "v1_8_R3", "v1_9_R1", "v1_9_R2", "v1_10_R1", "v1_11_R1",
-                "v1_12_R1", "v1_13_R1", "v1_13_R2", "v1_14_R1", "v1_15_R1",
-                "v1_16_R1", "v1_16_R2", "v1_16_R3", "v1_17_R1", "v1_18_R1",
-                "v1_18_R2", "v1_19_R1", "v1_19_R2", "v1_19_R3", "v1_20_R1",
-                "v1_20_R2", "v1_20_R3", "v1_21_R1"
-        };
-        for (String version : possibleVersions) {
-            try {
-                Class.forName("net.minecraft.server." + version + ".Particle");
-                return version;
-            } catch (ClassNotFoundException e) {
-                // continue
-            }
-        }
-        return null;
+        this.particleClass = clazz;
+        this.spawnParticleMethod = method;
+        this.modernAvailable = modern;
     }
 
     public static ParticleBridge getInstance() {
@@ -202,34 +158,110 @@ public final class ParticleBridge {
         }
     }
 
+    public void sendToPlayer(Player player, String particleKey, String... candidates) {
+        if (player == null || particleKey == null) {
+            return;
+        }
+        Object cached = PARTICLE_CACHE.get(particleKey);
+        if (cached == PARTICLE_NOT_FOUND) {
+            return;
+        }
+        if (cached != null) {
+            sendModernParticle(player, locationFromPlayer(player), cached);
+            return;
+        }
+
+        Object particle = resolveParticle(particleKey);
+        if (particle != null) {
+            putInCache(particleKey, particle);
+            sendModernParticle(player, locationFromPlayer(player), particle);
+            return;
+        }
+
+        if (candidates != null) {
+            for (String candidate : candidates) {
+                Object p = resolveParticle(candidate);
+                if (p != null) {
+                    putInCache(particleKey, p);
+                    sendModernParticle(player, locationFromPlayer(player), p);
+                    return;
+                }
+            }
+        }
+
+        Integer effectId = LEGACY_EFFECT_IDS.get(particleKey.toUpperCase());
+        if (effectId != null) {
+            sendLegacyEffect(player, locationFromPlayer(player), effectId);
+            putInCache(particleKey, particleKey);
+            return;
+        }
+
+        putInCache(particleKey, PARTICLE_NOT_FOUND);
+    }
+
+    private void putInCache(String key, Object value) {
+        if (PARTICLE_CACHE.size() >= MAX_CACHE_ENTRIES && !PARTICLE_CACHE.containsKey(key)) {
+            evictOneEntry();
+        }
+        PARTICLE_CACHE.put(key, value);
+    }
+
+    private void evictOneEntry() {
+        for (Map.Entry<String, Object> entry : PARTICLE_CACHE.entrySet()) {
+            if (entry.getValue() != PARTICLE_NOT_FOUND) {
+                PARTICLE_CACHE.remove(entry.getKey());
+                break;
+            }
+        }
+    }
+
+    private Location locationFromPlayer(Player player) {
+        return player.getLocation();
+    }
+
+    private Object resolveParticle(String key) {
+        if (particleClass == null) {
+            return null;
+        }
+        try {
+            return Enum.valueOf((Class<Enum>) particleClass, key.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private void sendModernParticle(Player player, Location location, Object particle) {
+        if (spawnParticleMethod == null) {
+            return;
+        }
+        try {
+            spawnParticleMethod.invoke(player, particle, location, 1, 0, 0, 0, 0);
+        } catch (Exception e) {
+        }
+    }
+
+    private void sendLegacyEffect(Player player, Location location, int effectId) {
+        try {
+            Effect effect = Effect.values()[effectId];
+            player.playEffect(location, effect, null);
+        } catch (Exception e) {
+        }
+    }
+
     private void sendModern(final Player player, final String particleKey, final Location location,
                             final float offsetX, final float offsetY, final float offsetZ,
                             final float speed, final int count) {
         try {
-            ParticleEntry entry = MODERN_PARTICLES.get(particleKey.toLowerCase());
-            String modernName = (entry != null) ? entry.modernName : particleKey.toLowerCase();
-            Object particle = particleMethod.invoke(null, getModernParticleId(modernName));
+            String particleName = PARTICLE_ALIASES.getOrDefault(particleKey.toLowerCase(), particleKey.toLowerCase());
+            Object particle = resolveParticle(particleName);
             if (particle == null) {
+                sendLegacy(player, particleKey, location, offsetX, offsetY, offsetZ, speed, count);
                 return;
             }
-            Object packet = particlesMethod.invoke(null, particle, true,
-                    (float) location.getX(), (float) location.getY(), (float) location.getZ(),
-                    offsetX, offsetY, offsetZ, speed, count);
-            if (packet != null) {
-                sendPacket(player, packet);
-            }
+            spawnParticleMethod.invoke(player, particle, location, count, offsetX, offsetY, offsetZ, speed);
         } catch (Exception e) {
             sendLegacy(player, particleKey, location, offsetX, offsetY, offsetZ, speed, count);
         }
-    }
-
-    private int getModernParticleId(final String modernName) {
-        for (Map.Entry<String, ParticleEntry> entry : MODERN_PARTICLES.entrySet()) {
-            if (entry.getValue().modernName.equals(modernName)) {
-                return entry.getValue().id;
-            }
-        }
-        return 0;
     }
 
     private void sendLegacy(final Player player, final String particleKey, final Location location,
@@ -238,92 +270,37 @@ public final class ParticleBridge {
         try {
             Effect effect = getLegacyEffect(particleKey);
             if (effect != null) {
-                Object packet = createLegacyPacket(location, offsetX, offsetY, offsetZ, speed, count, effect);
-                if (packet != null) {
-                    sendPacket(player, packet);
-                }
+                player.playEffect(location, effect, null);
             }
         } catch (Exception e) {
-            // fallback to basic effect
             try {
-                player.playEffect(location, Effect.valueOf("FOOTSTEP"), null);
+                player.playEffect(location, Effect.FOOTSTEP, null);
             } catch (Exception ignored) {
             }
         }
     }
 
     private Effect getLegacyEffect(final String particleKey) {
-        final String lower = particleKey.toLowerCase();
-        if (MODERN_PARTICLES.containsKey(lower)) {
-            return Effect.valueOf(MODERN_PARTICLES.get(lower).modernName.toUpperCase());
+        String effectName = PARTICLE_ALIASES.get(particleKey.toLowerCase());
+        if (effectName == null) {
+            effectName = particleKey.toLowerCase();
+        }
+        Integer id = LEGACY_EFFECT_IDS.get(effectName);
+        if (id != null) {
+            for (Effect effect : Effect.values()) {
+                if (effect.getId() == id) {
+                    return effect;
+                }
+            }
         }
         try {
-            return Effect.valueOf(particleKey.toUpperCase());
+            return Effect.valueOf(effectName.toUpperCase());
         } catch (IllegalArgumentException e) {
             return null;
         }
     }
 
-    private Object createLegacyPacket(final Location location, final float offsetX, final float offsetY,
-                                     final float offsetZ, final float speed, final int count, final Effect effect)
-            throws Exception {
-        Class<?> packetClass = Class.forName("net.minecraft.server." + detectNMSVersion() + ".PacketPlayOutWorldParticles");
-        Object packet = packetClass.newInstance();
-        Field aField = packetClass.getDeclaredField("a");
-        aField.setAccessible(true);
-        aField.set(packet, effect.getId());
-        Field bField = packetClass.getDeclaredField("b");
-        bField.setAccessible(true);
-        bField.set(packet, (float) location.getX());
-        Field cField = packetClass.getDeclaredField("c");
-        cField.setAccessible(true);
-        cField.set(packet, (float) location.getY());
-        Field dField = packetClass.getDeclaredField("d");
-        dField.setAccessible(true);
-        dField.set(packet, (float) location.getZ());
-        Field eField = packetClass.getDeclaredField("e");
-        eField.setAccessible(true);
-        eField.set(packet, offsetX);
-        Field fField = packetClass.getDeclaredField("f");
-        fField.setAccessible(true);
-        fField.set(packet, offsetY);
-        Field gField = packetClass.getDeclaredField("g");
-        gField.setAccessible(true);
-        gField.set(packet, offsetZ);
-        Field hField = packetClass.getDeclaredField("h");
-        hField.setAccessible(true);
-        hField.set(packet, speed);
-        Field iField = packetClass.getDeclaredField("i");
-        iField.setAccessible(true);
-        iField.set(packet, count);
-        return packet;
-    }
-
-    private void sendPacket(final Player player, final Object packet) throws Exception {
-        Method getHandle = player.getClass().getMethod("getHandle");
-        Object entityPlayer = getHandle.invoke(player);
-        Field playerConnectionField = entityPlayer.getClass().getField("playerConnection");
-        Object playerConnection = playerConnectionField.get(entityPlayer);
-        Method sendPacket = playerConnection.getClass().getMethod("sendPacket",
-                Class.forName("net.minecraft.server." + detectNMSVersion() + ".Packet"));
-        sendPacket.invoke(playerConnection, packet);
-    }
-
     public Map<String, String> getAvailableParticles() {
-        Map<String, String> result = new HashMap<>();
-        for (Map.Entry<String, ParticleEntry> entry : MODERN_PARTICLES.entrySet()) {
-            result.put(entry.getKey(), entry.getValue().modernName);
-        }
-        return Collections.unmodifiableMap(result);
-    }
-
-    private static class ParticleEntry {
-        final String modernName;
-        final int id;
-
-        ParticleEntry(String modernName, int id) {
-            this.modernName = modernName;
-            this.id = id;
-        }
+        return Collections.unmodifiableMap(new HashMap<>(PARTICLE_ALIASES));
     }
 }

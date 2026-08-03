@@ -3,8 +3,9 @@ package com.arkflame.flameforge.forge;
 import com.arkflame.flameforge.chance.ChanceEntry;
 import com.arkflame.flameforge.chance.ChanceTable;
 import com.arkflame.flameforge.model.ForgeHistory;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.OutcomeDefinition;
-import com.arkflame.flameforge.model.OutcomeType;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.Collections;
@@ -15,93 +16,156 @@ import java.util.UUID;
 public final class ForgeResolution {
     private final UUID transactionId;
     private final boolean success;
+    private final ForgeOutcomeCategory category;
     private final ChanceTable chanceTable;
     private final ChanceEntry selectedEntry;
-    private final OutcomeDefinition selectedOutcome;
-    private final ItemStack resultItem;
+    private final ForgeVariant usedVariant;
+    private final OutcomeDefinition outcome;
+    private final ItemStack mutatedItem;
+    private final List<ItemStack> allMutatedItems;
     private final ForgeHistory historyEntry;
     private final String errorMessage;
-    private final List<ItemStack> custodyReturned;
     private final ChargeReceipt chargeReceipt;
+    private final List<ItemStack> custodyReturned;
     private final boolean preRollFailure;
-    private final boolean wardConverted;
 
     private ForgeResolution(Builder builder) {
         this.transactionId = Objects.requireNonNull(builder.transactionId);
         this.success = builder.success;
+        this.category = builder.category;
         this.chanceTable = builder.chanceTable;
         this.selectedEntry = builder.selectedEntry;
-        this.selectedOutcome = builder.selectedOutcome;
-        this.resultItem = builder.resultItem;
+        this.usedVariant = builder.usedVariant;
+        this.outcome = builder.outcome;
+        this.mutatedItem = builder.mutatedItem;
+        this.allMutatedItems = builder.allMutatedItems != null ?
+            Collections.unmodifiableList(new java.util.ArrayList<>(builder.allMutatedItems)) :
+            Collections.emptyList();
         this.historyEntry = builder.historyEntry;
         this.errorMessage = builder.errorMessage;
-        this.custodyReturned = builder.custodyReturned != null ?
-            Collections.unmodifiableList(builder.custodyReturned) :
-            Collections.emptyList();
         this.chargeReceipt = builder.chargeReceipt;
+        this.custodyReturned = builder.custodyReturned != null ?
+            Collections.unmodifiableList(new java.util.ArrayList<>(builder.custodyReturned)) :
+            Collections.emptyList();
         this.preRollFailure = builder.preRollFailure;
-        this.wardConverted = builder.wardConverted;
     }
 
     public static Builder builder() {
         return new Builder();
     }
 
-    public static ForgeResolution failure(UUID transactionId, String errorMessage, boolean preRollFailure) {
+    public static ForgeResolution failure(UUID transactionId, ForgeOutcomeCategory category,
+            String errorMessage, boolean preRollFailure) {
         return builder()
             .transactionId(transactionId)
             .success(false)
+            .category(category != null ? category : ForgeOutcomeCategory.BREAK)
             .errorMessage(errorMessage)
             .preRollFailure(preRollFailure)
             .build();
     }
 
-    public static ForgeResolution success(UUID transactionId, ChanceTable chanceTable,
-            ChanceEntry selectedEntry, OutcomeDefinition selectedOutcome,
-            ItemStack resultItem, ForgeHistory historyEntry, ChargeReceipt chargeReceipt,
-            List<ItemStack> custodyReturned, boolean wardConverted) {
+    public static ForgeResolution success(UUID transactionId, ForgeOutcomeCategory category,
+            ChanceTable chanceTable, ChanceEntry selectedEntry, ForgeVariant usedVariant,
+            OutcomeDefinition outcome, ItemStack mutatedItem, List<ItemStack> allMutatedItems,
+            ForgeHistory historyEntry, ChargeReceipt chargeReceipt,
+            List<ItemStack> custodyReturned) {
         return builder()
             .transactionId(transactionId)
             .success(true)
+            .category(category)
             .chanceTable(chanceTable)
             .selectedEntry(selectedEntry)
-            .selectedOutcome(selectedOutcome)
-            .resultItem(resultItem)
+            .usedVariant(usedVariant)
+            .outcome(outcome)
+            .mutatedItem(mutatedItem)
+            .allMutatedItems(allMutatedItems)
             .historyEntry(historyEntry)
             .chargeReceipt(chargeReceipt)
             .custodyReturned(custodyReturned)
-            .wardConverted(wardConverted)
+            .preRollFailure(false)
             .build();
     }
 
-    public UUID getTransactionId() { return transactionId; }
-    public boolean isSuccess() { return success; }
-    public ChanceTable getChanceTable() { return chanceTable; }
-    public ChanceEntry getSelectedEntry() { return selectedEntry; }
-    public OutcomeDefinition getSelectedOutcome() { return selectedOutcome; }
-    public ItemStack getResultItem() { return resultItem; }
-    public ForgeHistory getHistoryEntry() { return historyEntry; }
-    public String getErrorMessage() { return errorMessage; }
-    public List<ItemStack> getCustodyReturned() { return custodyReturned; }
-    public ChargeReceipt getChargeReceipt() { return chargeReceipt; }
-    public boolean isPreRollFailure() { return preRollFailure; }
-    public boolean isWardConverted() { return wardConverted; }
+    public UUID getTransactionId() {
+        return transactionId;
+    }
 
-    public boolean hasItemOutput() { return resultItem != null; }
+    public boolean isSuccess() {
+        return success;
+    }
+
+    public ForgeOutcomeCategory getCategory() {
+        return category;
+    }
+
+    public ChanceTable getChanceTable() {
+        return chanceTable;
+    }
+
+    public ChanceEntry getSelectedEntry() {
+        return selectedEntry;
+    }
+
+    public ForgeVariant getUsedVariant() {
+        return usedVariant;
+    }
+
+    public OutcomeDefinition getOutcome() {
+        return outcome;
+    }
+
+    public ItemStack getMutatedItem() {
+        return mutatedItem;
+    }
+
+    public List<ItemStack> getAllMutatedItems() {
+        return allMutatedItems;
+    }
+
+    public ForgeHistory getHistoryEntry() {
+        return historyEntry;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public ChargeReceipt getChargeReceipt() {
+        return chargeReceipt;
+    }
+
+    public List<ItemStack> getCustodyReturned() {
+        return custodyReturned;
+    }
+
+    public boolean isPreRollFailure() {
+        return preRollFailure;
+    }
+
+    public boolean hasItemOutput() {
+        return mutatedItem != null;
+    }
+
+    public boolean hasMultipleItems() {
+        return allMutatedItems.size() > 1;
+    }
 
     public static final class Builder {
         private UUID transactionId;
         private boolean success;
+        private ForgeOutcomeCategory category;
         private ChanceTable chanceTable;
         private ChanceEntry selectedEntry;
-        private OutcomeDefinition selectedOutcome;
-        private ItemStack resultItem;
+        private ForgeVariant usedVariant;
+        private OutcomeDefinition outcome;
+        private ItemStack mutatedItem;
+        private List<ItemStack> allMutatedItems;
         private ForgeHistory historyEntry;
         private String errorMessage;
-        private List<ItemStack> custodyReturned;
         private ChargeReceipt chargeReceipt;
+        private List<ItemStack> custodyReturned;
         private boolean preRollFailure;
-        private boolean wardConverted;
 
         public Builder transactionId(UUID transactionId) {
             this.transactionId = transactionId;
@@ -110,6 +174,11 @@ public final class ForgeResolution {
 
         public Builder success(boolean success) {
             this.success = success;
+            return this;
+        }
+
+        public Builder category(ForgeOutcomeCategory category) {
+            this.category = category;
             return this;
         }
 
@@ -123,13 +192,23 @@ public final class ForgeResolution {
             return this;
         }
 
-        public Builder selectedOutcome(OutcomeDefinition selectedOutcome) {
-            this.selectedOutcome = selectedOutcome;
+        public Builder usedVariant(ForgeVariant usedVariant) {
+            this.usedVariant = usedVariant;
             return this;
         }
 
-        public Builder resultItem(ItemStack resultItem) {
-            this.resultItem = resultItem;
+        public Builder outcome(OutcomeDefinition outcome) {
+            this.outcome = outcome;
+            return this;
+        }
+
+        public Builder mutatedItem(ItemStack mutatedItem) {
+            this.mutatedItem = mutatedItem;
+            return this;
+        }
+
+        public Builder allMutatedItems(List<ItemStack> allMutatedItems) {
+            this.allMutatedItems = allMutatedItems;
             return this;
         }
 
@@ -143,23 +222,18 @@ public final class ForgeResolution {
             return this;
         }
 
-        public Builder custodyReturned(List<ItemStack> custodyReturned) {
-            this.custodyReturned = custodyReturned;
-            return this;
-        }
-
         public Builder chargeReceipt(ChargeReceipt chargeReceipt) {
             this.chargeReceipt = chargeReceipt;
             return this;
         }
 
-        public Builder preRollFailure(boolean preRollFailure) {
-            this.preRollFailure = preRollFailure;
+        public Builder custodyReturned(List<ItemStack> custodyReturned) {
+            this.custodyReturned = custodyReturned;
             return this;
         }
 
-        public Builder wardConverted(boolean wardConverted) {
-            this.wardConverted = wardConverted;
+        public Builder preRollFailure(boolean preRollFailure) {
+            this.preRollFailure = preRollFailure;
             return this;
         }
 

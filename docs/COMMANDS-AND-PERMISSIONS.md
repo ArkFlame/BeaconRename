@@ -7,9 +7,11 @@ All commands are subcommands of `/flameforge` (aliases: `forge`, `ff`).
 ### Help
 
 ```
-/flameforge help [page]
+/flameforge help [path]
 ```
-Displays paginated help menu. Default permission: `flameforge.use` (all players).
+Displays hierarchical help menu without pages. The optional `path` argument filters to a specific command group (e.g., `flameforge help station`). Each entry supports click-to-insert — clicking a command suggestion inserts it into the chat input.
+
+- Default permission: `flameforge.command.help` (all players)
 
 ### Open Forge
 
@@ -43,7 +45,7 @@ Runs configuration validation without reloading. Reports errors and warnings.
 ```
 /flameforge tiers [page]
 ```
-Lists all configured tiers with their priority values.
+Lists all configured tiers with their level values.
 
 - Default permission: `flameforge.command.tiers` (op)
 
@@ -52,7 +54,7 @@ Lists all configured tiers with their priority values.
 ```
 /flameforge tier info <tier-id>
 ```
-Shows detailed information about a specific tier: priority, animation durations, cost mode, cooldown, and outcomes.
+Shows detailed information about a specific tier: level, requirements, animation durations, cost mode, cooldown, and outcomes.
 
 - Default permission: `flameforge.command.tier.info` (op)
 
@@ -78,9 +80,9 @@ Shows reforge history for the player. Without arguments, shows sender's own hist
 ### Station Management
 
 ```
-/flameforge station add <id> [profile]
+/flameforge station add [id] [profile]
 ```
-Registers the beacon the player is looking at as a forge station. Player must be within 6 blocks of the beacon. Profile defaults to `default`.
+Registers any non-air block the player is looking at as a forge. Player must be within 6 blocks of the target. ID and profile are optional; profile defaults to `default`.
 
 - Default permission: `flameforge.command.station.add` (op)
 
@@ -115,16 +117,16 @@ Teleports the player to a station's location. On Folia, uses entity scheduler.
 ### Tier Setup
 
 ```
-/flameforge setup tier create <id> <priority>
+/flameforge setup tier create <id> <level>
 ```
-Creates a new empty tier file in `tiers/` with the specified ID and priority. The file is created but contains no outcomes.
+Creates a new empty tier file in `tiers/` with the specified ID and level. The file is created with schema version 2 but contains no outcomes.
 
 - Default permission: `flameforge.command.setup.tier` (op)
 
 ```
-/flameforge setup tier clone <source-id> <new-id> <priority>
+/flameforge setup tier clone <source-id> <new-id> <level>
 ```
-Clones an existing tier file to a new ID with a new priority.
+Clones an existing tier file to a new ID with a new level.
 
 - Default permission: `flameforge.command.setup.tier` (op)
 
@@ -135,7 +137,7 @@ Clones an existing tier file to a new ID with a new priority.
 | Permission                    | Description                              | Default |
 |-------------------------------|------------------------------------------|---------|
 | `flameforge.use`              | Basic plugin access                      | true    |
-| `flameforge.admin`            | Full admin access (all op commands)     | op      |
+| `flameforge.admin`            | All command permissions, including `flameforge.use` | op      |
 
 ### Command Permissions
 
@@ -164,6 +166,12 @@ Clones an existing tier file to a new ID with a new priority.
 |-----------------------------|------------------------------------------|---------|
 | `flameforge.bypass.cost`    | Skip cost requirements                   | op      |
 | `flameforge.bypass.cooldown`| Skip cooldown periods                    | op      |
+
+## Tab Completion
+
+## Click Interception
+
+Help entries, suggestions, and hover text are rendered via Adventure MiniMessage. Clicking a help entry inserts the full command label and suggestion into the player's chat input, allowing players to quickly type commands without copying manually.
 
 ## Tab Completion
 

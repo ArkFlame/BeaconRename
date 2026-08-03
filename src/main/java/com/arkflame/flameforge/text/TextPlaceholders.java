@@ -8,31 +8,21 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
+import static java.util.Collections.unmodifiableMap;
+
 public final class TextPlaceholders {
-    private static TextPlaceholders instance;
     private final Map<String, Function<Player, String>> dynamicReplacements = new ConcurrentHashMap<>();
     private final Map<String, String> staticReplacements = new ConcurrentHashMap<>();
     private final Map<String, Function<Player, Component>> dynamicComponents = new ConcurrentHashMap<>();
     private final Map<String, Component> staticComponents = new ConcurrentHashMap<>();
 
-    private TextPlaceholders() {
+    public TextPlaceholders() {
         initializeDefaults();
-    }
-
-    public static TextPlaceholders getInstance() {
-        if (instance == null) {
-            instance = new TextPlaceholders();
-        }
-        return instance;
-    }
-
-    public static synchronized TextPlaceholders create() {
-        instance = new TextPlaceholders();
-        return instance;
     }
 
     private void initializeDefaults() {
@@ -85,61 +75,6 @@ public final class TextPlaceholders {
         });
     }
 
-    public String resolve(final String input) {
-        if (input == null || input.isEmpty()) {
-            return input;
-        }
-        String result = input;
-        for (final Map.Entry<String, String> entry : staticReplacements.entrySet()) {
-            result = result.replace(entry.getKey(), entry.getValue());
-        }
-        return result;
-    }
-
-    public String resolve(final String input, final Player player) {
-        if (input == null || input.isEmpty()) {
-            return input;
-        }
-        String result = resolve(input);
-        for (final Map.Entry<String, Function<Player, String>> entry : dynamicReplacements.entrySet()) {
-            final String value = entry.getValue().apply(player);
-            result = result.replace(entry.getKey(), value != null ? value : "");
-        }
-        return result;
-    }
-
-    public Component resolveToComponent(final String input) {
-        if (input == null || input.isEmpty()) {
-            return Component.empty();
-        }
-        Component result = Component.text(input);
-        for (final Map.Entry<String, Component> entry : staticComponents.entrySet()) {
-            result = result.replaceText(builder -> builder.matchLiteral(entry.getKey())
-                    .replacement(entry.getValue()));
-        }
-        for (final Map.Entry<String, Function<Player, Component>> entry : dynamicComponents.entrySet()) {
-            result = result.replaceText(builder -> builder.matchLiteral(entry.getKey())
-                    .replacement(entry.getValue().apply(null)));
-        }
-        return result;
-    }
-
-    public Component resolveToComponent(final String input, final Player player) {
-        if (input == null || input.isEmpty()) {
-            return Component.empty();
-        }
-        Component result = Component.text(input);
-        for (final Map.Entry<String, Component> entry : staticComponents.entrySet()) {
-            result = result.replaceText(builder -> builder.matchLiteral(entry.getKey())
-                    .replacement(entry.getValue()));
-        }
-        for (final Map.Entry<String, Function<Player, Component>> entry : dynamicComponents.entrySet()) {
-            result = result.replaceText(builder -> builder.matchLiteral(entry.getKey())
-                    .replacement(entry.getValue().apply(player)));
-        }
-        return result;
-    }
-
     public void registerReplacement(final String placeholder, final String value) {
         if (placeholder != null && value != null) {
             staticReplacements.put(placeholder, value);
@@ -181,24 +116,33 @@ public final class TextPlaceholders {
         dynamicComponents.clear();
     }
 
-    public Collection<String> getRegisteredPlaceholders() {
-        final Collection<String> all = new java.util.HashSet<>();
+    public Collection<String> getRegisteredNames() {
+        final Collection<String> all = new HashSet<>();
         all.addAll(staticReplacements.keySet());
         all.addAll(dynamicReplacements.keySet());
         all.addAll(staticComponents.keySet());
         all.addAll(dynamicComponents.keySet());
-        return java.util.Collections.unmodifiableCollection(all);
+        return all;
     }
 
-    public Map<String, String> getStaticReplacements() {
-        return new HashMap<>(staticReplacements);
-    }
-
-    public Map<String, String> getDynamicReplacements() {
-        final Map<String, String> result = new HashMap<>();
-        for (final Map.Entry<String, Function<Player, String>> entry : dynamicReplacements.entrySet()) {
-            result.put(entry.getKey(), "<dynamic>");
+    public Map<String, String> resolveStringValues(Player player) {
+        Map<String, String> values = new HashMap<>(staticReplacements);
+        if (player != null) {
+            for (Map.Entry<String, Function<Player, String>> entry : dynamicReplacements.entrySet()) {
+                values.put(entry.getKey(), entry.getValue().apply(player));
+            }
+            values.put("player_name", player.getName());
         }
-        return result;
+        return values;
+    }
+
+    public Map<String, Component> resolveComponentValues(Player player) {
+        Map<String, Component> values = new HashMap<>(staticComponents);
+        if (player != null) {
+            for (Map.Entry<String, Function<Player, Component>> entry : dynamicComponents.entrySet()) {
+                values.put(entry.getKey(), entry.getValue().apply(player));
+            }
+        }
+        return values;
     }
 }

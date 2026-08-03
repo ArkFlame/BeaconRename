@@ -67,7 +67,9 @@ public class BukkitSchedulerBridge implements SchedulerBridge {
         if (retireCallback == null) {
             throw new IllegalArgumentException("Retire callback cannot be null");
         }
-        throw new UnsupportedOperationException("Entity scheduling not supported on Bukkit");
+        BukkitTask bukkitTask = Bukkit.getScheduler().runTask(
+                JavaPlugin.getProvidingPlugin(BukkitSchedulerBridge.class), runnable);
+        return new BukkitTaskHandle(bukkitTask);
     }
 
     @Override
@@ -84,7 +86,9 @@ public class BukkitSchedulerBridge implements SchedulerBridge {
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
         }
-        throw new UnsupportedOperationException("Entity scheduling not supported on Bukkit");
+        BukkitTask bukkitTask = Bukkit.getScheduler().runTaskLater(
+                JavaPlugin.getProvidingPlugin(BukkitSchedulerBridge.class), runnable, delay);
+        return new BukkitTaskHandle(bukkitTask);
     }
 
     @Override
@@ -95,7 +99,9 @@ public class BukkitSchedulerBridge implements SchedulerBridge {
         if (task == null) {
             throw new IllegalArgumentException("Task cannot be null");
         }
-        throw new UnsupportedOperationException("Region scheduling not supported on Bukkit");
+        BukkitTask bukkitTask = Bukkit.getScheduler().runTask(
+                JavaPlugin.getProvidingPlugin(BukkitSchedulerBridge.class), task);
+        return new BukkitTaskHandle(bukkitTask);
     }
 
     @Override
@@ -109,7 +115,9 @@ public class BukkitSchedulerBridge implements SchedulerBridge {
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
         }
-        throw new UnsupportedOperationException("Region scheduling not supported on Bukkit");
+        BukkitTask bukkitTask = Bukkit.getScheduler().runTaskLater(
+                JavaPlugin.getProvidingPlugin(BukkitSchedulerBridge.class), task, delay);
+        return new BukkitTaskHandle(bukkitTask);
     }
 
     @Override

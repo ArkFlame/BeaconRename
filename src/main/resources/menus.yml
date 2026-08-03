@@ -1,215 +1,98 @@
-# FlameForge Menu Configuration
-# MMO Forge Theme: dark_gray, purple, white, lime, gold
-# Menu titles must be 1.8-safe (legacy color codes only)
+schema-version: 2
 
-# ============================================================
-# MENU PROFILES
-# ============================================================
-
-# Default menu profile
 default:
-  # 1.8-safe title - uses legacy & color codes only
-  title: "&6&lFlameForge"
-  # Size: 54 slots (6 rows)
-  size: 54
-  # Fill material
-  filler:
-    material: STAINED_GLASS_PANE
-    data: 7
-    name: " "
-  # Slot assignments
-  slots:
-    info: 4
-    catalyst: 11
-    input: 13
-    ward: 15
-    confirm: 22
-    previous: 27
-    tier-start: 28
-    tier-end: 34
-    next: 35
-    pity-history: 40
-    close: 49
-  # Item overrides per slot
-  items:
-    info:
-      material: NETHER_STAR
-      name: "&6&lFlameForge"
-      lore:
-        - "&7Welcome to the FlameForge"
-        - "&7Place items in the slots below"
-        - "&7Select a tier and confirm to forge"
-    input:
-      material: BLACK_STAINED_GLASS_PANE
-      name: "&8&lInput Item"
-      lore:
-        - "&7Place your item here"
-        - "&7(Stack size must be exactly 1)"
-    catalyst:
-      material: CYAN_STAINED_GLASS_PANE
-      name: "&b&lCatalyst"
-      lore:
-        - "&7Optional: Place a catalyst"
-        - "&7to modify outcomes"
-    ward:
-      material: MAGENTA_STAINED_GLASS_PANE
-      name: "&d&lWard"
-      lore:
-        - "&7Optional: Place a ward"
-        - "&7to protect your item"
-    confirm:
-      material-when-available: EMERALD_BLOCK
-      material-when-unavailable: REDSTONE_BLOCK
-      name-when-available: "&a&lConfirm Forge"
-      name-when-unavailable: "&c&lCannot Afford"
-    previous:
-      material-when-enabled: ARROW
-      material-when-disabled: BARRIER
-      name-when-enabled: "&e&lPrevious Page"
-      name-when-disabled: "&7&lPrevious Page"
-    next:
-      material-when-enabled: ARROW
-      material-when-disabled: BARRIER
-      name-when-enabled: "&e&lNext Page"
-      name-when-disabled: "&7&lNext Page"
-    close:
-      material: BARRIER
-      name: "&c&lClose"
-      lore:
-        - "&7Click to close the menu"
-    pity-history:
-      material: BOOK
-      name: "&5&lPity / History"
-      lore:
-        - "&7Current Pity: &d%pity%"
-        - "&7Click to view history"
-  # Tier item defaults
-  tier:
-    available-material: DIAMOND
-    available-name: "&e&l%tier_id%"
-    available-lore:
-      - "&7Tier Level: &e%tier_level%"
-      - "&aClick to select"
-    selected-material: NETHER_STAR
-    selected-name: "&6&l%tier_id%"
-    selected-lore:
-      - "&7Tier Level: &e%tier_level%"
-      - "&aSelected"
-    locked-material: IRON_BARS
-    locked-name: "&7&l%tier_id%"
-    locked-lore:
-      - "&7Tier Level: &c%tier_level%"
-      - "&cLocked - Upgrade station"
-    unavailable-material: COBBLESTONE
-    unavailable-name: "&8&l%tier_id%"
-    unavailable-lore:
-      - "&7Tier Level: &8%tier_level%"
-      - "&cUnavailable"
-
-# Compact menu profile (fewer slots, smaller display)
-compact:
-  title: "&6FlameForge"
+  title: "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
   size: 27
-  filler:
-    material: STAINED_GLASS_PANE
-    data: 7
+
+  background:
+    materials:
+      - GRAY_STAINED_GLASS_PANE
+      - STAINED_GLASS_PANE:7
+      - GLASS_PANE
     name: " "
+
   slots:
     info: 4
-    input: 11
-    confirm: 13
-    tier-start: 15
-    tier-end: 20
-    close: 22
+    input: 13
+    confirm: 22
+    close: 26
+
   items:
     info:
-      material: NETHER_STAR
-      name: "&6&lFlameForge"
+      materials:
+        - NETHER_STAR
+        - DIAMOND
+      name: "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
       lore:
-        - "&7MMO Forge Station"
-    input:
-      material: BLACK_STAINED_GLASS_PANE
-      name: "&8&lPlace Item"
-    confirm:
-      material-when-available: EMERALD_BLOCK
-      material-when-unavailable: REDSTONE_BLOCK
+        - "<gray>Click one eligible item in your inventory."
+        - "<gray>The forge automatically selects the next tier."
+        - "<gray>Only the input slot can hold a real item."
+
+    input-empty:
+      materials:
+        - BLACK_STAINED_GLASS_PANE
+        - STAINED_GLASS_PANE:15
+        - GLASS_PANE
+      name: "<dark_gray><bold>Input Item</bold>"
+      lore:
+        - "<gray>Click an eligible item in your inventory."
+        - "<gray>Click the inserted item to take it back."
+
+    confirm-empty:
+      materials:
+        - REDSTONE_BLOCK
+        - REDSTONE
+      name: "<red><bold>Insert an Item</bold>"
+      lore:
+        - "<gray>No item is currently inserted."
+
+    confirm-blocked:
+      materials:
+        - REDSTONE_BLOCK
+        - REDSTONE
+      name: "<red><bold>Cannot Forge</bold>"
+      lore:
+        - "%blocked_reason%"
+        - "%missing_requirement_lines%"
+
+    confirm-ready:
+      materials:
+        - EMERALD_BLOCK
+        - EMERALD
+      name: "<gradient:#22c55e:#bbf7d0><bold>Forge Tier %current_tier% → %target_tier%</bold></gradient>"
+      lore:
+        - "<gray>Outcome chances"
+        - "%chance_lines%"
+        - " "
+        - "<gray>Requirements"
+        - "%requirement_lines%"
+        - " "
+        - "<gray>Possible variants"
+        - "%variant_lines%"
+        - " "
+        - "<green>Click to start forging."
+
     close:
-      material: BARRIER
-      name: "&c&lClose"
+      materials:
+        - BARRIER
+        - RED_STAINED_GLASS_PANE
+        - STAINED_GLASS_PANE:14
+        - REDSTONE_BLOCK
+      name: "<red><bold>Close</bold>"
+      lore:
+        - "<gray>Returns the inserted item before closing."
 
-# ============================================================
-# MATERIAL ALIASES
-# ============================================================
+  dynamic-lines:
+    chance-success: "<dark_gray>● <green>Success: <white>%success_chance%%"
+    chance-break: "<dark_gray>● <red>Break/reset: <white>%break_chance%%"
+    chance-curse: "<dark_gray>● <dark_purple>Curse: <white>%curse_chance%%"
 
-material-aliases:
-  # Sword aliases
-  diamond_sword: DIAMOND_SWORD
-  iron_sword: IRON_SWORD
-  gold_sword: GOLD_SWORD
-  stone_sword: STONE_SWORD
-  wooden_sword: WOOD_SWORD
-  wood_sword: WOOD_SWORD
-  # Pickaxe aliases
-  diamond_pickaxe: DIAMOND_PICKAXE
-  iron_pickaxe: IRON_PICKAXE
-  gold_pickaxe: GOLD_PICKAXE
-  stone_pickaxe: STONE_PICKAXE
-  wooden_pickaxe: WOOD_PICKAXE
-  wood_pickaxe: WOOD_PICKAXE
-  # Armor aliases
-  diamond_helmet: DIAMOND_HELMET
-  diamond_chestplate: DIAMOND_CHESTPLATE
-  diamond_leggings: DIAMOND_LEGGINGS
-  diamond_boots: DIAMOND_BOOTS
-  iron_helmet: IRON_HELMET
-  iron_chestplate: IRON_CHESTPLATE
-  iron_leggings: IRON_LEGGINGS
-  iron_boots: IRON_BOOTS
-  gold_helmet: GOLD_HELMET
-  gold_chestplate: GOLD_CHESTPLATE
-  gold_leggings: GOLD_LEGGINGS
-  gold_boots: GOLD_BOOTS
-  chainmail_helmet: CHAINMAIL_HELMET
-  chainmail_chestplate: CHAINMAIL_CHESTPLATE
-  chainmail_leggings: CHAINMAIL_LEGGINGS
-  chainmail_boots: CHAINMAIL_BOOTS
-  leather_helmet: LEATHER_HELMET
-  leather_chestplate: LEATHER_CHESTPLATE
-  leather_leggings: LEATHER_LEGGINGS
-  leather_boots: LEATHER_BOOTS
-  # Tool aliases
-  bow: BOW
-  arrow: ARROW
-  fishing_rod: FISHING_ROD
-  shears: SHEARS
-  flint_and_steel: FLINT_AND_STEEL
-  # Special items
-  golden_apple: GOLDEN_APPLE
-  beacon: BEACON
-  anvil: ANVIL
-  enchantment_table: ENCHANTMENT_TABLE
-  ender_chest: ENDER_CHEST
+    requirement-xp-met: "<dark_gray>● <green>XP: <white>%xp_required% <gray>(you have %xp_available%)"
+    requirement-xp-missing: "<dark_gray>● <red>XP: <white>%xp_required% <gray>(you have %xp_available%)"
+    requirement-money-met: "<dark_gray>● <green>Money: <white>%money_required% <gray>(you have %money_available%)"
+    requirement-money-missing: "<dark_gray>● <red>Money: <white>%money_required% <gray>(you have %money_available%)"
+    requirement-money-unavailable: "<dark_gray>● <red>Money requirement enabled, but Vault economy is unavailable."
+    requirement-item-met: "<dark_gray>● <green>%item_name%: <white>%item_required% <gray>(you have %item_available%)"
+    requirement-item-missing: "<dark_gray>● <red>%item_name%: <white>%item_required% <gray>(you have %item_available%)"
 
-# ============================================================
-# SLOT MATERIAL MAPPINGS
-# ============================================================
-
-slot-materials:
-  filler-default: STAINED_GLASS_PANE
-  filler-data: 7
-  input-slot: BLACK_STAINED_GLASS_PANE
-  catalyst-slot: CYAN_STAINED_GLASS_PANE
-  ward-slot: MAGENTA_STAINED_GLASS_PANE
-  previous-enabled: ARROW
-  previous-disabled: BARRIER
-  next-enabled: ARROW
-  next-disabled: BARRIER
-  close-button: BARRIER
-  confirm-available: EMERALD_BLOCK
-  confirm-unavailable: REDSTONE_BLOCK
-  tier-available: DIAMOND
-  tier-selected: NETHER_STAR
-  tier-locked: IRON_BARS
-  tier-unavailable: COBBLESTONE
-  info-item: NETHER_STAR
-  pity-history: BOOK
+    variant-entry: "<dark_gray>● <white>%variant_name%"

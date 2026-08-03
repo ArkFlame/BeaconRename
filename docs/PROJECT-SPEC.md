@@ -4,21 +4,24 @@ This document constitutes the acceptance contract for FlameForge version 1.0.0.
 
 ## Overview
 
-FlameForge is a beacon-based forge/reforge system for Minecraft servers. Players place items into a GUI at registered beacon blocks and receive random outcomes based on weighted probability tables.
+FlameForge is a forge/reforge system for Minecraft servers. Players place items into a GUI at registered forge blocks and receive random outcomes based on weighted probability tables.
 
 ## Implemented Features
 
-The following ten features are selected for inclusion in version 1.0.0:
+The following features are selected for inclusion in version 1.0.0:
 
 ### F001 — Registered Forge Stations
 
-Players interact only with beacon blocks that have been explicitly registered via the `/flameforge station add` command. Stations store world, coordinates, and profile assignment. Station data persists in `stations.yml`.
+Players interact only with forge blocks that have been explicitly registered via the `/flameforge station add` command. Any non-air block can be registered; no specific block material is required. Registered forge data stores world, coordinates, and profile assignment in `stations.yml`.
 
 **Acceptance criteria:**
-- Station registration requires player proximity to beacon (6 blocks).
+- Station registration requires player proximity to target block (6 blocks).
+- Station registration accepts any non-air block.
 - Duplicate coordinates or IDs are rejected.
 - Stations can be removed via command.
 - Station list command shows ID, world, coordinates, and profile.
+
+Registered-forge interaction is performed by right-clicking the registered block. Unregistered blocks do not open the forge in `REGISTERED_ONLY` mode.
 
 ### F002 — Station Profiles and Visual Themes
 
@@ -28,44 +31,6 @@ Station profiles define per-station tier access and permission requirements. Pro
 - Profile defines `max-tier` to limit accessible tiers.
 - Profile defines `permissions` list for access control.
 - Profile can reference menu and animation profiles.
-
-### F003 — Catalyst Items Modifying Weights
-
-Catalyst items, placed in the catalyst slot, modify outcome weights. Catalysts are defined in `config.yml` under `catalysts`.
-
-**Acceptance criteria:**
-- Catalyst specifies `material`, `name`, `lore`, `chance-modifier`, and `consume` flag.
-- `protected-outcomes` list specifies outcomes the catalyst cannot trigger.
-- Consuming the catalyst removes it after forge execution.
-
-### F004 — Break-Protection Wards
-
-Ward items, placed in the ward slot, protect the input item from BREAK outcomes. Wards are defined in `config.yml` under `wards`.
-
-**Acceptance criteria:**
-- Ward specifies `material`, `name`, `lore`, and `protected-outcomes` list.
-- `protect_all: true` protects against all BREAK outcomes.
-- `convert_to_unchanged` list specifies outcome types converted to RETURN_UNCHANGED when ward is active.
-- Ward is consumed after protection triggers.
-
-### F005 — Per-Tier Pity System
-
-Pity system increments a counter on each failed (BREAK) outcome. When the counter reaches the configured threshold, a bonus weight is applied to subsequent rolls.
-
-**Acceptance criteria:**
-- Tier definition includes `pity.enabled`, `pity.threshold`, `pity.bonus-weight`.
-- Pity counter persists per-player in YAML player data.
-- Counter resets on successful non-BREAK outcome.
-- Bonus weight is applied to the chance table on subsequent rolls.
-
-### F006 — Reforge Provenance/History
-
-Player reforge history is tracked and viewable. History includes station, tier, outcome, and timestamp.
-
-**Acceptance criteria:**
-- History is stored per-session and logged via `ForgeHistory`.
-- `/flameforge history [player]` shows recent outcomes.
-- History is not persisted beyond the session in the initial release.
 
 ### F007 — Per-Tier Cooldowns
 
@@ -104,6 +69,72 @@ All forge transactions are logged asynchronously to `data/audit/YYYY-MM-DD.jsonl
 - Full queue drops oldest entries with warning logged.
 - Ledger survives plugin reload.
 
+## Tier Schema v2
+
+Tier files use schema version 2 with these key changes:
+- `level` replaces `priority` for automatic tier progression
+- `requirements` section defines input item constraints
+- Outcome `category` field (SUCCESS/BREAK/CURSE) is required
+- Powers system for named stat bundles
+- Same-material variant support
+
+### Tier Requirements
+
+```yaml
+requirements:
+  items:
+    - material: DIAMOND_SWORD
+      required: true
+  strict-match: false
+```
+
+### Outcome Categories
+
+| Category | Description |
+|----------|-------------|
+| `SUCCESS` | Item returned in modified form |
+| `BREAK`  | Input item destroyed |
+| `CURSE`  | Negative effect applied |
+
+### CURSE Variants
+
+| Type    | Effect |
+|---------|--------|
+| `VOID`  | Marks item with void curse |
+| `DECAY` | Reduces item durability on each reforge |
+| `DRAIN` | Reduces item stats |
+
+## Powers System
+
+Powers are named stat bundles defined in tier files:
+
+```yaml
+powers:
+  blazing:
+    enchants:
+      fire_aspect_boost:
+        name: FIRE_ASPECT
+        min-level: 2
+    attributes:
+      damage:
+        name: GENERIC_ATTACK_DAMAGE
+        min-value: 3.0
+        max-value: 5.0
+        operation: ADD_NUMBER
+```
+
+Powers are applied via outcomes using `power: <power-id>`.
+
+## 27-Slot Menu
+
+The streamlined menu layout:
+- **Input slot** (center): Single item input
+- **Tier buttons** (right): Tier selection with automatic next-tier
+- **Confirm button** (bottom-center): Execute forge
+- **Navigation** (bottom corners): Paging and close
+
+**Removed:** Catalyst slot, ward slot, pity counter
+
 ## Excluded Features
 
 Features not listed above are explicitly excluded from version 1.0.0 scope. This includes but is not limited to:
@@ -118,6 +149,11 @@ Features not listed above are explicitly excluded from version 1.0.0 scope. This
 - SQL/MySQL storage (F039, F042)
 - Web dashboard (F043)
 - Custom scripting (F049, F050)
+- Catalyst items (F003)
+- Ward protection (F004)
+- Pity system (F005)
+- Reforge history (F006)
+- SMPWeapons integration (F059)
 - Item sets and gems (F089–F092)
 - Locale packs beyond single messages file (F100)
 
@@ -131,11 +167,10 @@ The plugin exposes no public API in version 1.0.0. External integration occurs t
 
 - Command-based hooks (outcome `COMMANDS` type)
 - Vault economy (if present)
-- SMPWeapons detection (if present)
 
 ## Version Constraints
 
-- Schema version: 1
+- Schema version: 2
 - Minimum Spigot API: 1.13
 - Target Java: 8
 - Folia: supported via entity scheduler bridge

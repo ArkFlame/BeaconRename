@@ -19,7 +19,7 @@ import java.util.Optional;
 public final class ItemMatcher {
     private static final ItemMatcher INSTANCE = new ItemMatcher();
     private final MaterialResolver materialResolver = MaterialResolver.getInstance();
-    private final EnchantmentResolver enchantResolver = EnchantmentResolver.getInstance();
+    private final EnchantmentResolver enchantResolver = new EnchantmentResolver();
 
     private volatile Boolean modernCustomModelDataAvailable;
     private Method hasCustomModelDataMethod;

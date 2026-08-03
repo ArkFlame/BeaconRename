@@ -8,7 +8,7 @@ schema-version: 1
 # Plugin enabled state
 enabled: true
 
-# Station behavior mode: ANY_BEACON allows any beacon, REGISTERED_ONLY requires stations
+# Station behavior mode: ANY_BLOCK allows any non-air block, REGISTERED_ONLY requires registered forges
 station-mode: REGISTERED_ONLY
 
 # Audit log settings
@@ -66,36 +66,7 @@ item-groups:
       - leather_leggings
       - leather_boots
 
-# Catalyst definitions
-catalysts:
-  lucky_dust:
-    enabled: true
-    material: GLOWSTONE_DUST
-    name: "<reset><white>Lucky Dust"
-    lore:
-      - "<gray>Optional catalyst"
-      - "<gray>Place to modify outcomes"
-    chance-modifier: 0.1
-    consume: true
-    protected-outcomes:
-      - legendary_ward
-      - epic_ward
 
-# Ward definitions
-wards:
-  safety_rune:
-    enabled: true
-    material: PRISMARINE_SHARD
-    name: "<reset><aqua>Safety Rune"
-    lore:
-      - "<gray>Optional ward"
-      - "<gray>Place to protect your item"
-    protected-outcomes:
-      - legendary_ward
-      - epic_ward
-    convert_to_unchanged:
-      - BREAK
-    protect_all: false
 
 # Announcement settings
 announcements:
@@ -129,18 +100,7 @@ animation-profile: default
 # Menu profile defaults
 menu-profile: default
 
-# Pity system defaults
-pity:
-  enabled: true
-  default-threshold: 10
-  default-bonus-weight: 2.0
 
-# Cost line colors (MiniMessage)
-cost-colors:
-  xp: "<light_purple>"
-  money: "<green>"
-  xp-label: "<light_purple>XP Cost:"
-  money-label: "<green>Money Cost:"
 
 # Default cost display format
 cost-display:
@@ -148,3 +108,26 @@ cost-display:
   money-format: "${value}"
   show-zero-xp: false
   show-zero-money: false
+
+forge:
+  passive-refresh-ticks: 20
+  power-cooldown-max-entries: 4096
+  reject-foreign-persistent-data: true
+  menu:
+    profile: default
+
+tier-migration:
+  schema-v1-backup-directory: ".legacy-v1-backup"
+  replace-schema-v1-with-bundled-v2: true
+
+# Hologram settings
+holograms:
+  enabled: true
+  provider-order:
+    - FancyHolograms
+    - DecentHolograms
+  offset-y: 1.75
+  transparent-background: true
+  lines:
+    - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
+    - "<gray>%forge_id%"

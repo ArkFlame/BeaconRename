@@ -1,84 +1,135 @@
 package com.arkflame.flameforge.compat.scheduler;
 
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
+import java.util.function.Consumer;
 
 class FoliaTaskHandle implements TaskHandle {
     private volatile boolean cancelled = false;
     private final Object task;
+    private final Method isCancelledMethod;
+    private final Method cancelMethod;
 
-    FoliaTaskHandle(Object task) {
+    FoliaTaskHandle(Object task, Method isCancelledMethod, Method cancelMethod) {
         this.task = task;
-    }
-
-    Object getTask() {
-        return task;
+        this.isCancelledMethod = isCancelledMethod;
+        this.cancelMethod = cancelMethod;
     }
 
     @Override
-    public void cancel() {
+    public synchronized void cancel() {
         if (!cancelled) {
-            cancelled = true;
-            try {
-                Method cancelMethod = task.getClass().getMethod("cancel");
-                cancelMethod.invoke(task);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to cancel Folia task", e);
+            if (task != null && cancelMethod != null) {
+                try {
+                    cancelMethod.invoke(task);
+                } catch (Exception e) {
+                    throw FoliaSchedulerBridge.schedulerFailure("Failed to cancel Folia task", e);
+                }
             }
+            cancelled = true;
         }
     }
 
     @Override
     public boolean isCancelled() {
-        return cancelled;
+        if (cancelled) {
+            return true;
+        }
+        if (task == null) {
+            return true;
+        }
+        if (isCancelledMethod != null) {
+            try {
+                return (Boolean) isCancelledMethod.invoke(task);
+            } catch (Exception e) {
+                throw FoliaSchedulerBridge.schedulerFailure("Failed to inspect Folia task cancellation", e);
+            }
+        }
+        throw new IllegalStateException("Folia task cancellation method unavailable");
     }
 }
 
 public class FoliaSchedulerBridge implements SchedulerBridge {
+    private final JavaPlugin plugin;
     private final Object globalScheduler;
     private final Object regionScheduler;
-    private final Object entityScheduler;
     private final Object asyncScheduler;
-    private final Method runMethod;
-    private final Method runDelayedMethod;
-    private final Method runEntitySchedulerMethod;
-    private final Method runRegionSchedulerMethod;
-    private final Method runAsyncMethod;
+    private final Method globalRunMethod;
+    private final Method globalRunDelayedMethod;
+    private final Method regionRunMethod;
+    private final Method regionRunDelayedMethod;
+    private final Method asyncRunNowMethod;
+    private final Method entityRunMethod;
+    private final Method entityRunDelayedMethod;
+    private final Method taskCancelMethod;
+    private final Method taskIsCancelledMethod;
 
-    public FoliaSchedulerBridge() {
+    public FoliaSchedulerBridge(JavaPlugin plugin) {
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin cannot be null");
+        }
+        this.plugin = plugin;
         try {
-            Class<?> schedulerClass = Class.forName("net.serveruller.components.IScheduler");
-            Class<?> serverClass = Class.forName("net.serveruller.Serveruller");
-            Object serveruller = schedulerClass.getField("INSTANCE").get(null);
+            Class<?> globalSchedulerClass = Class.forName("io.papermc.paper.threadedregions.scheduler.GlobalRegionScheduler");
+            Class<?> regionSchedulerClass = Class.forName("io.papermc.paper.threadedregions.scheduler.RegionScheduler");
+            Class<?> asyncSchedulerClass = Class.forName("io.papermc.paper.threadedregions.scheduler.AsyncScheduler");
+            Class<?> entitySchedulerClass = Class.forName("io.papermc.paper.threadedregions.scheduler.EntityScheduler");
+            Class<?> scheduledTaskClass = Class.forName("io.papermc.paper.threadedregions.scheduler.ScheduledTask");
 
-            Field globalField = serverClass.getDeclaredField("globalScheduler");
-            globalField.setAccessible(true);
-            globalScheduler = globalField.get(serveruller);
+            taskCancelMethod = scheduledTaskClass.getMethod("cancel");
+            taskIsCancelledMethod = scheduledTaskClass.getMethod("isCancelled");
 
-            Field regionField = serverClass.getDeclaredField("regionScheduler");
-            regionField.setAccessible(true);
-            regionScheduler = regionField.get(serveruller);
+            globalRunMethod = globalSchedulerClass.getMethod("run", Plugin.class, Consumer.class);
+            globalRunDelayedMethod = globalSchedulerClass.getMethod("runDelayed", Plugin.class, Consumer.class, long.class);
 
-            Field entityField = serverClass.getDeclaredField("entityScheduler");
-            entityField.setAccessible(true);
-            entityScheduler = entityField.get(serveruller);
+            regionRunMethod = regionSchedulerClass.getMethod("run", Plugin.class, Location.class, Consumer.class);
+            regionRunDelayedMethod = regionSchedulerClass.getMethod("runDelayed", Plugin.class, Location.class, Consumer.class, long.class);
 
-            Field asyncField = serverClass.getDeclaredField("asyncScheduler");
-            asyncField.setAccessible(true);
-            asyncScheduler = asyncField.get(serveruller);
+            asyncRunNowMethod = asyncSchedulerClass.getMethod("runNow", Plugin.class, Consumer.class);
 
-            runMethod = schedulerClass.getMethod("run", Runnable.class);
-            runDelayedMethod = schedulerClass.getMethod("runDelayed", Runnable.class, long.class);
-            runEntitySchedulerMethod = schedulerClass.getMethod("runEntityScheduler", Entity.class, Runnable.class, Runnable.class);
-            runRegionSchedulerMethod = schedulerClass.getMethod("runRegionScheduler", Location.class, Runnable.class);
-            runAsyncMethod = schedulerClass.getMethod("runAsync", Runnable.class);
+            entityRunMethod = entitySchedulerClass.getMethod("run", Plugin.class, Consumer.class, Runnable.class);
+            entityRunDelayedMethod = entitySchedulerClass.getMethod("runDelayed", Plugin.class, Consumer.class, Runnable.class, long.class);
+
+            Method getGlobalSchedulerMethod = Bukkit.class.getMethod("getGlobalRegionScheduler");
+            globalScheduler = getGlobalSchedulerMethod.invoke(null);
+
+            Method getRegionSchedulerMethod = Bukkit.class.getMethod("getRegionScheduler");
+            regionScheduler = getRegionSchedulerMethod.invoke(null);
+
+            Method getAsyncSchedulerMethod = Bukkit.class.getMethod("getAsyncScheduler");
+            asyncScheduler = getAsyncSchedulerMethod.invoke(null);
         } catch (Exception e) {
             throw new RuntimeException("Failed to initialize Folia schedulers via reflection", e);
         }
+    }
+
+    private Object getEntityScheduler(Entity entity) {
+        try {
+            Method method = Entity.class.getMethod("getScheduler");
+            return method.invoke(entity);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to get entity scheduler", e);
+        }
+    }
+
+    static RuntimeException schedulerFailure(String message, Exception exception) {
+        if (exception instanceof InvocationTargetException) {
+            Throwable cause = ((InvocationTargetException) exception).getCause();
+            if (cause instanceof RuntimeException) {
+                return (RuntimeException) cause;
+            }
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            return new RuntimeException(message, cause);
+        }
+        return new RuntimeException(message, exception);
     }
 
     private TaskHandle executeOnScheduler(Object scheduler, Method method, Object... args) {
@@ -87,29 +138,38 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         }
         try {
             Object task = method.invoke(scheduler, args);
-            return new FoliaTaskHandle(task);
+            if (task == null) {
+                return null;
+            }
+            return new FoliaTaskHandle(task, taskIsCancelledMethod, taskCancelMethod);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to execute scheduler method", e);
+            throw schedulerFailure("Failed to execute scheduler method", e);
         }
     }
 
     @Override
     public TaskHandle runGlobal(JavaPlugin plugin, Runnable task) {
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin cannot be null");
+        }
         if (task == null) {
             throw new IllegalArgumentException("Task cannot be null");
         }
-        return executeOnScheduler(globalScheduler, runMethod, task);
+        return executeOnScheduler(globalScheduler, globalRunMethod, plugin, wrappedTask(task));
     }
 
     @Override
     public TaskHandle runGlobalLater(JavaPlugin plugin, Runnable task, long delay) {
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin cannot be null");
+        }
         if (task == null) {
             throw new IllegalArgumentException("Task cannot be null");
         }
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
         }
-        return executeOnScheduler(globalScheduler, runDelayedMethod, task, delay);
+        return executeOnScheduler(globalScheduler, globalRunDelayedMethod, plugin, wrappedTask(task), delay);
     }
 
     @Override
@@ -123,7 +183,8 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         if (retireCallback == null) {
             throw new IllegalArgumentException("Retire callback cannot be null");
         }
-        return executeOnScheduler(entityScheduler, runEntitySchedulerMethod, entity, runnable, retireCallback);
+        Object scheduler = getEntityScheduler(entity);
+        return executeOnScheduler(scheduler, entityRunMethod, plugin, wrappedEntityRunnable(entity, runnable), retireCallback);
     }
 
     @Override
@@ -140,26 +201,21 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
         }
-        try {
-            Method method = entityScheduler.getClass().getMethod("runDelayed", Runnable.class, long.class);
-            return executeOnScheduler(entityScheduler, method, wrapEntityRunnable(entity, runnable, retireCallback), delay);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to run entity later", e);
-        }
+        Object scheduler = getEntityScheduler(entity);
+        return executeOnScheduler(scheduler, entityRunDelayedMethod, plugin,
+                wrappedEntityRunnable(entity, runnable), retireCallback, delay);
     }
 
-    private Runnable wrapEntityRunnable(Entity entity, Runnable runnable, Runnable retireCallback) {
-        return () -> {
-            try {
-                runnable.run();
-            } finally {
-                if (!Thread.currentThread().isInterrupted()) {
-                    try {
-                        retireCallback.run();
-                    } catch (Exception ignored) {
-                    }
-                }
+    private Consumer<Object> wrappedTask(Runnable task) {
+        return ignored -> task.run();
+    }
+
+    private Consumer<Object> wrappedEntityRunnable(Entity entity, Runnable runnable) {
+        return ignored -> {
+            if (!entity.isValid()) {
+                return;
             }
+            runnable.run();
         };
     }
 
@@ -171,7 +227,7 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         if (task == null) {
             throw new IllegalArgumentException("Task cannot be null");
         }
-        return executeOnScheduler(regionScheduler, runRegionSchedulerMethod, location, task);
+        return executeOnScheduler(regionScheduler, regionRunMethod, plugin, location, wrappedTask(task));
     }
 
     @Override
@@ -185,25 +241,33 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
         }
-        try {
-            Method method = regionScheduler.getClass().getMethod("runDelayed", Runnable.class, long.class);
-            return executeOnScheduler(regionScheduler, method, task, delay);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to run region later", e);
-        }
+        return executeOnScheduler(regionScheduler, regionRunDelayedMethod, plugin, location, wrappedTask(task), delay);
     }
 
     @Override
     public TaskHandle runAsync(JavaPlugin plugin, Runnable task) {
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin cannot be null");
+        }
         if (task == null) {
             throw new IllegalArgumentException("Task cannot be null");
         }
-        return executeOnScheduler(asyncScheduler, runAsyncMethod, task);
+        return executeOnScheduler(asyncScheduler, asyncRunNowMethod, plugin, wrappedTask(task));
     }
 
     @Override
     public void cancelAll(JavaPlugin plugin) {
-        throw new UnsupportedOperationException("cancelAll not implemented for Folia - use TaskHandle.cancel() per task");
+        if (plugin == null) {
+            throw new IllegalArgumentException("Plugin cannot be null");
+        }
+        try {
+            Method cancelAllMethod = asyncScheduler.getClass().getMethod("cancelTasks", Plugin.class);
+            cancelAllMethod.invoke(asyncScheduler, plugin);
+            Method cancelAllGlobalMethod = globalScheduler.getClass().getMethod("cancelTasks", Plugin.class);
+            cancelAllGlobalMethod.invoke(globalScheduler, plugin);
+        } catch (Exception e) {
+            throw schedulerFailure("Failed to cancel Folia tasks", e);
+        }
     }
 
     @Override

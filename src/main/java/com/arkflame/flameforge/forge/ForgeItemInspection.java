@@ -1,0 +1,382 @@
+package com.arkflame.flameforge.forge;
+
+import com.arkflame.flameforge.config.TierRepository;
+import com.arkflame.flameforge.item.AttributeBridge;
+import com.arkflame.flameforge.item.ItemIdentityCodec;
+import com.arkflame.flameforge.item.ItemIdentityService;
+import com.arkflame.flameforge.model.PlayerForgeState;
+import com.arkflame.flameforge.model.StationProfile;
+import com.arkflame.flameforge.model.TierDefinition;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+public final class ForgeItemInspection {
+    private static final Set<String> CURSED_ENCHANTMENTS = new HashSet<>();
+    static {
+        CURSED_ENCHANTMENTS.add("BINDING_CURSE");
+        CURSED_ENCHANTMENTS.add("VANISHING_CURSE");
+    }
+
+    public enum Status {
+        READY,
+        EMPTY,
+        AIR,
+        CUSTOM_NAME,
+        CUSTOM_LORE,
+        CUSTOM_MODEL_DATA,
+        FOREIGN_PERSISTENT_DATA,
+        CURSED,
+        MAX_TIER,
+        NEXT_TIER_MISSING,
+        NEXT_TIER_DISABLED,
+        STATION_TIER_BLOCKED,
+        TIER_PERMISSION_REQUIRED,
+        DENIED_MATERIAL,
+        DENIED_GROUP,
+        NO_ELIGIBLE_VARIANTS,
+        INVALID_IDENTITY
+    }
+
+    private final ItemIdentityCodec codec;
+    private final ItemIdentityService identityService;
+    private final AttributeBridge attributeBridge;
+    private final TierRepository tierRepository;
+
+    private Method pdcGetMethod;
+    private Method pdcKeysMethod;
+    private Class<?> namespacedKeyClass;
+    private Class<?> pdcTypeClass;
+
+    public ForgeItemInspection(ItemIdentityCodec codec, ItemIdentityService identityService,
+                               AttributeBridge attributeBridge, TierRepository tierRepository) {
+        this.codec = codec;
+        this.identityService = identityService;
+        this.attributeBridge = attributeBridge;
+        this.tierRepository = tierRepository;
+        initReflection();
+    }
+
+    private void initReflection() {
+        try {
+            namespacedKeyClass = Class.forName("org.bukkit.NamespacedKey");
+            pdcTypeClass = Class.forName("org.bukkit.persistence.PersistentDataType");
+            Class<?> pdcClass = Class.forName("org.bukkit.persistence.PersistentDataContainer");
+            pdcGetMethod = pdcClass.getMethod("get", namespacedKeyClass, pdcTypeClass);
+            pdcKeysMethod = pdcClass.getMethod("getKeys");
+        } catch (Exception e) {
+        }
+    }
+
+    public InspectionResult inspect(Player player, PlayerForgeState session, ItemStack item) {
+        if (item == null || item.getType() == Material.AIR) {
+            return new InspectionResult(Status.AIR, null);
+        }
+
+        if (item.getAmount() == 0) {
+            return new InspectionResult(Status.EMPTY, null);
+        }
+
+        Optional<ItemIdentityCodec.Identity> identityOpt = readIdentity(item);
+        if (!identityOpt.isPresent()) {
+            return new InspectionResult(Status.INVALID_IDENTITY, null);
+        }
+        ItemIdentityCodec.Identity identity = identityOpt.get();
+
+        int currentTier = identity.getCurrentTier();
+        TierDefinition currentTierDef = findTierByLevel(currentTier).orElse(null);
+
+        if (currentTierDef != null && !currentTierDef.isEnabled()) {
+            return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
+        }
+
+        if (currentTier == 0) {
+            Status nameStatus = checkTier0CustomName(item, identity);
+            if (nameStatus != null) {
+                return new InspectionResult(nameStatus, identity);
+            }
+
+            Status loreStatus = checkTier0CustomLore(item, identity);
+            if (loreStatus != null) {
+                return new InspectionResult(loreStatus, identity);
+            }
+
+            Status modelStatus = checkTier0CustomModelData(item, identity);
+            if (modelStatus != null) {
+                return new InspectionResult(modelStatus, identity);
+            }
+
+            Status pdcStatus = checkTier0ForeignPdc(item, identity);
+            if (pdcStatus != null) {
+                return new InspectionResult(pdcStatus, identity);
+            }
+        }
+
+        if (identity.isCursed()) {
+            return new InspectionResult(Status.CURSED, identity);
+        }
+
+        if (session == null) {
+            return new InspectionResult(Status.READY, identity);
+        }
+
+        String stationId = session.getActiveStationId();
+
+        TierDefinition targetTierDef = findNextTier(currentTier).orElse(null);
+        if (targetTierDef == null) {
+            if (isMaxReachableTier(currentTier)) {
+                return new InspectionResult(Status.MAX_TIER, identity);
+            }
+            return new InspectionResult(Status.NEXT_TIER_MISSING, identity);
+        }
+
+        if (!targetTierDef.isEnabled()) {
+            return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
+        }
+
+        Optional<StationProfile> profileOpt = resolveStationProfile(stationId);
+        if (profileOpt.isPresent()) {
+            StationProfile profile = profileOpt.get();
+            int maxTier = profile.getMaxTierUnlocked();
+            if (maxTier >= 0 && targetTierDef.getLevel() > maxTier) {
+                return new InspectionResult(Status.STATION_TIER_BLOCKED, identity);
+            }
+
+            List<String> requiredPerms = profile.getRequiredPermissions();
+            for (String perm : requiredPerms) {
+                if (!player.hasPermission(perm)) {
+                    return new InspectionResult(Status.TIER_PERMISSION_REQUIRED, identity);
+                }
+            }
+        }
+
+        if (currentTierDef != null) {
+            List<String> deniedMaterials = currentTierDef.getDeniedMaterials();
+            if (!deniedMaterials.isEmpty()) {
+                Material mat = item.getType();
+                String matName = mat.name();
+                for (String denied : deniedMaterials) {
+                    if (denied.equalsIgnoreCase(matName) || denied.equalsIgnoreCase("*")) {
+                        return new InspectionResult(Status.DENIED_MATERIAL, identity);
+                    }
+                }
+            }
+
+            List<String> allowedGroups = currentTierDef.getAllowedGroups();
+            if (!allowedGroups.isEmpty()) {
+                Optional<String> groupOpt = identityService.getMaterialGroup(item.getType());
+                if (groupOpt.isPresent()) {
+                    String group = groupOpt.get();
+                    boolean allowed = allowedGroups.stream()
+                        .anyMatch(g -> g.equalsIgnoreCase("ANY") || g.equalsIgnoreCase(group));
+                    if (!allowed) {
+                        return new InspectionResult(Status.DENIED_GROUP, identity);
+                    }
+                }
+            }
+        }
+
+        if (targetTierDef != null) {
+            List<com.arkflame.flameforge.model.ForgeVariant> variants = targetTierDef.getVariants();
+            if (variants == null || variants.isEmpty()) {
+                return new InspectionResult(Status.NO_ELIGIBLE_VARIANTS, identity);
+            }
+            boolean hasContent = variants.stream()
+                .anyMatch(v -> !v.getEnchantmentCandidates().isEmpty()
+                    || !v.getAttributeModifiers().isEmpty()
+                    || !v.getPowerIds().isEmpty());
+            if (!hasContent) {
+                return new InspectionResult(Status.NO_ELIGIBLE_VARIANTS, identity);
+            }
+        }
+
+        return new InspectionResult(Status.READY, identity);
+    }
+
+    private Optional<ItemIdentityCodec.Identity> readIdentity(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return Optional.empty();
+        }
+
+        Optional<ItemIdentityService.IdentityData> legacyData = identityService.readIdentity(item);
+        if (legacyData.isPresent()) {
+            ItemIdentityService.IdentityData data = legacyData.get();
+            ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
+                .withForgeId(data.getForgeId())
+                .withReforgeCount(data.getReforgeCount())
+                .withCurrentTier(data.getHighestTier())
+                .withHighestTier(data.getHighestTier());
+            if (data.getLastTier() != null) {
+                identity = identity.withLastTierId(data.getLastTier());
+            }
+            identity = identity.withLastVariantId(data.getLastOutcome());
+            return Optional.of(identity);
+        }
+
+        return readModernIdentity(item);
+    }
+
+    private Optional<ItemIdentityCodec.Identity> readModernIdentity(ItemStack item) {
+        try {
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) {
+                return Optional.empty();
+            }
+            Method getPdcMethod = ItemMeta.class.getMethod("getPersistentDataContainer");
+            Object pdc = getPdcMethod.invoke(meta);
+            if (pdc == null) {
+                return Optional.empty();
+            }
+            Object stateKey = namespacedKeyClass.getConstructor(String.class, String.class)
+                .newInstance("flameforge", "state");
+            Object stringType = pdcTypeClass.getField("STRING").get(null);
+            Object payload = pdcGetMethod.invoke(pdc, stateKey, stringType);
+            if (payload == null || !(payload instanceof String)) {
+                return Optional.empty();
+            }
+            ItemIdentityCodec.Decoded decoded = codec.decodeFromString((String) payload);
+            if (decoded.isValid()) {
+                return Optional.of(decoded.getIdentity());
+            }
+            return Optional.empty();
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private Status checkTier0CustomName(ItemStack item, ItemIdentityCodec.Identity identity) {
+        if (!item.hasItemMeta()) {
+            return null;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (!meta.hasDisplayName()) {
+            return null;
+        }
+        if (identity.getCurrentTier() > 0) {
+            return null;
+        }
+        return Status.CUSTOM_NAME;
+    }
+
+    private Status checkTier0CustomLore(ItemStack item, ItemIdentityCodec.Identity identity) {
+        if (!item.hasItemMeta()) {
+            return null;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (!meta.hasLore()) {
+            return null;
+        }
+        List<String> lore = meta.getLore();
+        if (lore == null || lore.isEmpty()) {
+            return null;
+        }
+        for (String line : lore) {
+            if (line != null && !line.isEmpty()) {
+                if (identity.getCurrentTier() > 0) {
+                    continue;
+                }
+                return Status.CUSTOM_LORE;
+            }
+        }
+        return null;
+    }
+
+    private Status checkTier0CustomModelData(ItemStack item, ItemIdentityCodec.Identity identity) {
+        if (!Boolean.TRUE.equals(attributeBridge.isModernCustomModelDataAvailable())) {
+            return null;
+        }
+        Optional<Integer> cmd = attributeBridge.getCustomModelData(item);
+        if (cmd.isPresent() && identity.getCurrentTier() == 0) {
+            return Status.CUSTOM_MODEL_DATA;
+        }
+        return null;
+    }
+
+    private Status checkTier0ForeignPdc(ItemStack item, ItemIdentityCodec.Identity identity) {
+        if (!Boolean.TRUE.equals(attributeBridge.isModernCustomModelDataAvailable())) {
+            return null;
+        }
+        try {
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) {
+                return null;
+            }
+            Method getPdcMethod = ItemMeta.class.getMethod("getPersistentDataContainer");
+            Object pdc = getPdcMethod.invoke(meta);
+            if (pdc == null) {
+                return null;
+            }
+            @SuppressWarnings("unchecked")
+            java.util.Set<Object> keys = (java.util.Set<Object>) pdcKeysMethod.invoke(pdc);
+            if (keys == null || keys.isEmpty()) {
+                return null;
+            }
+            boolean hasFlameforge = false;
+            boolean hasForeign = false;
+            for (Object key : keys) {
+                String keyStr = key.toString();
+                if (keyStr.startsWith("flameforge:")) {
+                    hasFlameforge = true;
+                } else {
+                    hasForeign = true;
+                }
+            }
+            if (hasForeign && identity.getCurrentTier() == 0 && !hasFlameforge) {
+                return Status.FOREIGN_PERSISTENT_DATA;
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Optional<TierDefinition> findTierByLevel(int level) {
+        return tierRepository.all().stream()
+            .filter(t -> t.getLevel() == level)
+            .findFirst();
+    }
+
+    private Optional<TierDefinition> findNextTier(int currentTier) {
+        return tierRepository.all().stream()
+            .filter(t -> t.getLevel() == currentTier + 1)
+            .findFirst();
+    }
+
+    private boolean isMaxReachableTier(int currentTier) {
+        int maxDefined = tierRepository.all().stream()
+            .mapToInt(TierDefinition::getLevel)
+            .max()
+            .orElse(0);
+        return currentTier >= maxDefined;
+    }
+
+    private Optional<StationProfile> resolveStationProfile(String stationId) {
+        if (stationId == null || stationId.isEmpty()) {
+            return Optional.empty();
+        }
+        return tierRepository.findExtra(stationId)
+            .map(extra -> StationProfile.of(stationId, stationId, -1, Collections.emptyList()));
+    }
+
+    public static final class InspectionResult {
+        private final Status status;
+        private final ItemIdentityCodec.Identity identity;
+
+        public InspectionResult(Status status, ItemIdentityCodec.Identity identity) {
+            this.status = status;
+            this.identity = identity;
+        }
+
+        public Status getStatus() { return status; }
+        public ItemIdentityCodec.Identity getIdentity() { return identity; }
+        public boolean isReady() { return status == Status.READY; }
+    }
+}
