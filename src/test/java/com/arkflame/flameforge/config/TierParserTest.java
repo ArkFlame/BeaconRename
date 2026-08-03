@@ -116,6 +116,24 @@ class TierParserTest {
     }
 
     @Test
+    void parseWithNullYamlReturnsNull() {
+        TierDefinition result = TierParser.parse((org.bukkit.configuration.ConfigurationSection) null, new ValidationReport());
+        assertNull(result);
+    }
+
+    @Test
+    void parseWithEmptyYamlProducesMinimalTier() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("schema-version", 2);
+        yaml.set("id", "empty_tier");
+        yaml.set("level", 0);
+
+        TierDefinition result = TierParser.parse(yaml, report);
+        assertNotNull(result);
+        assertEquals("empty_tier", result.getId());
+    }
+
+    @Test
     @Disabled("v1 tier files require migration context with bundled v2 resources that don't exist in test environment")
     void tierFolderPriorityOrderMatchesBundledResources() throws Exception {
         int[] expectedLevels = {0, 1, 2, 3, 4, 5, 6};

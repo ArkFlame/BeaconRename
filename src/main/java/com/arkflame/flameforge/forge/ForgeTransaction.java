@@ -4,7 +4,6 @@ import com.arkflame.flameforge.chance.ChanceEntry;
 import com.arkflame.flameforge.chance.ChanceTable;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
-import com.arkflame.flameforge.model.OutcomeDefinition;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
@@ -23,7 +22,7 @@ public final class ForgeTransaction {
     private final ChanceTable chanceTable;
     private final ChanceEntry selectedEntry;
     private final ForgeOutcomeCategory outcomeCategory;
-    private final OutcomeDefinition selectedOutcome;
+    private final String selectedOutcomeId;
     private final List<ItemStack> custodySnapshot;
     private final List<ItemStack> mutatedItems;
     private final ForgeVariant usedVariant;
@@ -40,7 +39,7 @@ public final class ForgeTransaction {
         this.chanceTable = builder.chanceTable;
         this.selectedEntry = builder.selectedEntry;
         this.outcomeCategory = builder.outcomeCategory;
-        this.selectedOutcome = builder.selectedOutcome;
+        this.selectedOutcomeId = builder.selectedOutcomeId;
         this.custodySnapshot = builder.custodySnapshot != null ?
             Collections.unmodifiableList(new ArrayList<>(builder.custodySnapshot)) :
             Collections.emptyList();
@@ -89,8 +88,8 @@ public final class ForgeTransaction {
         return outcomeCategory;
     }
 
-    public OutcomeDefinition getSelectedOutcome() {
-        return selectedOutcome;
+    public String getSelectedOutcomeId() {
+        return selectedOutcomeId;
     }
 
     public List<ItemStack> getCustodySnapshot() {
@@ -125,8 +124,8 @@ public final class ForgeTransaction {
         return chanceTable != null;
     }
 
-    public boolean hasSelectedOutcome() {
-        return selectedOutcome != null;
+    public boolean hasSelectedOutcomeId() {
+        return selectedOutcomeId != null;
     }
 
     public boolean hasChargeReceipt() {
@@ -179,7 +178,7 @@ public final class ForgeTransaction {
         private ChanceTable chanceTable;
         private ChanceEntry selectedEntry;
         private ForgeOutcomeCategory outcomeCategory;
-        private OutcomeDefinition selectedOutcome;
+        private String selectedOutcomeId;
         private List<ItemStack> custodySnapshot;
         private List<ItemStack> mutatedItems;
         private ForgeVariant usedVariant;
@@ -224,8 +223,8 @@ public final class ForgeTransaction {
             return this;
         }
 
-        public Builder selectedOutcome(OutcomeDefinition selectedOutcome) {
-            this.selectedOutcome = selectedOutcome;
+        public Builder selectedOutcomeId(String selectedOutcomeId) {
+            this.selectedOutcomeId = selectedOutcomeId;
             return this;
         }
 

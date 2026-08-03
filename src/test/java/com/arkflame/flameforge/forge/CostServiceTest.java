@@ -234,6 +234,32 @@ class CostServiceTest {
         assertTrue(quote.isAffordable());
     }
 
+    @Test
+    void quoteWithZeroRequirementsReturnsZeroCost() {
+        TierRequirements zeroReq = new TierRequirements(
+            TierRequirements.Combine.ALL,
+            new TierRequirements.XpRequirement(false, 0),
+            new TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
+            new TierRequirements.ItemsRequirement(false, Collections.emptyList())
+        );
+        CostQuote quote = costService.quote(player, zeroReq);
+        assertEquals(0, quote.getXpRequired());
+        assertEquals(BigDecimal.ZERO, quote.getMoneyRequired());
+    }
+
+    @Test
+    void chargeWithEmptyItemListSucceeds() {
+        Player richPlayer = createFakePlayerWithLevel(100);
+        TierRequirements xpReq = new TierRequirements(
+            TierRequirements.Combine.ALL,
+            new TierRequirements.XpRequirement(true, 10),
+            new TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
+            new TierRequirements.ItemsRequirement(false, Collections.emptyList())
+        );
+        ChargeReceipt receipt = costService.charge(richPlayer, xpReq, Collections.emptyList());
+        assertTrue(receipt.isSuccess());
+    }
+
     private static Player createFakePlayer() {
         return createFakePlayerWithLevel(0);
     }

@@ -193,10 +193,11 @@ public final class ForgeService {
         long randomValue = randomSource.nextLong(chanceTable.getTotalMicroWeight());
         ChanceEntry selectedEntry = chanceTable.select(randomValue);
 
-        ForgeOutcomeCategory category = mapToCategory(selectedEntry.getOutcomeId(),
+        String selectedOutcomeId = selectedEntry.getOutcomeId();
+        ForgeOutcomeCategory category = mapToCategory(selectedOutcomeId,
             plan.getTargetTier());
         OutcomeDefinition selectedOutcome = findOutcomeById(plan.getTargetTier(),
-            selectedEntry.getOutcomeId());
+            selectedOutcomeId);
 
         if (selectedOutcome == null) {
             atomicRollback(context, player, custodySnapshot, chargeReceipt);
@@ -214,7 +215,7 @@ public final class ForgeService {
             .chanceTable(chanceTable)
             .selectedEntry(selectedEntry)
             .outcomeCategory(category)
-            .selectedOutcome(selectedOutcome)
+            .selectedOutcomeId(selectedOutcomeId)
             .custodySnapshot(custodySnapshot)
             .usedVariant(plan.getSelectedVariant());
 
@@ -283,7 +284,8 @@ public final class ForgeService {
         List<ItemStack> mutatedItems = new ArrayList<>();
         ItemStack inputItem = context.getInputItem();
         ItemStack resultItem = null;
-        OutcomeDefinition selectedOutcome = transaction.getSelectedOutcome();
+        String selectedOutcomeId = transaction.getSelectedOutcomeId();
+        OutcomeDefinition selectedOutcomeDef = findOutcomeById(plan.getTargetTier(), selectedOutcomeId);
 
         OutcomeExecutionResult execResult = outcomeExecutor.execute(plan, inputItem, player,
             UUID.randomUUID());
@@ -294,15 +296,15 @@ public final class ForgeService {
         }
 
         if (resultItem != null) {
-            String deliveryId = deliveryService.generateDeliveryId(player, selectedOutcome != null ? selectedOutcome.getId() : "unknown");
+            String deliveryId = deliveryService.generateDeliveryId(player, selectedOutcomeId != null ? selectedOutcomeId : "unknown");
             deliveryService.deliverItem(resultItem, player, context.getStationLocation(), deliveryId);
         }
 
         ForgeHistory history = ForgeHistory.of(
             context.getPlayerId(), Instant.now(),
             context.getPlan().getTargetTier().getId(),
-            context.getTargetTierLevel(), selectedOutcome != null ? selectedOutcome.getId() : "unknown",
-            selectedOutcome != null ? selectedOutcome.getType() : OutcomeType.BREAK,
+            context.getTargetTierLevel(), selectedOutcomeId != null ? selectedOutcomeId : "unknown",
+            selectedOutcomeDef != null ? selectedOutcomeDef.getType() : OutcomeType.BREAK,
             Collections.emptyList());
 
         ForgeOutcomeCategory category = transaction.getOutcomeCategory();
@@ -310,7 +312,7 @@ public final class ForgeService {
         ForgeResolution resolution = ForgeResolution.success(
             context.getTransactionId(), category,
             transaction.getChanceTable(), transaction.getSelectedEntry(),
-            transaction.getUsedVariant(), selectedOutcome, resultItem, mutatedItems,
+            transaction.getUsedVariant(), selectedOutcomeId, resultItem, mutatedItems,
             history, transaction.getChargeReceipt(),
             transaction.getCustodySnapshot());
 
@@ -319,7 +321,7 @@ public final class ForgeService {
         session.transitionToClosed();
 
         auditLog.logAsync("FORGE_COMPLETE", player.getName(), context.getTransactionId().toString(),
-            "Category: " + category + ", Outcome: " + selectedOutcome.getId());
+            "Category: " + category + ", Outcome: " + selectedOutcomeId);
 
         invokeCallback(completionCallback, resolution);
 

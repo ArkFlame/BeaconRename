@@ -1,9 +1,11 @@
 package com.arkflame.flameforge.listener;
 
 import com.arkflame.flameforge.compat.equipment.EquipmentBridge;
+import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgePowerDefinition;
+import com.arkflame.flameforge.model.ForgeVariant;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -16,10 +18,11 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public final class ForgePowerListener implements Listener {
 
@@ -27,13 +30,16 @@ public final class ForgePowerListener implements Listener {
     private final ForgePowerService powerService;
     private final EquipmentBridge equipmentBridge;
     private final ItemIdentityService identityService;
+    private final TierRepository tierRepository;
 
     public ForgePowerListener(JavaPlugin plugin, ForgePowerService powerService,
-                              EquipmentBridge equipmentBridge, ItemIdentityService identityService) {
+                              EquipmentBridge equipmentBridge, ItemIdentityService identityService,
+                              TierRepository tierRepository) {
         this.plugin = plugin;
         this.powerService = powerService;
         this.equipmentBridge = equipmentBridge;
         this.identityService = identityService;
+        this.tierRepository = tierRepository;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
@@ -64,7 +70,8 @@ public final class ForgePowerListener implements Listener {
             return;
         }
         UUID forgeId = identityOpt.get().getForgeId();
-        List<ForgePowerDefinition> powers = getPowersForForge(forgeId);
+        int highestTier = identityOpt.get().getHighestTier();
+        List<ForgePowerDefinition> powers = getPowersForForge(highestTier);
         for (ForgePowerDefinition power : powers) {
             ForgePowerDefinition.PowerType type = power.getPowerType();
             if (type == ForgePowerDefinition.PowerType.SHIFT_RIGHT_CLICK_DASH) {
@@ -117,7 +124,8 @@ public final class ForgePowerListener implements Listener {
             return;
         }
         UUID forgeId = identityOpt.get().getForgeId();
-        List<ForgePowerDefinition> powers = getPowersForForge(forgeId);
+        int highestTier = identityOpt.get().getHighestTier();
+        List<ForgePowerDefinition> powers = getPowersForForge(highestTier);
         for (ForgePowerDefinition power : powers) {
             ForgePowerDefinition.PowerType type = power.getPowerType();
             if (type == ForgePowerDefinition.PowerType.ON_HIT_POTION
@@ -140,7 +148,12 @@ public final class ForgePowerListener implements Listener {
         powerService.clearCooldownsForPlayer(player);
     }
 
-    private List<ForgePowerDefinition> getPowersForForge(UUID forgeId) {
-        return java.util.Collections.emptyList();
+    private List<ForgePowerDefinition> getPowersForForge(int highestTier) {
+        return tierRepository.findByLevel(highestTier)
+                .map(tier -> tier.getVariants().stream()
+                        .map(ForgeVariant::getPowers)
+                        .flatMap(List::stream)
+                        .collect(Collectors.toList()))
+                .orElse(new ArrayList<>());
     }
 }

@@ -166,6 +166,45 @@ class ForgeInventoryListenerTest {
     }
 
     @Test
+    void clickEventWithNullClickTypeHandledGracefully() {
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.isCancelled()).thenReturn(false);
+        when(event.getInventory()).thenReturn(inventory);
+        when(event.getWhoClicked()).thenReturn(player);
+        when(event.getRawSlot()).thenReturn(22);
+        when(event.getClick()).thenReturn(null);
+        when(event.getAction()).thenReturn(InventoryAction.PICKUP_ALL);
+
+        listener.onInventoryClick(event);
+
+        assertEquals(0, scheduler.entityTaskCount());
+    }
+
+    @Test
+    void clickOutsideConfirmSlotDoesNotTriggerForgeAction() {
+        InventoryClickEvent event = createClickEvent(0);
+
+        listener.onInventoryClick(event);
+
+        assertEquals(0, scheduler.entityTaskCount());
+    }
+
+    @Test
+    void nullRawSlotInClickEventIsHandled() {
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.isCancelled()).thenReturn(false);
+        when(event.getInventory()).thenReturn(inventory);
+        when(event.getWhoClicked()).thenReturn(player);
+        when(event.getRawSlot()).thenReturn(-1);
+        when(event.getClick()).thenReturn(ClickType.LEFT);
+        when(event.getAction()).thenReturn(InventoryAction.PICKUP_ALL);
+
+        listener.onInventoryClick(event);
+
+        assertEquals(0, scheduler.entityTaskCount());
+    }
+
+    @Test
     void listenerHasNoSecondaryMenuOpenAuthority() {
         ForgeInventoryListener testListener = new ForgeInventoryListener(
             mock(JavaPlugin.class), menuService, scheduler

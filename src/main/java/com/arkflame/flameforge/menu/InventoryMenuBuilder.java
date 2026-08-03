@@ -52,6 +52,14 @@ public final class InventoryMenuBuilder {
         return this;
     }
 
+    public InventoryMenuBuilder empty(int slot) {
+        if (slot < 0 || slot >= size) {
+            throw new IndexOutOfBoundsException("Slot out of bounds: " + slot);
+        }
+        this.slotOverlays.put(slot, null);
+        return this;
+    }
+
     public Inventory build() {
         if (built) {
             throw new IllegalStateException("Builder can only be built once");

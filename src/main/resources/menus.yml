@@ -2,7 +2,7 @@ schema-version: 2
 
 default:
   title: "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
-  size: 27
+  size: 54
 
   background:
     materials:
@@ -12,10 +12,13 @@ default:
     name: " "
 
   slots:
-    info: 4
-    input: 13
-    confirm: 22
-    close: 26
+    current-tier: 20
+    input: 22
+    variants: 24
+    requirements: 29
+    confirm: 31
+    chances: 33
+    close: 49
 
   items:
     info:
@@ -27,16 +30,6 @@ default:
         - "<gray>Click one eligible item in your inventory."
         - "<gray>The forge automatically selects the next tier."
         - "<gray>Only the input slot can hold a real item."
-
-    input-empty:
-      materials:
-        - BLACK_STAINED_GLASS_PANE
-        - STAINED_GLASS_PANE:15
-        - GLASS_PANE
-      name: "<dark_gray><bold>Input Item</bold>"
-      lore:
-        - "<gray>Click an eligible item in your inventory."
-        - "<gray>Click the inserted item to take it back."
 
     confirm-empty:
       materials:

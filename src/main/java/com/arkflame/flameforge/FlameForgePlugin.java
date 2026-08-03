@@ -95,7 +95,6 @@ public final class FlameForgePlugin extends JavaPlugin {
     }
 
     private volatile boolean enabled;
-    private volatile boolean degradedMode;
     private final AtomicLong lifecycleEpoch = new AtomicLong();
     private final AtomicBoolean startupFailureLogged = new AtomicBoolean();
     private volatile CompletableFuture<Void> startupFuture;
@@ -151,7 +150,6 @@ public final class FlameForgePlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         enabled = true;
-        degradedMode = false;
         final long epoch = lifecycleEpoch.incrementAndGet();
         startupFailureLogged.set(false);
 
@@ -255,7 +253,7 @@ public final class FlameForgePlugin extends JavaPlugin {
                         return;
                     }
                     command.markReady(readyServices);
-                    logReadyDiagnostics();
+                    logReadySummary();
                 } catch (Throwable failure) {
                     markStartupFailed(epoch, null, failure);
                 }
@@ -381,7 +379,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         InteractionHandBridge handBridge = new InteractionHandBridge(getLogger());
         forgeInteractListener = new ForgeInteractListener(this, forgeAccessService, forgeStationService, handBridge);
         forgeInventoryListener = new ForgeInventoryListener(this, forgeMenuService, schedulerBridge);
-        forgePowerListener = new ForgePowerListener(this, forgePowerService, equipmentBridge, itemIdentityService);
+        forgePowerListener = new ForgePowerListener(this, forgePowerService, equipmentBridge, itemIdentityService, tierRepository);
         playerLifecycleListener = new PlayerLifecycleListener(
             this,
             forgeStationService,
@@ -396,9 +394,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         deliveryService.processGlobalContext();
 
         if (configService.hasValidationErrors()) {
-            degradedMode = true;
-            getLogger().warning("Configuration has validation errors - running in DEGRADED mode");
-            getLogger().warning("Some features may not work correctly. Please fix the configuration.");
+            throw new RuntimeException("Configuration failed: " + configService.getValidationReport().getErrors().size() + " validation error(s)");
         }
     }
 
@@ -412,30 +408,12 @@ public final class FlameForgePlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(playerLifecycleListener, this);
     }
 
-    private void logReadyDiagnostics() {
+    private void logReadySummary() {
         int tierCount = tierRepository.size();
         int stationCount = stationRepository.getAllSnapshot().size();
         boolean hasEconomy = economyService.available();
-        Component readyMessage = Component.text()
-            .append(Component.text("[FlameForge] ", NamedTextColor.GOLD))
-            .append(Component.text("v" + getDescription().getVersion() + " ", NamedTextColor.WHITE))
-            .append(Component.text("ready", NamedTextColor.GREEN))
-            .build();
-        Component detailsMessage = Component.text()
-            .append(Component.text("  Tiers: ", NamedTextColor.GRAY))
-            .append(Component.text(String.valueOf(tierCount), NamedTextColor.WHITE))
-            .append(Component.text(" | Stations: ", NamedTextColor.GRAY))
-            .append(Component.text(String.valueOf(stationCount), NamedTextColor.WHITE))
-            .append(Component.text(" | Folia: ", NamedTextColor.GRAY))
-            .append(Component.text(schedulerBridge.isFolia() ? "yes" : "no", NamedTextColor.WHITE))
-            .append(Component.text(" | Vault/Economy: ", NamedTextColor.GRAY))
-            .append(Component.text(hasEconomy ? "available" : "n/a", NamedTextColor.WHITE))
-            .append(Component.text(" | Mode: ", NamedTextColor.GRAY))
-            .append(Component.text(degradedMode ? "DEGRADED" : "normal",
-                degradedMode ? NamedTextColor.YELLOW : NamedTextColor.GREEN))
-            .build();
-        textBridge.sendAll(readyMessage);
-        textBridge.sendAll(detailsMessage);
+        getLogger().info("FlameForge 1.0.1 ready: tiers=" + tierCount + ", stations=" + stationCount
+            + ", folia=" + schedulerBridge.isFolia() + ", economy=" + (hasEconomy ? "available" : "unavailable"));
     }
 
     private void markStartupFailed(long epoch, StartupFailure.Component component, Throwable failure) {

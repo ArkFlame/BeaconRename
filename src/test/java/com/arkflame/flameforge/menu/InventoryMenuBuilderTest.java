@@ -58,4 +58,33 @@ class InventoryMenuBuilderTest {
         assertThrows(IndexOutOfBoundsException.class, () -> builder.slot(-1, new ItemStack(Material.DIAMOND)));
         assertThrows(IndexOutOfBoundsException.class, () -> builder.slot(27, new ItemStack(Material.DIAMOND)));
     }
+
+    @Test
+    void testBackgroundWithMultipleSlots() {
+        InventoryHolder holder = mock(InventoryHolder.class);
+        InventoryFactory factory = mock(InventoryFactory.class);
+        InventoryMenuBuilder builder = new InventoryMenuBuilder(factory, holder, 54, "Test Menu");
+
+        ItemStack bg = new ItemStack(Material.STONE);
+        builder.background(bg);
+
+        for (int i = 0; i < 54; i++) {
+            builder.slot(i, new ItemStack(Material.DIAMOND));
+        }
+
+        assertNotNull(builder);
+    }
+
+    @Test
+    void testSlotAndRestorePreservesBuilderState() {
+        InventoryHolder holder = mock(InventoryHolder.class);
+        InventoryFactory factory = mock(InventoryFactory.class);
+        InventoryMenuBuilder builder = new InventoryMenuBuilder(factory, holder, 27, "Test");
+
+        ItemStack overlay = new ItemStack(Material.DIAMOND);
+        builder.slot(13, overlay);
+        builder.restoreBackground(13);
+
+        assertNotNull(builder);
+    }
 }

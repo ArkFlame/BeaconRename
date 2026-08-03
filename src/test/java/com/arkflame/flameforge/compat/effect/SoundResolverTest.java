@@ -103,6 +103,20 @@ class SoundResolverTest {
         assertEquals(firstSound, afterClearSound, "Resolution should work after cache clear");
     }
 
+    @Test
+    void resolveOrDefaultWithValidSoundReturnsThatSound() {
+        Sound fallback = Sound.CLICK;
+        Sound result = resolver.resolveOrDefault("click", fallback);
+        assertEquals(Sound.CLICK, result);
+    }
+
+    @Test
+    void resolveUnknownSoundUsesFallback() {
+        Sound fallback = Sound.CLICK;
+        Sound result = resolver.resolveOrDefault("unknown_sound_xyz_123", fallback);
+        assertEquals(fallback, result);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, String[]> getAliasesViaReflection() {
         try {

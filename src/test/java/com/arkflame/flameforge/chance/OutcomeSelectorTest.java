@@ -118,6 +118,26 @@ class OutcomeSelectorTest {
         assertEquals(first, second);
     }
 
+    @Test
+    void selectVariantWithSingleEntryReturnsThatEntry() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
+        ForgeVariant onlyVariant = variant("only", 1.0);
+        List<ForgeVariant> variants = Collections.singletonList(onlyVariant);
+        ForgeVariant selected = selector.selectVariant(variants);
+        assertEquals("only", selected.getId());
+    }
+
+    @Test
+    void buildChanceTableWithTwoEntriesCreatesTableWithTwoEntries() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
+        List<ChanceEntry> entries = java.util.Arrays.asList(
+            entry("first", W1, 0),
+            entry("second", W2, 1)
+        );
+        ChanceTable table = selector.buildChanceTable(entries);
+        assertEquals(2, table.getEntries().size());
+    }
+
     private static class DeterministicRandom implements RandomSource {
         private final long value;
 

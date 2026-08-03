@@ -201,4 +201,17 @@ class MaterialResolverTest {
         String reversedCacheKey = resolver.get("GOLD_PICKAXE", "DIAMOND_PICKAXE").toString();
         assertNotEquals(cacheKey, reversedCacheKey, "Different candidate order should produce different cache key");
     }
+
+    @Test
+    void resolveOrDefaultWithValidMaterialReturnsThatMaterial() {
+        Material fallback = Material.BARRIER;
+        Material result = resolver.resolveOrDefault("diamond_sword", fallback);
+        assertEquals(Material.DIAMOND_SWORD, result);
+    }
+
+    @Test
+    void makeItemWithUnknownMaterialReturnsEmpty() {
+        Optional<ItemStack> item = resolver.makeItem("not_a_real_material_xyz_999", 1);
+        assertFalse(item.isPresent());
+    }
 }

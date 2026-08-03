@@ -5,7 +5,6 @@ import com.arkflame.flameforge.chance.ChanceTable;
 import com.arkflame.flameforge.model.ForgeHistory;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
-import com.arkflame.flameforge.model.OutcomeDefinition;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.Collections;
@@ -20,7 +19,7 @@ public final class ForgeResolution {
     private final ChanceTable chanceTable;
     private final ChanceEntry selectedEntry;
     private final ForgeVariant usedVariant;
-    private final OutcomeDefinition outcome;
+    private final String outcomeId;
     private final ItemStack mutatedItem;
     private final List<ItemStack> allMutatedItems;
     private final ForgeHistory historyEntry;
@@ -36,7 +35,7 @@ public final class ForgeResolution {
         this.chanceTable = builder.chanceTable;
         this.selectedEntry = builder.selectedEntry;
         this.usedVariant = builder.usedVariant;
-        this.outcome = builder.outcome;
+        this.outcomeId = builder.outcomeId;
         this.mutatedItem = builder.mutatedItem;
         this.allMutatedItems = builder.allMutatedItems != null ?
             Collections.unmodifiableList(new java.util.ArrayList<>(builder.allMutatedItems)) :
@@ -67,7 +66,7 @@ public final class ForgeResolution {
 
     public static ForgeResolution success(UUID transactionId, ForgeOutcomeCategory category,
             ChanceTable chanceTable, ChanceEntry selectedEntry, ForgeVariant usedVariant,
-            OutcomeDefinition outcome, ItemStack mutatedItem, List<ItemStack> allMutatedItems,
+            String outcomeId, ItemStack mutatedItem, List<ItemStack> allMutatedItems,
             ForgeHistory historyEntry, ChargeReceipt chargeReceipt,
             List<ItemStack> custodyReturned) {
         return builder()
@@ -77,7 +76,7 @@ public final class ForgeResolution {
             .chanceTable(chanceTable)
             .selectedEntry(selectedEntry)
             .usedVariant(usedVariant)
-            .outcome(outcome)
+            .outcomeId(outcomeId)
             .mutatedItem(mutatedItem)
             .allMutatedItems(allMutatedItems)
             .historyEntry(historyEntry)
@@ -111,8 +110,8 @@ public final class ForgeResolution {
         return usedVariant;
     }
 
-    public OutcomeDefinition getOutcome() {
-        return outcome;
+    public String getOutcomeId() {
+        return outcomeId;
     }
 
     public ItemStack getMutatedItem() {
@@ -158,7 +157,7 @@ public final class ForgeResolution {
         private ChanceTable chanceTable;
         private ChanceEntry selectedEntry;
         private ForgeVariant usedVariant;
-        private OutcomeDefinition outcome;
+        private String outcomeId;
         private ItemStack mutatedItem;
         private List<ItemStack> allMutatedItems;
         private ForgeHistory historyEntry;
@@ -197,8 +196,8 @@ public final class ForgeResolution {
             return this;
         }
 
-        public Builder outcome(OutcomeDefinition outcome) {
-            this.outcome = outcome;
+        public Builder outcomeId(String outcomeId) {
+            this.outcomeId = outcomeId;
             return this;
         }
 
