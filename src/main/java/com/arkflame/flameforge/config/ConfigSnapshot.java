@@ -114,6 +114,15 @@ public final class ConfigSnapshot {
         return menu != null ? Collections.unmodifiableMap(menu) : null;
     }
 
+    public Map<String, Map<String, Object>> getAllMenuSettings() {
+        Map<String, Map<String, Object>> copy = new HashMap<>();
+        for (Map.Entry<String, Map<String, Object>> entry : menuSettings.entrySet()) {
+            Map<String, Object> innerCopy = new HashMap<>(entry.getValue());
+            copy.put(entry.getKey(), Collections.unmodifiableMap(innerCopy));
+        }
+        return Collections.unmodifiableMap(copy);
+    }
+
     public Map<String, Object> getMessageSettings(String messageId) {
         Map<String, Object> messages = messageSettings.get(messageId);
         return messages != null ? Collections.unmodifiableMap(messages) : null;
@@ -205,12 +214,42 @@ public final class ConfigSnapshot {
         return stationProfiles.keySet();
     }
 
-    private Map<String, Map<String, Object>> deepCopy(Map<String, Map<String, Object>> source) {
+    private static Object normalize(Object value) {
+        if (value instanceof org.bukkit.configuration.ConfigurationSection) {
+            org.bukkit.configuration.ConfigurationSection section =
+                    (org.bukkit.configuration.ConfigurationSection) value;
+            Map<String, Object> normalized = new HashMap<>();
+            for (String key : section.getKeys(false)) {
+                normalized.put(key, normalize(section.get(key)));
+            }
+            return Collections.unmodifiableMap(normalized);
+        } else if (value instanceof java.util.List) {
+            java.util.List<?> list = (java.util.List<?>) value;
+            java.util.List<Object> normalized = new java.util.ArrayList<>();
+            for (Object item : list) {
+                normalized.add(item != null ? normalize(item) : null);
+            }
+            return Collections.unmodifiableList(normalized);
+        } else if (value instanceof Map) {
+            Map<?, ?> map = (Map<?, ?>) value;
+            Map<String, Object> normalized = new HashMap<>();
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                normalized.put(String.valueOf(entry.getKey()),
+                        entry.getValue() != null ? normalize(entry.getValue()) : null);
+            }
+            return Collections.unmodifiableMap(normalized);
+        }
+        return value;
+    }
+
+    private static Map<String, Map<String, Object>> deepCopy(Map<String, Map<String, Object>> source) {
         Map<String, Map<String, Object>> copy = new HashMap<>();
         for (Map.Entry<String, Map<String, Object>> entry : source.entrySet()) {
             Map<String, Object> innerCopy = new HashMap<>();
             if (entry.getValue() != null) {
-                innerCopy.putAll(entry.getValue());
+                for (Map.Entry<String, Object> valEntry : entry.getValue().entrySet()) {
+                    innerCopy.put(valEntry.getKey(), normalize(valEntry.getValue()));
+                }
             }
             copy.put(entry.getKey(), innerCopy);
         }
@@ -244,10 +283,71 @@ public final class ConfigSnapshot {
 
         public Builder putMenu(String menuId, Map<String, Object> settings) {
             if (settings != null) {
-                Map<String, Object> copy = new HashMap<>(settings);
-                menuSettings.put(menuId, copy);
+                Map<String, Object> normalized = new HashMap<>();
+                for (Map.Entry<String, Object> entry : settings.entrySet()) {
+                    normalized.put(entry.getKey(),
+                            entry.getValue() != null ? normalize(entry.getValue()) : null);
+                }
+                menuSettings.put(menuId, normalized);
             }
             return this;
+        }
+
+        public Builder mergeMenu(String menuId, Map<String, Object> operatorValues) {
+            if (operatorValues == null) {
+                return this;
+            }
+            Map<String, Object> existing = menuSettings.get(menuId);
+            Map<String, Object> merged = existing != null
+                    ? recursiveMerge(existing, operatorValues)
+                    : operatorValues;
+            return putMenu(menuId, merged);
+        }
+
+        private Map<String, Object> recursiveMerge(Map<String, Object> baseline, Map<String, Object> overlay) {
+            Map<String, Object> result = new HashMap<>(baseline);
+            for (Map.Entry<String, Object> entry : overlay.entrySet()) {
+                String key = entry.getKey();
+                Object overlayValue = toMapOrList(entry.getValue());
+                Object baselineValue = baseline.get(key);
+                if (overlayValue == null) {
+                    continue;
+                } else if (baselineValue instanceof Map && overlayValue instanceof Map) {
+                    result.put(key, recursiveMerge(
+                            (Map<String, Object>) baselineValue,
+                            (Map<String, Object>) overlayValue));
+                } else if (overlayValue instanceof List) {
+                    result.put(key, normalizeList((List<?>) overlayValue));
+                } else {
+                    result.put(key, overlayValue);
+                }
+            }
+            return result;
+        }
+
+        private Object toMapOrList(Object value) {
+            if (value instanceof org.bukkit.configuration.ConfigurationSection) {
+                org.bukkit.configuration.ConfigurationSection section =
+                        (org.bukkit.configuration.ConfigurationSection) value;
+                Map<String, Object> result = new HashMap<>();
+                for (String key : section.getKeys(false)) {
+                    result.put(key, toMapOrList(section.get(key)));
+                }
+                return result;
+            } else if (value instanceof Map) {
+                return value;
+            } else if (value instanceof List) {
+                return value;
+            }
+            return value;
+        }
+
+        private List<?> normalizeList(List<?> list) {
+            List<Object> result = new ArrayList<>();
+            for (Object item : list) {
+                result.add(item != null ? normalize(item) : null);
+            }
+            return result;
         }
 
         public Builder putMessage(String messageId, Map<String, Object> settings) {

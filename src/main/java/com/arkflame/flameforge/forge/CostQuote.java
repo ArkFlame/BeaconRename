@@ -1,6 +1,7 @@
 package com.arkflame.flameforge.forge;
 
 import com.arkflame.flameforge.model.TierRequirements;
+import org.bukkit.inventory.ItemStack;
 
 import java.math.BigDecimal;
 import java.util.Collections;
@@ -56,39 +57,46 @@ public final class CostQuote {
     public List<String> getMissingReasonKeys() { return missingReasonKeys; }
 
     public boolean isAffordable() {
-        if (!ready) {
-            return false;
-        }
-        if (xpAvailable < xpRequired) {
-            return false;
-        }
-        if (moneyAvailable.compareTo(moneyRequired) < 0) {
-            return false;
-        }
-        for (ItemRequirementQuote quote : itemQuotes) {
-            if (!quote.isAvailable()) {
-                return false;
-            }
-        }
-        return true;
+        return ready;
     }
 
     public static final class ItemRequirementQuote {
         private final List<String> materialCandidates;
         private final int amount;
+        private final int amountAvailable;
         private final String displayName;
         private final boolean available;
+        private final int sourceSlot;
+        private final ItemStack originalClone;
+        private final int amountToRemove;
 
-        public ItemRequirementQuote(List<String> materialCandidates, int amount, String displayName, boolean available) {
+        public ItemRequirementQuote(List<String> materialCandidates, int amount, int amountAvailable, String displayName, boolean available,
+                                    int sourceSlot, ItemStack originalClone, int amountToRemove) {
             this.materialCandidates = Collections.unmodifiableList(new java.util.ArrayList<>(materialCandidates));
             this.amount = amount;
+            this.amountAvailable = amountAvailable;
             this.displayName = displayName;
             this.available = available;
+            this.sourceSlot = sourceSlot;
+            this.originalClone = originalClone != null ? originalClone.clone() : null;
+            this.amountToRemove = amountToRemove;
+        }
+
+        public static ItemRequirementQuote available(List<String> materialCandidates, int amount, int amountAvailable, String displayName) {
+            return new ItemRequirementQuote(materialCandidates, amount, amountAvailable, displayName, true, -1, null, 0);
+        }
+
+        public static ItemRequirementQuote unavailable(List<String> materialCandidates, int amount, int amountAvailable, String displayName) {
+            return new ItemRequirementQuote(materialCandidates, amount, amountAvailable, displayName, false, -1, null, 0);
         }
 
         public List<String> getMaterialCandidates() { return materialCandidates; }
         public int getAmount() { return amount; }
+        public int getAmountAvailable() { return amountAvailable; }
         public String getDisplayName() { return displayName; }
         public boolean isAvailable() { return available; }
+        public int getSourceSlot() { return sourceSlot; }
+        public ItemStack getOriginalClone() { return originalClone != null ? originalClone.clone() : null; }
+        public int getAmountToRemove() { return amountToRemove; }
     }
 }

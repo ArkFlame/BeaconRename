@@ -5,7 +5,6 @@
 | File                  | Auto-generated | Purpose                                      |
 |-----------------------|----------------|----------------------------------------------|
 | `config.yml`          | Yes (first run)| Root settings, announcements                 |
-| `stations.yml`        | No             | Registered station data (managed by plugin)  |
 | `station-profiles.yml`| No             | Forge station profiles                       |
 | `tiers/*.yml`         | On bootstrap   | Tier definitions (schema v2)                   |
 | `messages.yml`        | No             | Custom message strings                       |
@@ -106,10 +105,6 @@ holograms:
     - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
     - "<gray>%forge_id%"
 
-# Tier migration settings
-tier-migration:
-  auto-upgrade: true
-  backup-original: true
 ```
 
 ### Config Overlay Behavior
@@ -145,16 +140,6 @@ FlameForge supports two hologram libraries via soft-depend:
 - **DecentHolograms** — fallback; uses legacy color code formatting
 
 If `holograms.enabled` is `true`, the plugin queries the server for available hologram providers in the order specified by `provider-order` and creates floating text displays at forge stations.
-
-### Tier Migration Settings
-
-```yaml
-tier-migration:
-  auto-upgrade: true      # automatically upgrade schema v1 tiers to v2
-  backup-original: true   # backup original files before migration
-```
-
-When `auto-upgrade` is enabled, schema v1 tier files are automatically converted to schema v2 format on load.
 
 ### Material Candidate Syntax
 
@@ -202,35 +187,55 @@ announcements:
         - "<white>%player_name% <red>lost their item"
 ```
 
-## stations.yml
+## Station Files (stations/*.yml)
 
-Station registry. Managed by the plugin; manual editing is not recommended.
-
-Any non-air block can be registered. In `REGISTERED_ONLY` mode, only registered forge blocks accept interaction.
+Each station is stored in its own file under `plugins/FlameForge/stations/`. The filename stem (without `.yml`) is the authoritative station ID.
 
 ### Schema
 
 ```yaml
-<coordinate-key>:
-  id: <station-id>
-  world: <world-name>
-  x: <double>
-  y: <double>
-  z: <double>
-  profile: <profile-id>
+schema-version: 1
+world:
+  name: world
+  uuid: "uuid-string"
+location:
+  x: integer
+  y: integer
+  z: integer
+profile: profile-id
 ```
 
 ### Example
 
+`plugins/FlameForge/stations/main_forge.yml`:
+
 ```yaml
-world_100_64_-200:
-  id: main_forge
-  world: world
-  x: 100.0
-  y: 64.0
-  z: -200.0
-  profile: default
+schema-version: 1
+world:
+  name: world
+  uuid: "uuid-string"
+location:
+  x: 100
+  y: 64
+  z: -200
+profile: default
 ```
+
+### Per-File Failure Isolation
+
+A malformed, invalid, or unreadable station file disables only that station. Valid sibling stations load normally.
+
+### Duplicate Location Deterministic Skip
+
+When two station files specify the same world and block location, the file sorted first by filename wins. The other is skipped.
+
+### No stations.yml Support
+
+The legacy monolithic `stations.yml` format is not supported. There is no migration path.
+
+### Station Profiles
+
+Station profiles remain in `station-profiles.yml` in the plugin data folder.
 
 ## Tier Files (tiers/*.yml)
 
@@ -250,6 +255,9 @@ level: <integer>
 
 # Tier requirements for input items
 requirements:
+  allowed-groups:           # Weapon compatibility groups (default: [ANY])
+    - <group-name>          # ANY, WEAPON, ARMOR, or custom group name
+  combine: ALL|ANY          # ALL requires all groups match; ANY requires one match
   items:
     - material: <material>
       required: true|false
@@ -432,9 +440,121 @@ outcomes:
     weight: 90
 ```
 
-## Station Profiles (stations.yml section)
+## Variant Effects
 
-Station profiles are defined within `config.yml` under a `stations` top-level key (loaded by `loadStations` in `ConfigService`).
+Variants are defined as a list-of-map under the `variants` key in tier files. Each variant specifies enchantments, attributes, and powers that can be applied when the variant is selected.
+
+### Variant Schema
+
+```yaml
+variants:
+  - id: <variant-id>
+    display-name: "<MiniMessage>"
+    icon: <material>
+    weight: <decimal>
+    applicable-groups:       # Limits which items can receive this variant
+      - <group-name>        # ANY, WEAPON, ARMOR, or custom group
+    lore:
+      - "<MiniMessage>"
+    enchantments:            # List-of-map enchantment specs
+      - candidates:         # List of enchantment names to try
+          - <enchantment>
+        min-level: <integer>
+        max-level: <integer>
+        unsafe: true|false
+    attributes:             # List-of-map attribute specs
+      - id: <attribute-id>
+        type: PASSIVE|ACTIVE|ON_HIT
+        value: <double>
+    powers:                 # List-of-map power specs
+      - id: <power-id>
+        type: <power-type>  # See Power Types below
+        cooldown-ticks: <integer>
+        hit-interval: <integer>  # For EVERY_N_HIT types
+        chance: <decimal>
+        duration-ticks: <integer>
+        amplifier: <integer>
+        effect-candidates:
+          - <potion-effect>
+```
+
+### Power Types
+
+| Type                  | Activation              | Description |
+|-----------------------|------------------------|-------------|
+| `ON_HIT_POTION`       | On hit                 | Applies potion effect on hit |
+| `ON_HIT_FIRE`         | On hit                 | Sets target on fire |
+| `ON_HIT_HEAL`         | On hit                 | Heals attacker on hit |
+| `PASSIVE_POTION`      | Passive                | Always active potion effect |
+| `SHIFT_RIGHT_CLICK_DASH` | Active (shift+right) | Dash ability |
+| `SHIFT_RIGHT_CLICK_HEAL` | Active (shift+right) | Heal ability |
+| `EVERY_N_HIT_LIGHTNING` | Every N hits          | Strikes lightning every N hits |
+| `EVERY_N_HIT_KNOCKBACK` | Every N hits          | Knockback every N hits |
+
+### Activation Semantics
+
+- **Passive**: Effect is always active while the item is equipped
+- **Active**: Effect triggers on right-click (shift+right-click for slot-specific abilities)
+- **On-hit**: Effect triggers each time the item hits a target
+
+### Variant Eligibility
+
+The `applicable-groups` field limits which items can receive a variant. If not specified, defaults to `ANY`. Groups are checked against the item's equipped slot or type.
+
+### Example: Variant with Powers
+
+```yaml
+variants:
+  - id: blazing_strike
+    display-name: "<gradient:#ff5f00:#ffd166>Blazing Strike</gradient>"
+    icon: FIRE_CHARGE
+    weight: 15
+    applicable-groups:
+      - WEAPON
+    enchantments:
+      - candidates:
+          - FIRE_ASPECT
+        min-level: 1
+        max-level: 3
+    powers:
+      - id: burn_effect
+        type: ON_HIT_FIRE
+        cooldown-ticks: 100
+        hit-interval: 3
+        fire-ticks: 40
+```
+
+## Weapon Compatibility
+
+Tier requirements support name-based weapon group compatibility through the `allowed-groups` field.
+
+### Composite Groups
+
+| Group   | Description |
+|---------|-------------|
+| `ANY`   | Matches any item (default) |
+| `WEAPON`| Matches swords, axes, and other weapons |
+| `ARMOR` | Matches helmets, chestplates, leggings, boots |
+
+### Custom Groups
+
+Custom groups are defined by item material name patterns. For example, `_SWORD` materials match the WEAPON composite group.
+
+### Example: Tier with Weapon Compatibility
+
+```yaml
+requirements:
+  allowed-groups:
+    - WEAPON
+  combine: ALL
+  items:
+    - material: DIAMOND_SWORD
+      required: true
+```
+
+## Station Profiles (station-profiles.yml)
+
+Station profiles are defined in `station-profiles.yml`.
 
 ### Schema
 

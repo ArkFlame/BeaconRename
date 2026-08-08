@@ -12,7 +12,9 @@ public final class ForgePowerDefinition {
         ON_HIT_HEAL,
         PASSIVE_POTION,
         SHIFT_RIGHT_CLICK_DASH,
-        SHIFT_RIGHT_CLICK_HEAL
+        SHIFT_RIGHT_CLICK_HEAL,
+        EVERY_N_HIT_LIGHTNING,
+        EVERY_N_HIT_KNOCKBACK
     }
 
     public enum ActivationSlot {
@@ -27,6 +29,7 @@ public final class ForgePowerDefinition {
     private final String id;
     private final PowerType powerType;
     private final int cooldownTicks;
+    private final int hitInterval;
     private final BigDecimal chance;
     private final List<String> effectCandidates;
     private final int durationTicks;
@@ -37,7 +40,7 @@ public final class ForgePowerDefinition {
     private final BigDecimal verticalStrength;
     private final List<ActivationSlot> activationSlots;
 
-    public ForgePowerDefinition(String id, PowerType powerType, int cooldownTicks,
+    public ForgePowerDefinition(String id, PowerType powerType, int cooldownTicks, int hitInterval,
                                 BigDecimal chance, List<String> effectCandidates,
                                 int durationTicks, int amplifier, int fireTicks,
                                 BigDecimal healAmount, BigDecimal horizontalStrength,
@@ -45,6 +48,7 @@ public final class ForgePowerDefinition {
         this.id = Objects.requireNonNull(id, "id cannot be null");
         this.powerType = Objects.requireNonNull(powerType, "powerType cannot be null");
         this.cooldownTicks = cooldownTicks;
+        this.hitInterval = hitInterval;
         this.chance = chance != null ? chance : BigDecimal.ONE;
         this.effectCandidates = effectCandidates != null ? Collections.unmodifiableList(effectCandidates) : Collections.emptyList();
         this.durationTicks = durationTicks;
@@ -60,6 +64,7 @@ public final class ForgePowerDefinition {
     public PowerType getType() { return powerType; }
     public PowerType getPowerType() { return powerType; }
     public int getCooldownTicks() { return cooldownTicks; }
+    public int getHitInterval() { return hitInterval; }
     public BigDecimal getChance() { return chance; }
     public List<String> getEffectCandidates() { return effectCandidates; }
     public int getDurationTicks() { return durationTicks; }

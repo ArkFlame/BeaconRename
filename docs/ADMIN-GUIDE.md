@@ -42,33 +42,34 @@ After editing, either:
 ### 4. Test the Forge
 
 1. Right-click the registered forge
-2. Place an item in the input slot
-3. Select a tier from the right-side buttons (automatic next-tier is supported)
-4. Click the confirm button (bottom center)
+2. Place an item in the input slot (slot 22, center)
+3. View tier, requirements, chances, and variants in confirm button lore
+4. Click the confirm button (slot 31, bottom-center)
 5. Observe the animation and outcome
 
-## New Menu Flow
+## Menu Flow
 
-The 27-slot forge menu has a streamlined layout:
+The 54-slot forge menu has these key slots:
 
 ```
 ┌─────────────────────────────────────┐
-│  [Fill]              [Tier Buttons] │
-│  [Fill]  [INPUT]     [Tier Buttons] │
-│  [Fill]              [Tier Buttons] │
-│  [Fill]              [Tier Buttons] │
-│  [Fill]  [CONFIRM]   [Navigation ]  │
+│  [Fill]              [Fill]         │
+│  [Fill]              [Fill]         │
+│  [Fill]  [INPUT]     [Fill]         │
+│  [Fill]              [Fill]         │
+│  [Fill]  [CONFIRM]   [Fill]         │
 └─────────────────────────────────────┘
 ```
 
 **Flow:**
-1. Player places item in input slot (center)
-2. Tier buttons on right show available tiers for the item
-3. Clicking a tier button selects it (automatic next-tier progression if enabled)
-4. Clicking confirm executes the forge
-5. Animation plays, outcome is applied
+1. Player places item in input slot (slot 22, center)
+2. Current item identity determines current tier
+3. Forge automatically targets exact next configured tier
+4. Confirm button lore shows tier/requirements/chances/variants
+5. Clicking confirm executes the forge
+6. Animation plays, outcome is applied
 
-**Removed slots:** Catalyst slot, ward slot, pity counter
+**Removed slots:** Catalyst slot, ward slot, pity counter, tier selection buttons
 
 ## Configuration Validation
 
@@ -91,7 +92,7 @@ Errors will prevent the tier from loading. Warnings indicate non-fatal issues.
 | Data                    | Location                                    |
 |-------------------------|---------------------------------------------|
 | Plugin config           | `plugins/FlameForge/config.yml`             |
-| Station registry        | `plugins/FlameForge/stations.yml`           |
+| Station registry        | `plugins/FlameForge/stations/*.yml`         |
 | Tier definitions        | `plugins/FlameForge/tiers/*.yml`            |
 | Player state            | `plugins/FlameForge/player-data/*.yml`      |
 | Pending deliveries      | `plugins/FlameForge/pending-deliveries.yml` |
@@ -321,8 +322,6 @@ Actions include: `FORGE_COMPLETE`, `ITEM_DELIVERED`, `COMMAND_DISPATCH`, `DELIVE
 - Pity system removed from UI; configured per-tier if needed.
 - If validation errors appear, compare your tier files against the schema in `CONFIGURATION.md`.
 - Tier files in `tiers/` are never overwritten on upgrade. Default tiers are only bootstrapped when the directory does not exist.
-- `tier-migration.auto-upgrade: true` in config.yml will attempt automatic conversion.
-
 ### Deleting Tiers
 
 Deleting a tier file removes that tier from active configuration. Players currently in the menu may see the tier disappear on next render. Deleting all tiers results in an empty tier list; the plugin remains enabled.

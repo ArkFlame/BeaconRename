@@ -38,6 +38,7 @@ class ForgeStationServiceTest {
     private StationRepository mockRepo;
     private ConfigService mockConfigService;
     private ForgeStationHologramService mockHologramService;
+    private ForgeStationHologramService forgeStationHologramService;
     private JavaPlugin fakePlugin;
     private Player player;
     private World world;
@@ -56,6 +57,7 @@ class ForgeStationServiceTest {
         mockRepo = mock(StationRepository.class);
         mockConfigService = mock(ConfigService.class);
         mockHologramService = mock(ForgeStationHologramService.class);
+        forgeStationHologramService = mockHologramService;
         when(mockConfigService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder().build());
         service = new ForgeStationService(fakePlugin, scheduler, mockRepo, mockConfigService, mockHologramService, teleportBridge);
         player = mock(Player.class);
@@ -115,7 +117,7 @@ class ForgeStationServiceTest {
     }
 
     @Test
-    void addTargetedForgeRegistersArbitraryNonAirBlockWithGeneratedAutoOrExplicitId() {
+    void addTargetedForgePersistsExplicitIdAndPreservesStorageFailureIdentity() {
         configureTarget(Material.CHEST);
         when(mockRepo.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
         AtomicReference<RegisteredForge> submitted = new AtomicReference<>();
@@ -129,11 +131,27 @@ class ForgeStationServiceTest {
             .addTargetedForge(player, Optional.of("Arbitrary_Forge"), "default")
             .join();
 
-        assertEquals(ForgeStationService.Result.ADDED, outcome.result());
+        assertEquals(ForgeStationService.Result.SUCCESS, outcome.result());
         assertEquals("arbitrary_forge", outcome.finalId());
         assertNotNull(submitted.get());
         assertEquals("arbitrary_forge", submitted.get().getId());
         verify(mockRepo).addAndSave(any(RegisteredForge.class));
+
+        verify(mockHologramService, times(1)).onStationAdded(submitted.get());
+        reset(mockRepo, mockHologramService);
+        when(mockRepo.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
+        when(mockRepo.addAndSave(any(RegisteredForge.class))).thenReturn(
+            CompletableFuture.completedFuture(
+                AddOutcome.storageConflict("FF-STATION-CONFLICT-ARBITRARY-FORGE")));
+
+        ForgeStationService.AddForgeOutcome conflictOutcome = service
+            .addTargetedForge(player, Optional.of("Arbitrary_Forge"), "default")
+            .join();
+
+        assertEquals(ForgeStationService.Result.STORAGE_CONFLICT, conflictOutcome.result());
+        assertEquals("arbitrary_forge", conflictOutcome.finalId());
+        assertEquals("FF-STATION-CONFLICT-ARBITRARY-FORGE", conflictOutcome.reference());
+        verify(mockHologramService, never()).onStationAdded(any());
     }
 
     private void configureTarget(Material material) {

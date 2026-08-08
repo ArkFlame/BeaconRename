@@ -7,7 +7,6 @@ import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -57,11 +56,7 @@ class FancyHologramsProvider implements HologramProvider {
             }
 
             String id = hologram.getId();
-
-            Optional<Object> existingOpt = getExistingHologram(manager, id);
-            if (existingOpt.isPresent()) {
-                bindings.removeHologramMethod.invoke(manager, existingOpt.get());
-            }
+            bindings.removeHologramStringMethod.invoke(manager, id);
 
             Location clonedLocation = hologram.getLocation().clone();
 
@@ -94,13 +89,7 @@ class FancyHologramsProvider implements HologramProvider {
                 return;
             }
 
-            getExistingHologram(manager, hologramId).ifPresent(h -> {
-                try {
-                    bindings.removeHologramMethod.invoke(manager, h);
-                } catch (Exception e) {
-                    logFailureOnce(hologramId, "remove", e);
-                }
-            });
+            bindings.removeHologramStringMethod.invoke(manager, hologramId);
         } catch (Exception e) {
             logFailureOnce(hologramId, "remove", e);
         }
@@ -117,24 +106,18 @@ class FancyHologramsProvider implements HologramProvider {
         }
     }
 
-    private Optional<Object> getExistingHologram(Object manager, String id) {
+    Object resolveManager() {
         try {
-            Object hologram = bindings.getHologramMethod.invoke(manager, id);
-            if (hologram != null) {
-                return Optional.of(hologram);
-            }
-        } catch (IllegalAccessException | java.lang.reflect.InvocationTargetException e) {
-            logFailureOnce(id, "getExisting", e);
-        } catch (RuntimeException e) {
-            logFailureOnce(id, "getExisting", e);
+            return getHologramManager();
+        } catch (Exception e) {
+            return null;
         }
-        return Optional.empty();
     }
 
     private void logFailureOnce(String id, String operation, Throwable t) {
         String key = "FancyHolograms:" + operation + ":" + t.getClass().getName() + ":" + t.getMessage();
         if (loggedFailureKeys.add(key)) {
-            logger.warning("[FlameForge] FancyHolograms " + operation + " failed for " + id + ": " + t.getMessage());
+            logger.warning("FancyHolograms " + operation + " failed for " + id + ": " + t.getMessage());
         }
     }
 }

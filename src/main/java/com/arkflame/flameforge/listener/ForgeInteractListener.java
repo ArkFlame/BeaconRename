@@ -4,30 +4,29 @@ import com.arkflame.flameforge.ForgeAccessService;
 import com.arkflame.flameforge.compat.interaction.InteractionHandBridge;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.station.ForgeStationService;
-import org.bukkit.Bukkit;
+import com.arkflame.flameforge.text.MessageArguments;
+import com.arkflame.flameforge.text.MessageService;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.plugin.java.JavaPlugin;
-
-import java.util.concurrent.CompletableFuture;
 
 public final class ForgeInteractListener implements Listener {
 
-    private final JavaPlugin plugin;
     private final ForgeAccessService accessService;
     private final ForgeStationService stationService;
     private final InteractionHandBridge handBridge;
+    private final MessageService messageService;
 
-    public ForgeInteractListener(JavaPlugin plugin, ForgeAccessService accessService,
-                                 ForgeStationService stationService, InteractionHandBridge handBridge) {
-        this.plugin = plugin;
+    public ForgeInteractListener(ForgeAccessService accessService,
+                                 ForgeStationService stationService, InteractionHandBridge handBridge,
+                                 MessageService messageService) {
         this.accessService = accessService;
         this.stationService = stationService;
         this.handBridge = handBridge;
+        this.messageService = messageService;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -75,15 +74,36 @@ public final class ForgeInteractListener implements Listener {
         Player playerRef = player;
         String stationId = stationOpt.get().id;
         accessService.openForgeFromId(playerRef, stationId).thenAccept(result -> {
-            if (result.getStatus() != ForgeAccessService.OpenStatus.OPENED) {
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    if (!playerRef.isOnline()) {
-                        return;
-                    }
-                    playerRef.sendMessage("Failed to open forge: " + result.getStatus().name()
-                        + (result.getStationId() != null ? " [" + result.getStationId() + "]" : ""));
-                });
+            if (!result.getStatus().equals(ForgeAccessService.OpenStatus.OPENED)) {
+                if (!playerRef.isOnline()) {
+                    return;
+                }
+                MessageArguments args = MessageArguments.create()
+                    .string("station_id", result.getStationId() != null ? result.getStationId() : "")
+                    .string("reason", result.getReason() != null ? result.getReason() : "")
+                    .string("reference", result.getReference() != null ? result.getReference() : "");
+                String messageKey = mapStatusToMessageKey(result.getStatus());
+                messageService.send(playerRef, messageKey, args);
             }
         });
+    }
+
+    private String mapStatusToMessageKey(ForgeAccessService.OpenStatus status) {
+        switch (status) {
+            case FORGE_NOT_FOUND:
+                return "open.forge-not-found";
+            case PROFILE_NOT_FOUND:
+                return "open.profile-not-found";
+            case PERMISSION_REQUIRED:
+                return "open.station-permission-required";
+            case NO_ALLOWED_TIER:
+                return "open.no-allowed-tier";
+            case SCHEDULER_REJECTED:
+                return "open.scheduler-rejected";
+            case MENU_OPEN_FAILED:
+                return "open.menu-open-failed";
+            default:
+                return "open.forge-not-found";
+        }
     }
 }

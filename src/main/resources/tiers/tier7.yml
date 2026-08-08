@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 7</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 7"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#f8fafc:#a855f7>Reach the forge's final tier.</gradient>"
 cooldown-seconds: 30
 input:
   allowed-groups:
@@ -122,18 +121,25 @@ variants:
   annihilator:
     weight: "40.0"
     applicable-groups:
-      - ANY
+      - WEAPON
     display-name: "<gradient:#ef4444:#f8fafc><bold>Annihilator %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier VII forged variant"
       - "<dark_gray>● <red>+6 raw attack damage"
-      - "<dark_gray>● <white>Highest raw offensive roll"
+      - "<dark_gray>● <yellow>Every 3rd hit delivers crushing knockback"
     enchantments: []
     attributes:
       - id: annihilator_damage
         type: ATTACK_DAMAGE_FLAT
         value: "6.0"
-    powers: []
+    powers:
+      - id: annihilator_every_three
+        type: EVERY_N_HIT_KNOCKBACK
+        hit-interval: 3
+        cooldown-ticks: 0
+        chance: "1.0"
+        horizontal-strength: "1.75"
+        vertical-strength: "0.45"
   eternal:
     weight: "30.0"
     applicable-groups:

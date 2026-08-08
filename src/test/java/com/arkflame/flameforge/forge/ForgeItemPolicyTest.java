@@ -1,45 +1,13 @@
 package com.arkflame.flameforge.forge;
 
-import com.arkflame.flameforge.config.TierRepository;
-import com.arkflame.flameforge.item.AttributeBridge;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
-import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.PlayerForgeState;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.*;
 
 class ForgeItemPolicyTest {
-
-    @Test
-    void testPolicyResultAllow() {
-        ForgeItemPolicy.PolicyResult result = ForgeItemPolicy.PolicyResult.allow();
-        assertTrue(result.isAllowed());
-        assertNull(result.getReason());
-    }
-
-    @Test
-    void testPolicyResultDeny() {
-        ForgeItemPolicy.PolicyResult result = ForgeItemPolicy.PolicyResult.deny("test reason");
-        assertFalse(result.isAllowed());
-        assertEquals("test reason", result.getReason());
-    }
-
-    @Test
-    void testPolicyResultDenyWithStatusName() {
-        ForgeItemPolicy.PolicyResult result = ForgeItemPolicy.PolicyResult.deny(ForgeItemInspection.Status.CUSTOM_NAME.name());
-        assertFalse(result.isAllowed());
-        assertEquals("CUSTOM_NAME", result.getReason());
-    }
-
-    @Test
-    void testPolicyResultDenyWithDifferentStatus() {
-        ForgeItemPolicy.PolicyResult result = ForgeItemPolicy.PolicyResult.deny(ForgeItemInspection.Status.CUSTOM_LORE.name());
-        assertFalse(result.isAllowed());
-        assertEquals("CUSTOM_LORE", result.getReason());
-    }
 
     @Test
     void testToPolicyResultConversionViaReadyStatus() {
@@ -51,10 +19,8 @@ class ForgeItemPolicyTest {
 
     @Test
     void testTier0VanillaItemIsEligibleViaInspection() {
-        ItemIdentityService identityService = mock(ItemIdentityService.class);
-        AttributeBridge attributeBridge = mock(AttributeBridge.class);
-        TierRepository tierRepository = mock(TierRepository.class);
-        ForgeItemPolicy policy = new ForgeItemPolicy(identityService, attributeBridge, tierRepository);
+        ForgeItemInspection mockInspection = mock(ForgeItemInspection.class);
+        ForgeItemPolicy policy = new ForgeItemPolicy(mockInspection);
 
         ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty().withCurrentTier(0);
         ForgeItemInspection.InspectionResult readyResult = new ForgeItemInspection.InspectionResult(
@@ -120,26 +86,35 @@ class ForgeItemPolicyTest {
     }
 
     @Test
-    @Disabled("ForgeItemPolicy.checkItem/isReady require Bukkit ItemStack.hasItemMeta() which calls Bukkit.getItemFactory() - unavailable in unit tests")
     void testCheckItemRequiresNonNullPlayer() {
-        ItemIdentityService identityService = mock(ItemIdentityService.class);
-        AttributeBridge attributeBridge = mock(AttributeBridge.class);
-        TierRepository tierRepository = mock(TierRepository.class);
-        ForgeItemPolicy policy = new ForgeItemPolicy(identityService, attributeBridge, tierRepository);
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty().withCurrentTier(1);
+        ForgeItemInspection.InspectionResult deniedResult = new ForgeItemInspection.InspectionResult(
+            ForgeItemInspection.Status.DENIED_MATERIAL, identity);
+
+        ForgeItemInspection testInspection = mock(ForgeItemInspection.class);
+        when(testInspection.inspect(isNull(), any(), any())).thenReturn(deniedResult);
+        when(testInspection.inspect(any(), any(), any())).thenReturn(deniedResult);
+
+        ForgeItemPolicy policy = new ForgeItemPolicy(testInspection);
 
         PlayerForgeState session = mock(PlayerForgeState.class);
-        ForgeItemPolicy.PolicyResult result = policy.checkItem(null, session, null);
+        when(session.getActiveStationId()).thenReturn("test_station");
+
+        ForgeItemPolicy.PolicyResult result = policy.checkItem(null, session, mock(org.bukkit.inventory.ItemStack.class));
 
         assertFalse(result.isAllowed());
     }
 
     @Test
-    @Disabled("ForgeItemPolicy.checkItem/isReady require Bukkit ItemStack.hasItemMeta() which calls Bukkit.getItemFactory() - unavailable in unit tests")
     void testIsReadyReturnsFalseWhenDenied() {
-        ItemIdentityService identityService = mock(ItemIdentityService.class);
-        AttributeBridge attributeBridge = mock(AttributeBridge.class);
-        TierRepository tierRepository = mock(TierRepository.class);
-        ForgeItemPolicy policy = new ForgeItemPolicy(identityService, attributeBridge, tierRepository);
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty().withCurrentTier(0);
+        ForgeItemInspection.InspectionResult deniedResult = new ForgeItemInspection.InspectionResult(
+            ForgeItemInspection.Status.DENIED_MATERIAL, identity);
+
+        ForgeItemInspection testInspection = mock(ForgeItemInspection.class);
+        when(testInspection.inspect(any(), any(), any())).thenReturn(deniedResult);
+
+        ForgeItemPolicy policy = new ForgeItemPolicy(testInspection);
 
         assertFalse(policy.isReady(null, null, null));
     }

@@ -19,13 +19,13 @@ public final class OutcomeSelector {
         if (chances == null) {
             throw new IllegalArgumentException("chances cannot be null");
         }
-        double total = chances.getSuccessPercent() + chances.getBreakPercent() + chances.getCursePercent();
+        double total = chances.getSuccessPercent().doubleValue() + chances.getBreakPercent().doubleValue() + chances.getCursePercent().doubleValue();
         if (total <= 0) {
             return ForgeOutcomeCategory.BREAK;
         }
         double roll = randomSource.nextDouble() * total;
-        double successThreshold = chances.getSuccessPercent();
-        double breakThreshold = successThreshold + chances.getBreakPercent();
+        double successThreshold = chances.getSuccessPercent().doubleValue();
+        double breakThreshold = successThreshold + chances.getBreakPercent().doubleValue();
         if (roll < successThreshold) {
             return ForgeOutcomeCategory.SUCCESS;
         } else if (roll < breakThreshold) {
@@ -39,24 +39,30 @@ public final class OutcomeSelector {
         if (variants == null || variants.isEmpty()) {
             return null;
         }
+        ChanceTable table = buildVariantChanceTable(variants);
+        long randomMicro = randomSource.nextLong(table.getTotalMicroWeight());
+        int index = table.selectIndex(randomMicro);
+        return variants.get(index);
+    }
+
+    public ChanceTable buildVariantChanceTable(List<ForgeVariant> variants) {
+        if (variants == null || variants.isEmpty()) {
+            throw new IllegalArgumentException("variants cannot be null or empty");
+        }
+
         int n = variants.size();
-        double totalWeight = 0;
-        double[] cumulativeWeights = new double[n];
+        BigDecimal[] weights = new BigDecimal[n];
+        String[] ids = new String[n];
+        int[] yamlOrders = new int[n];
+
         for (int i = 0; i < n; i++) {
-            double w = variants.get(i).getWeight();
-            totalWeight += w;
-            cumulativeWeights[i] = totalWeight;
+            ForgeVariant variant = variants.get(i);
+            weights[i] = BigDecimal.valueOf(variant.getWeight());
+            ids[i] = variant.getId();
+            yamlOrders[i] = i;
         }
-        if (totalWeight <= 0) {
-            return variants.get(0);
-        }
-        double roll = randomSource.nextDouble() * totalWeight;
-        for (int i = 0; i < n; i++) {
-            if (roll < cumulativeWeights[i]) {
-                return variants.get(i);
-            }
-        }
-        return variants.get(n - 1);
+
+        return ChanceTable.from(weights, ids, yamlOrders);
     }
 
     public ChanceTable buildChanceTable(List<ChanceEntry> outcomes) {

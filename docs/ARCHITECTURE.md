@@ -46,7 +46,7 @@ FlameForgePlugin
 | `TierRepository`         | Tier file loading, CRUD operations                        |
 | `TierDefinition`         | Immutable tier: id, level, requirements, outcomes         |
 | `TierParser`             | YAML parsing into TierDefinition + TierExtra              |
-| `StationRepository`      | Station persistence (stations.yml)                        |
+| `StationRepository`      | Station persistence (stations/*.yml)                      |
 | `ForgeStationService`    | Station resolution, permission checks, teleport            |
 | `ForgeSessionService`    | Player session state machine                              |
 | `ForgeSession`           | OPEN → PROCESSING → SETTLING → CLOSED                   |
@@ -69,16 +69,67 @@ FlameForgePlugin
 
 **Removed outcome types:** `CREATE_ITEM`, `COMMANDS`, `RETURN_UNCHANGED`
 
-## Menu Primitives
+## Menu Primitives / Threading / Execution Flow
 
-The 27-slot menu uses these primitives:
+### Ownership Model
 
-| Primitive       | Description |
-|-----------------|-------------|
-| `INPUT_SLOT`    | Single center slot for the item to reforge |
-| `TIER_LIST`     | Right-side tier buttons with automatic next-tier |
-| `CONFIRM_BUTTON`| Bottom-center execution trigger |
-| `NAVIGATION`    | Bottom corners for paging and close |
+- Normal inventories are never intercepted
+- Menu UUID is identity (menu instance identity, not player UUID)
+- Station ID is metadata (carried on menu context, not used for routing)
+
+### Class Responsibilities
+
+| Class                    | Responsibility                                            |
+|--------------------------|----------------------------------------------------------|
+| `ForgeInventoryListener` | Event adapter only — translates Bukkit inventory events  |
+| `ForgeMenuViewResolver` | Top-holder scope — resolves top-holder validity          |
+| `ForgeMenuRegistry`     | Exact current menu — matches open menu by identity       |
+| `ForgeMenuService`      | Open / in-place render — creates and updates menu view   |
+| `ForgeMenuInputService` | Custody / close / quit / disable — input handling        |
+| `ForgeMenuForgeService` | Confirm boundary — validates confirm prerequisites        |
+| `ForgeMenuSettlementService` | Exact-once item return — settles outcome items       |
+
+### Threading Rules
+
+- Player mutations use entity scheduler (Folia-aware, chunk-aware)
+- Disable queues menu custody without scheduling
+- Rerender is in-place (no inventory close/reopen)
+
+### Event Boundary
+
+`ForgeInventoryListener` is an event adapter only. It receives Bukkit inventory events and delegates to `ForgeMenuInputService`. It does not hold state or manage menu lifecycle.
+
+### Data Flow
+
+```
+Player clicks registered forge block
+  → ForgeInteractListener
+    → ForgeStationService.resolveStationFromClick()
+    → ForgeMenuService.open()
+      → ForgeInventoryHolder (Bukkit inventory created)
+
+Player clicks Confirm
+  → ForgeInventoryListener (CHANGED)
+    → ForgeMenuForgeService.confirmBoundary()
+      → ForgeMenuService.validateAndConfirm()
+        → CostService.quote() — affordability check
+        → CostService.charge() — deduct costs
+        → ForgeMenuInputService.takeCustody() — hold input items
+        → TierRequirements.validate() — check input items
+        → ChanceTable.select() — random outcome
+        → ForgeAnimationService.playAnimation()
+          → On complete: ForgeMenuSettlementService.settle()
+            → SUCCESS: ItemMutationService.mutate()
+            → BREAK: consume input
+            → CURSE: applyCurse()
+          → ForgeMenuInputService.releaseCustody()
+        → ForgeMenuService.close()
+
+Player disconnects mid-session
+  → ForgeMenuInputService.handleQuit()
+    → If custody held: queue for later return
+    → Disable menu, release resources
+```
 
 **Removed primitives:** `CATALYST_SLOT`, `WARD_SLOT`, `PITY_COUNTER`
 
@@ -194,45 +245,12 @@ The `SchedulerBridge` abstraction provides server-appropriate scheduling:
 - On player quit in OPEN: refund, return custody, close.
 - On player quit in PROCESSING: queue pending delivery for outcome execution on join.
 
-## Data Flow
-
-```
-Player clicks registered forge block
-  → ForgeInteractListener
-    → ForgeStationService.resolveStationFromClick()
-    → ForgeMenuService.open()
-      → ForgeInventoryHolder (Bukkit inventory created)
-
-Player clicks Confirm
-  → ForgeInventoryListener (CHANGED)
-    → ForgeService.confirmAndExecute()
-      → Validate context
-      → CostService.quote() — affordability check
-      → CostService.charge() — deduct costs
-      → Collect item custody
-      → TierRequirements.validate() — check input items
-      → ChanceTable.select() — random outcome
-      → ForgeAnimationService.playAnimation()
-        → On complete: OutcomeExecutor.execute()
-          → SUCCESS: ItemMutationService.mutate()
-          → BREAK: consume input
-          → CURSE: applyCurse()
-      → ForgeSession.close()
-      → AuditLogService.logAsync()
-
-Player disconnects mid-processing
-  → PlayerLifecycleListener.onPlayerQuit()
-    → ForgeService.onPlayerQuit()
-      → Queue pending delivery
-      → Refund if OPEN state
-```
-
 ## Persistence
 
 | Data               | Format | Location                              | Load Strategy       |
 |--------------------|--------|---------------------------------------|--------------------|
 | Plugin config      | YAML   | `config.yml`                          | Bukkit config API  |
-| Station registry   | YAML   | `stations.yml`                        | Custom load/save   |
+| Station registry   | YAML   | `stations/<id>.yml`                   | Per-station files  |
 | Tier definitions   | YAML   | `tiers/*.yml` (schema v2)             | TierRepository.load() |
 | Player state       | YAML   | `player-data/<uuid>.yml`              | Lazy load on join  |
 | Pending deliveries | YAML   | `pending-deliveries.yml`              | Full load on start |

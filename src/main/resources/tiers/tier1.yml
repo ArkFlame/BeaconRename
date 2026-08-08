@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 1</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 1"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#ff7a18:#ffd166>Begin the first refinement.</gradient>"
 cooldown-seconds: 5
 input:
   allowed-groups:

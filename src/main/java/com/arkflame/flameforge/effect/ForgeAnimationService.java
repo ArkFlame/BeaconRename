@@ -188,11 +188,11 @@ public final class ForgeAnimationService {
 
         if (chargeSound != null) {
             float interpolatedPitch = interpolatePitch(chargeSound, progress);
-            TaskHandle task = scheduler.runEntityLater(owner, () -> {
+            TaskHandle task = scheduler.runRegionLater(stationLocation, () -> {
                 if (!handle.isTerminal()) {
                     executeChargeSoundStep(owner, chargeSound, interpolatedPitch);
                 }
-            }, () -> {}, tick);
+            }, tick);
             if (task == null) return null;
             scheduledTasks.put(transactionId + "_sound_" + tick, task);
         }

@@ -1,5 +1,7 @@
 package com.arkflame.flameforge.command;
 
+import java.util.Objects;
+
 public final class StartupFailure {
     public enum Component {
         CONFIGURATION("configuration", true),
@@ -64,6 +66,8 @@ public final class StartupFailure {
     }
 
     public static StartupFailure create(Component component, Throwable root, long epoch) {
+        Objects.requireNonNull(component, "component");
+        Objects.requireNonNull(root, "root");
         String reason = sanitizeReason(root.getMessage());
         String reference = "FF-STARTUP-" + epoch + "-" + component.name();
         String exceptionType = root.getClass().getName();

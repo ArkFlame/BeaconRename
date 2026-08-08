@@ -20,7 +20,7 @@ public final class ForgeMenuContext {
     private final PlayerForgeState session;
     private ItemStack input;
     private final long generation;
-    private State state = State.OPEN;
+    private volatile State state = State.OPEN;
 
     public ForgeMenuContext(UUID menuId, UUID playerId, String stationId,
                             PlayerForgeState session, long generation) {
@@ -69,11 +69,28 @@ public final class ForgeMenuContext {
         return Optional.of(result);
     }
 
-    public synchronized boolean beginForge() {
-        if (state != State.OPEN) {
-            return false;
+    public synchronized Optional<ItemStack> claimInputForForge() {
+        if (state != State.OPEN || input == null) {
+            return Optional.empty();
         }
         state = State.FORGING;
+        ItemStack claimed = input.clone();
+        input = null;
+        return Optional.of(claimed);
+    }
+
+    public synchronized boolean restoreClaimedInputForSettlement(ItemStack claimed) {
+        if (state != State.FORGING) {
+            return false;
+        }
+        if (input != null) {
+            return false;
+        }
+        if (claimed == null || claimed.getType() == org.bukkit.Material.AIR) {
+            return false;
+        }
+        this.input = claimed.clone();
+        this.state = State.RETIRED;
         return true;
     }
 

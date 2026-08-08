@@ -3,6 +3,7 @@ package com.arkflame.flameforge.command;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.TierRepository;
+import com.arkflame.flameforge.FlameForgePlugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.Test;
 
@@ -71,7 +72,7 @@ class CommandContextTest {
         ConfigService configService = mock(ConfigService.class);
         TierRepository tierRepository = mock(TierRepository.class);
         FlameForgeCommand command = new FlameForgeCommand(
-            mock(JavaPlugin.class),
+            mock(FlameForgePlugin.class),
             mock(SchedulerBridge.class),
             null,
             configService,

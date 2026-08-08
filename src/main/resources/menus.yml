@@ -1,91 +1,87 @@
 schema-version: 2
 
 default:
-  title: "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
+  title: "<gold><bold>FlameForge</bold>"
   size: 54
 
   background:
     materials:
       - GRAY_STAINED_GLASS_PANE
-      - STAINED_GLASS_PANE:7
+      - "STAINED_GLASS_PANE:7"
       - GLASS_PANE
     name: " "
 
   slots:
-    current-tier: 20
     input: 22
-    variants: 24
-    requirements: 29
     confirm: 31
-    chances: 33
-    close: 49
 
   items:
-    info:
-      materials:
-        - NETHER_STAR
-        - DIAMOND
-      name: "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
-      lore:
-        - "<gray>Click one eligible item in your inventory."
-        - "<gray>The forge automatically selects the next tier."
-        - "<gray>Only the input slot can hold a real item."
+    confirm:
+      empty:
+        materials:
+          - REDSTONE_BLOCK
+          - REDSTONE
+        glow: false
+        name: "<gradient:#ef4444:#7f1d1d><bold>No Item Selected</bold></gradient>"
+        lore:
+          - "<red>No item inserted.</red>"
+          - "<gray>Click an item in your inventory to forge.</gray>"
 
-    confirm-empty:
-      materials:
-        - REDSTONE_BLOCK
-        - REDSTONE
-      name: "<red><bold>Insert an Item</bold>"
-      lore:
-        - "<gray>No item is currently inserted."
+      blocked:
+        materials:
+          - REDSTONE_BLOCK
+          - REDSTONE
+        glow: false
+        name: "<gradient:#ef4444:#7f1d1d><bold>Forge Unavailable</bold></gradient>"
+        lore:
+          - "%tier_line%"
+          - " "
+          - "<gradient:#f97316:#facc15><bold>Requirements</bold></gradient>"
+          - "%requirements%"
+          - " "
+          - "<gradient:#60a5fa:#a78bfa><bold>Chances</bold></gradient>"
+          - "%chances%"
+          - " "
+          - "<gradient:#c084fc:#f0abfc><bold>Possible Variants</bold></gradient>"
+          - "%variants%"
+          - " "
+          - "<red>Meet the missing requirements to forge.</red>"
 
-    confirm-blocked:
-      materials:
-        - REDSTONE_BLOCK
-        - REDSTONE
-      name: "<red><bold>Cannot Forge</bold>"
-      lore:
-        - "%blocked_reason%"
-        - "%missing_requirement_lines%"
-
-    confirm-ready:
-      materials:
-        - EMERALD_BLOCK
-        - EMERALD
-      name: "<gradient:#22c55e:#bbf7d0><bold>Forge Tier %current_tier% → %target_tier%</bold></gradient>"
-      lore:
-        - "<gray>Outcome chances"
-        - "%chance_lines%"
-        - " "
-        - "<gray>Requirements"
-        - "%requirement_lines%"
-        - " "
-        - "<gray>Possible variants"
-        - "%variant_lines%"
-        - " "
-        - "<green>Click to start forging."
-
-    close:
-      materials:
-        - BARRIER
-        - RED_STAINED_GLASS_PANE
-        - STAINED_GLASS_PANE:14
-        - REDSTONE_BLOCK
-      name: "<red><bold>Close</bold>"
-      lore:
-        - "<gray>Returns the inserted item before closing."
+      ready:
+        materials:
+          - EMERALD_BLOCK
+          - EMERALD
+        glow: true
+        name: "<gradient:#22c55e:#a3e635><bold>Forge Item</bold></gradient>"
+        lore:
+          - "%tier_line%"
+          - " "
+          - "<gradient:#f97316:#facc15><bold>Requirements</bold></gradient>"
+          - "%requirements%"
+          - " "
+          - "<gradient:#60a5fa:#a78bfa><bold>Chances</bold></gradient>"
+          - "%chances%"
+          - " "
+          - "<gradient:#c084fc:#f0abfc><bold>Possible Variants</bold></gradient>"
+          - "%variants%"
+          - " "
+          - "<gradient:#22c55e:#a3e635><bold>Click to forge!</bold></gradient>"
 
   dynamic-lines:
-    chance-success: "<dark_gray>● <green>Success: <white>%success_chance%%"
-    chance-break: "<dark_gray>● <red>Break/reset: <white>%break_chance%%"
-    chance-curse: "<dark_gray>● <dark_purple>Curse: <white>%curse_chance%%"
+    tier: "<gray>Tier: <white>%current_tier% <dark_gray>→ <white>%target_tier%"
 
-    requirement-xp-met: "<dark_gray>● <green>XP: <white>%xp_required% <gray>(you have %xp_available%)"
-    requirement-xp-missing: "<dark_gray>● <red>XP: <white>%xp_required% <gray>(you have %xp_available%)"
-    requirement-money-met: "<dark_gray>● <green>Money: <white>%money_required% <gray>(you have %money_available%)"
-    requirement-money-missing: "<dark_gray>● <red>Money: <white>%money_required% <gray>(you have %money_available%)"
-    requirement-money-unavailable: "<dark_gray>● <red>Money requirement enabled, but Vault economy is unavailable."
-    requirement-item-met: "<dark_gray>● <green>%item_name%: <white>%item_required% <gray>(you have %item_available%)"
-    requirement-item-missing: "<dark_gray>● <red>%item_name%: <white>%item_required% <gray>(you have %item_available%)"
+    requirement-mode-any: "<gray>Meet any one requirement:"
+    requirement-none: "<green>✔ <gray>No additional requirements."
+    requirement-xp-met: "<green>✔ <gray>XP: <white>%xp_available%/%xp_required%"
+    requirement-xp-missing: "<red>✘ <gray>XP: <white>%xp_available%/%xp_required%"
+    requirement-money-met: "<green>✔ <gray>Money: <white>%money_available%/%money_required%"
+    requirement-money-missing: "<red>✘ <gray>Money: <white>%money_available%/%money_required%"
+    requirement-money-unavailable: "<red>✘ <gray>Money: <red>economy unavailable"
+    requirement-item-met: "<green>✔ <gray>%item_name%: <white>%item_available%/%item_required%"
+    requirement-item-missing: "<red>✘ <gray>%item_name%: <white>%item_available%/%item_required%"
 
-    variant-entry: "<dark_gray>● <white>%variant_name%"
+    chance-success: "<dark_gray>• <green>Success <white>%success_chance%%"
+    chance-break: "<dark_gray>• <red>Break/reset <white>%break_chance%%"
+    chance-curse: "<dark_gray>• <dark_purple>Curse <white>%curse_chance%%"
+
+    variant-entry: "<dark_gray>• %variant_name% <gray>— <aqua>%variant_chance%%"

@@ -5,6 +5,7 @@ import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.EnchantSpec;
 import com.arkflame.flameforge.model.ItemMutationSpec;
+import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.TextRenderer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -29,6 +30,10 @@ public final class ItemFactory {
     private TextRenderer textRenderer;
 
     private ItemFactory() {
+    }
+
+    public ItemFactory(TextRenderer textRenderer) {
+        this.textRenderer = textRenderer;
     }
 
     public static ItemFactory getInstance() {
@@ -193,7 +198,8 @@ public final class ItemFactory {
             return;
         }
         try {
-            meta.setDisplayName(renderText(name));
+            String rendered = textRenderer.renderItemLegacy(name, MessageArguments.create(), null);
+            meta.setDisplayName(rendered);
         } catch (Exception e) {
         }
     }
@@ -216,14 +222,14 @@ public final class ItemFactory {
                 newLore.clear();
                 if (content != null) {
                     for (final String line : content) {
-                        newLore.add(renderText(line));
+                        newLore.add(textRenderer.renderItemLegacy(line, MessageArguments.create(), null));
                     }
                 }
                 break;
             case APPEND:
                 if (content != null) {
                     for (final String line : content) {
-                        newLore.add(renderText(line));
+                        newLore.add(textRenderer.renderItemLegacy(line, MessageArguments.create(), null));
                     }
                 }
                 break;
@@ -231,7 +237,7 @@ public final class ItemFactory {
                 if (content != null) {
                     final List<String> combined = new ArrayList<>();
                     for (final String line : content) {
-                        combined.add(renderText(line));
+                        combined.add(textRenderer.renderItemLegacy(line, MessageArguments.create(), null));
                     }
                     combined.addAll(newLore);
                     newLore.clear();
@@ -262,13 +268,18 @@ public final class ItemFactory {
                 continue;
             }
             final Enchantment enchant = enchantOpt.get();
-            int level = spec.getMinLevel();
-            if (spec.getMaxLevel() < Integer.MAX_VALUE) {
-                level = enchantResolver.clampLevel(level, enchant.getMaxLevel());
-            }
-            try {
-                meta.addEnchant(enchant, level, false);
-            } catch (Exception e) {
+            int level = spec.getLevel();
+            if (spec.isUnsafe()) {
+                try {
+                    meta.addEnchant(enchant, level, true);
+                } catch (Exception e) {
+                }
+            } else {
+                int clamped = enchantResolver.clampLevel(level, enchant.getMaxLevel());
+                try {
+                    meta.addEnchant(enchant, clamped, false);
+                } catch (Exception e) {
+                }
             }
         }
     }

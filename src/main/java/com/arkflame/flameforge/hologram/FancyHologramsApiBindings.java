@@ -22,10 +22,9 @@ class FancyHologramsApiBindings {
     final Class<?> hologramClass;
 
     final Method getPluginMethod;
-    final Method getHologramMethod;
     final Method createMethod;
     final Method addHologramMethod;
-    final Method removeHologramMethod;
+    final Method removeHologramStringMethod;
     final Method isLoadedMethod;
 
     final Constructor<?> textHologramDataCtor;
@@ -46,10 +45,9 @@ class FancyHologramsApiBindings {
         Class<?> hClass = null;
 
         Method getPlugin = null;
-        Method getHologram = null;
         Method create = null;
         Method addHologram = null;
-        Method removeHologram = null;
+        Method removeHologramString = null;
         Method isLoaded = null;
 
         Constructor<?> thdCtor = null;
@@ -81,10 +79,9 @@ class FancyHologramsApiBindings {
             this.textHologramDataClass = null;
             this.hologramClass = null;
             this.getPluginMethod = null;
-            this.getHologramMethod = null;
             this.createMethod = null;
             this.addHologramMethod = null;
-            this.removeHologramMethod = null;
+            this.removeHologramStringMethod = null;
             this.isLoadedMethod = null;
             this.textHologramDataCtor = null;
             this.textHologramDataSetText = null;
@@ -111,10 +108,9 @@ class FancyHologramsApiBindings {
             this.textHologramDataClass = null;
             this.hologramClass = null;
             this.getPluginMethod = null;
-            this.getHologramMethod = null;
             this.createMethod = null;
             this.addHologramMethod = null;
-            this.removeHologramMethod = null;
+            this.removeHologramStringMethod = null;
             this.isLoadedMethod = null;
             this.textHologramDataCtor = null;
             this.textHologramDataSetText = null;
@@ -136,10 +132,9 @@ class FancyHologramsApiBindings {
                 getPlugin = fhClass.getMethod("get");
             }
 
-            getHologram = hmClass.getMethod("getHologram", String.class);
             create = hmClass.getMethod("create", hdClass);
             addHologram = hmClass.getMethod("addHologram", hClass);
-            removeHologram = hmClass.getMethod("removeHologram", hClass);
+            removeHologramString = resolveRemoveHologramByNameMethod(hmClass);
             isLoaded = hmClass.getMethod("isLoaded");
 
             thdCtor = thdClass.getConstructor(String.class, Location.class);
@@ -164,10 +159,9 @@ class FancyHologramsApiBindings {
             this.available = false;
             this.unavailReason = unavailableReason.toString();
             this.getPluginMethod = null;
-            this.getHologramMethod = null;
             this.createMethod = null;
             this.addHologramMethod = null;
-            this.removeHologramMethod = null;
+            this.removeHologramStringMethod = null;
             this.isLoadedMethod = null;
             this.textHologramDataCtor = null;
             this.textHologramDataSetText = null;
@@ -178,10 +172,9 @@ class FancyHologramsApiBindings {
         }
 
         this.getPluginMethod = getPlugin;
-        this.getHologramMethod = getHologram;
         this.createMethod = create;
         this.addHologramMethod = addHologram;
-        this.removeHologramMethod = removeHologram;
+        this.removeHologramStringMethod = removeHologramString;
         this.isLoadedMethod = isLoaded;
         this.textHologramDataCtor = thdCtor;
         this.textHologramDataSetText = setText;
@@ -225,6 +218,11 @@ class FancyHologramsApiBindings {
 
         this.available = true;
         this.unavailReason = null;
+    }
+
+    static Method resolveRemoveHologramByNameMethod(Class<?> managerClass)
+            throws NoSuchMethodException {
+        return managerClass.getMethod("removeHologram", String.class);
     }
 
     boolean isAvailable() {

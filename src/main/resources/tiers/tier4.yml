@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 4</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 4"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#f97316:#ef4444>Push the item beyond ordinary limits.</gradient>"
 cooldown-seconds: 16
 input:
   allowed-groups:

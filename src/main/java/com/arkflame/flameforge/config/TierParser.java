@@ -16,6 +16,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class TierParser {
@@ -49,6 +50,21 @@ public class TierParser {
     public static TierDefinition parse(YamlValues values, ValidationReport report, MigrationContext migrationContext) {
         TierParser parser = new TierParser(report, values, migrationContext);
         return parser.doParse();
+    }
+
+    public static TierDefinition parseBundled(InputStream bundledStream, ValidationReport report, String resourceName) {
+        try {
+            org.bukkit.configuration.file.YamlConfiguration bundledYaml =
+                org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                    new InputStreamReader(bundledStream, StandardCharsets.UTF_8));
+            YamlValues bundledValues = new YamlValues(bundledYaml, report);
+            TierParser parser = new TierParser(report, bundledValues, MigrationContext.noOp());
+            return parser.doParseV2();
+        } catch (Exception e) {
+            report.addError("", "bundled-parse",
+                "Failed to parse bundled v2 resource " + resourceName + ": " + e.getMessage());
+            return null;
+        }
     }
 
     private TierDefinition doParse() {
@@ -375,8 +391,8 @@ public class TierParser {
         boolean resetPowers = breakPolicy.getBoolean("reset-powers", true);
         boolean resetCustomModelData = breakPolicy.getBoolean("reset-custom-model-data", true);
 
-        return new BreakPolicy(resetTier, false, resetDisplayName, resetLore,
-            resetEnchantments, resetAttributes, resetPowers, false);
+        return new BreakPolicy(resetTier, targetTier, resetEnchantments, resetDisplayName, resetLore,
+            resetAttributes, resetPowers, resetCustomModelData, false);
     }
 
     private CurseDefinition parseCurse(YamlValues curse) {
@@ -484,131 +500,350 @@ public class TierParser {
     }
 
     private ForgeVariant parseVariant(YamlValues variant, String variantId) {
-        BigDecimal weight = parseDecimal(variant, "weight", BigDecimal.ONE);
-        List<String> applicableGroups = variant.getStringList("applicable-groups", Collections.singletonList("ANY"));
-        String displayName = variant.getString("display-name", "");
-        List<String> lore = variant.getStringList("lore", Collections.emptyList());
-
-        List<EnchantSpec> enchantments = parseEnchantSpecs(variant.sub("enchantments"));
-        List<ForgeAttributeDefinition> attributes = parseForgeAttributeDefinitions(variant.sub("attributes"));
-        List<ForgePowerDefinition> powers = parseForgePowerDefinitions(variant.sub("powers"));
-
-        return new ForgeVariant(variantId, displayName, lore, weight.doubleValue(), null,
-            Collections.emptyList(), Collections.emptyMap(), powers);
-    }
-
-    private List<EnchantSpec> parseEnchantSpecs(YamlValues enchants) {
-        if (enchants == null) {
-            return Collections.emptyList();
-        }
-
-        ConfigurationSection section = enchants.getRawSection();
+        ConfigurationSection section = variant.getRawSection();
         if (section == null) {
-            return Collections.emptyList();
+            return null;
         }
 
-        Object raw = section.get("candidates");
-        if (raw instanceof List) {
-            List<EnchantSpec> result = new ArrayList<>();
-            List<?> list = (List<?>) raw;
-            int minLevel = enchants.getInt("min-level", 1);
-            int maxLevel = enchants.getInt("max-level", Integer.MAX_VALUE);
-            boolean unsafe = enchants.getBoolean("unsafe", false);
-
-            for (Object item : list) {
-                String enchantName = String.valueOf(item);
-                result.add(EnchantSpec.of(enchantName, minLevel, maxLevel));
+        BigDecimal weight = parseDecimal(variant, "weight", null);
+        if (weight == null) {
+            report.addError(variant.getRootPath(), "variant-weight",
+                "Variant '" + variantId + "' has invalid weight");
+            return null;
+        }
+        if (weight.compareTo(BigDecimal.ZERO) <= 0) {
+            report.addError(variant.getRootPath(), "variant-weight",
+                "Variant '" + variantId + "' weight must be > 0, got " + weight);
+            return null;
+        }
+        if (weight.scale() > 6) {
+            report.addError(variant.getRootPath(), "variant-weight",
+                "Variant '" + variantId + "' weight scale must be <= 6, got " + weight.scale());
+            return null;
+        }
+        Object rawApplicableGroups = section.get("applicable-groups");
+        List<String> applicableGroups = new ArrayList<>();
+        if (rawApplicableGroups instanceof List) {
+            for (Object o : (List<?>) rawApplicableGroups) {
+                applicableGroups.add(String.valueOf(o));
             }
-            return result;
+        } else {
+            applicableGroups.add("ANY");
         }
+        String displayName = section.get("display-name") != null ? String.valueOf(section.get("display-name")) : "";
+        Object rawLore = section.get("lore");
+        List<String> lore = new ArrayList<>();
+        if (rawLore instanceof List) {
+            for (Object o : (List<?>) rawLore) {
+                lore.add(String.valueOf(o));
+            }
+        }
+        String icon = section.get("icon") != null ? String.valueOf(section.get("icon")) : null;
 
-        return Collections.emptyList();
+        List<EnchantSpec> enchantments = parseEnchantmentSpecs(section);
+        List<ForgeAttributeDefinition> attributes = parseAttributeSpecs(section);
+        List<ForgePowerDefinition> powers = parsePowerSpecs(section);
+
+        return new ForgeVariant(variantId, displayName, lore, weight.doubleValue(), icon,
+            applicableGroups, enchantments, attributes, powers);
     }
 
-    private List<ForgeAttributeDefinition> parseForgeAttributeDefinitions(YamlValues attributes) {
-        if (attributes == null) {
+    private List<EnchantSpec> parseEnchantmentSpecs(ConfigurationSection section) {
+        Object raw = section.get("enchantments");
+        if (!(raw instanceof List)) {
             return Collections.emptyList();
         }
-
-        ConfigurationSection section = attributes.getRawSection();
-        if (section == null) {
-            return Collections.emptyList();
-        }
-
-        List<ForgeAttributeDefinition> result = new ArrayList<>();
-
-        for (String key : section.getKeys(false)) {
-            YamlValues attrValues = attributes.sub(key);
-            ForgeAttributeDefinition.AttributeType type;
-            try {
-                type = ForgeAttributeDefinition.AttributeType.valueOf(key);
-            } catch (IllegalArgumentException e) {
-                report.addError(attrValues.getRootPath(), "type", "Unknown attribute type: " + key);
+        List<EnchantSpec> result = new ArrayList<>();
+        List<?> list = (List<?>) raw;
+        for (int i = 0; i < list.size(); i++) {
+            Object item = list.get(i);
+            if (!(item instanceof Map)) {
+                report.addError(section.getCurrentPath(), "enchantments",
+                    "Enchantment at index " + i + " must be a map");
                 continue;
             }
-            BigDecimal value = parseDecimal(attrValues, "value", BigDecimal.ZERO);
-            result.add(new ForgeAttributeDefinition(type, value.doubleValue()));
-        }
-
-        return result;
-    }
-
-    private List<ForgePowerDefinition> parseForgePowerDefinitions(YamlValues powers) {
-        if (powers == null) {
-            return Collections.emptyList();
-        }
-
-        ConfigurationSection section = powers.getRawSection();
-        if (section == null) {
-            return Collections.emptyList();
-        }
-
-        List<ForgePowerDefinition> result = new ArrayList<>();
-
-        for (String key : section.getKeys(false)) {
-            YamlValues powerValues = powers.sub(key);
-            ForgePowerDefinition power = parseForgePowerDefinition(powerValues, key);
-            if (power != null) {
-                result.add(power);
+            Map<?, ?> map = (Map<?, ?>) item;
+            List<String> candidates = new ArrayList<>();
+            Object candidatesObj = map.get("candidates");
+            if (candidatesObj instanceof List) {
+                for (Object c : (List<?>) candidatesObj) {
+                    candidates.add(String.valueOf(c));
+                }
+            }
+            if (candidates.isEmpty()) {
+                report.addError(section.getCurrentPath(), "enchantment-candidates",
+                    "Enchantment candidates list cannot be empty");
+                continue;
+            }
+            int minLevel = 1;
+            int maxLevel = Integer.MAX_VALUE;
+            boolean unsafe = false;
+            Object minLevelObj = map.get("min-level");
+            if (minLevelObj instanceof Number) {
+                minLevel = ((Number) minLevelObj).intValue();
+            }
+            if (minLevel < 1) {
+                report.addError(section.getCurrentPath(), "min-level",
+                    "Enchantment min-level must be >= 1, got " + minLevel);
+                continue;
+            }
+            Object maxLevelObj = map.get("max-level");
+            if (maxLevelObj instanceof Number) {
+                maxLevel = ((Number) maxLevelObj).intValue();
+            }
+            if (maxLevel < minLevel) {
+                report.addError(section.getCurrentPath(), "max-level",
+                    "Enchantment max-level must be >= min-level, got max=" + maxLevel + " min=" + minLevel);
+                continue;
+            }
+            Object unsafeObj = map.get("unsafe");
+            if (unsafeObj instanceof Boolean) {
+                unsafe = ((Boolean) unsafeObj).booleanValue();
+            }
+            for (String enchantName : candidates) {
+                result.add(EnchantSpec.of(enchantName, minLevel, minLevel, maxLevel, unsafe));
             }
         }
-
         return result;
     }
 
-    private ForgePowerDefinition parseForgePowerDefinition(YamlValues power, String powerId) {
-        String typeStr = power.getString("type", "ON_HIT_POTION");
-        ForgePowerDefinition.PowerType type;
-        try {
-            type = ForgePowerDefinition.PowerType.valueOf(typeStr);
-        } catch (IllegalArgumentException e) {
-            report.addError(power.getRootPath(), "type", "Unknown power type: " + typeStr);
-            type = ForgePowerDefinition.PowerType.ON_HIT_POTION;
+    private List<ForgeAttributeDefinition> parseAttributeSpecs(ConfigurationSection section) {
+        Object raw = section.get("attributes");
+        if (!(raw instanceof List)) {
+            return Collections.emptyList();
         }
-
-        int cooldownTicks = power.getInt("cooldown-ticks", 0);
-        BigDecimal chance = parseDecimal(power, "chance", BigDecimal.ONE);
-
-        List<String> effectCandidates = power.getStringList("effect-candidates", Collections.emptyList());
-        int durationTicks = power.getInt("duration-ticks", 0);
-        int amplifier = power.getInt("amplifier", 0);
-        int fireTicks = power.getInt("fire-ticks", 0);
-        BigDecimal healAmount = parseDecimal(power, "heal-amount", BigDecimal.ZERO);
-        BigDecimal horizontalStrength = parseDecimal(power, "horizontal-strength", BigDecimal.ONE);
-        BigDecimal verticalStrength = parseDecimal(power, "vertical-strength", BigDecimal.ZERO);
-
-        List<String> slotStrs = power.getStringList("activation-slots", Collections.emptyList());
-        List<ForgePowerDefinition.ActivationSlot> activationSlots = new ArrayList<>();
-        for (String slotStr : slotStrs) {
+        List<ForgeAttributeDefinition> result = new ArrayList<>();
+        List<?> list = (List<?>) raw;
+        for (int i = 0; i < list.size(); i++) {
+            Object item = list.get(i);
+            if (!(item instanceof Map)) {
+                report.addError(section.getCurrentPath(), "attributes",
+                    "Attribute at index " + i + " must be a map");
+                continue;
+            }
+            Map<?, ?> map = (Map<?, ?>) item;
+            String id = map.get("id") != null ? String.valueOf(map.get("id")) : null;
+            if (id == null || id.trim().isEmpty()) {
+                report.addError(section.getCurrentPath(), "attribute-id",
+                    "Attribute id cannot be blank");
+                continue;
+            }
+            String typeStr = map.get("type") != null ? String.valueOf(map.get("type")) : null;
+            ForgeAttributeDefinition.AttributeType type = null;
+            if (typeStr == null) {
+                report.addError(section.getCurrentPath(), "attribute-type",
+                    "Attribute type is required for attribute '" + id + "'");
+                continue;
+            }
             try {
-                activationSlots.add(ForgePowerDefinition.ActivationSlot.valueOf(slotStr));
-            } catch (IllegalArgumentException ignored) {
+                type = ForgeAttributeDefinition.AttributeType.valueOf(typeStr);
+            } catch (IllegalArgumentException e) {
+                report.addError(section.getCurrentPath(), "attribute-type",
+                    "Invalid attribute type '" + typeStr + "' for attribute '" + id + "'");
+                continue;
             }
+            double value = 0;
+            Object valueObj = map.get("value");
+            if (valueObj instanceof Number) {
+                value = ((Number) valueObj).doubleValue();
+            } else if (valueObj instanceof String) {
+                try {
+                    value = new BigDecimal((String) valueObj).doubleValue();
+                } catch (NumberFormatException e) {
+                    report.addError(section.getCurrentPath(), "attribute-value",
+                        "Invalid attribute value '" + valueObj + "' for attribute '" + id + "'");
+                    continue;
+                }
+            } else if (valueObj != null) {
+                report.addError(section.getCurrentPath(), "attribute-value",
+                    "Invalid attribute value type for attribute '" + id + "'");
+                continue;
+            }
+            result.add(new ForgeAttributeDefinition(id, type, value));
         }
+        return result;
+    }
 
-        return new ForgePowerDefinition(powerId, type, cooldownTicks, chance,
-            effectCandidates, durationTicks, amplifier, fireTicks, healAmount,
-            horizontalStrength, verticalStrength, activationSlots);
+    private List<ForgePowerDefinition> parsePowerSpecs(ConfigurationSection section) {
+        Object raw = section.get("powers");
+        if (!(raw instanceof List)) {
+            return Collections.emptyList();
+        }
+        List<ForgePowerDefinition> result = new ArrayList<>();
+        List<?> list = (List<?>) raw;
+        for (int i = 0; i < list.size(); i++) {
+            Object item = list.get(i);
+            if (!(item instanceof Map)) {
+                report.addError(section.getCurrentPath(), "powers",
+                    "Power at index " + i + " must be a map");
+                continue;
+            }
+            Map<?, ?> map = (Map<?, ?>) item;
+            String powerId = map.get("id") != null ? String.valueOf(map.get("id")) : null;
+            if (powerId == null || powerId.trim().isEmpty()) {
+                report.addError(section.getCurrentPath(), "power-id",
+                    "Power id cannot be blank");
+                continue;
+            }
+            String typeStr = map.get("type") != null ? String.valueOf(map.get("type")) : null;
+            ForgePowerDefinition.PowerType type;
+            if (typeStr == null) {
+                report.addError(section.getCurrentPath(), "power-type",
+                    "Power type is required for power '" + powerId + "'");
+                continue;
+            }
+            try {
+                type = ForgePowerDefinition.PowerType.valueOf(typeStr);
+            } catch (IllegalArgumentException e) {
+                report.addError(section.getCurrentPath(), "power-type",
+                    "Invalid power type '" + typeStr + "' for power '" + powerId + "'");
+                continue;
+            }
+            int cooldownTicks = 0;
+            Object cooldownObj = map.get("cooldown-ticks");
+            if (cooldownObj instanceof Number) {
+                cooldownTicks = ((Number) cooldownObj).intValue();
+            } else if (cooldownObj != null && !(cooldownObj instanceof String && ((String) cooldownObj).isEmpty())) {
+                report.addError(section.getCurrentPath(), "cooldown-ticks",
+                    "Invalid cooldown-ticks for power '" + powerId + "'");
+            }
+            int hitInterval = 1;
+            Object hitIntervalObj = map.get("hit-interval");
+            if (hitIntervalObj instanceof Number) {
+                hitInterval = ((Number) hitIntervalObj).intValue();
+                if (hitInterval <= 0) {
+                    report.addError(section.getCurrentPath(), "hit-interval",
+                        "hit-interval must be > 0 for power '" + powerId + "', got " + hitInterval);
+                    continue;
+                }
+            } else if (hitIntervalObj != null) {
+                report.addError(section.getCurrentPath(), "hit-interval",
+                    "Invalid hit-interval for power '" + powerId + "'");
+                continue;
+            }
+            BigDecimal chance = BigDecimal.ONE;
+            Object chanceObj = map.get("chance");
+            if (chanceObj instanceof Number) {
+                chance = BigDecimal.valueOf(((Number) chanceObj).doubleValue());
+            } else if (chanceObj instanceof String) {
+                try {
+                    chance = new BigDecimal((String) chanceObj);
+                } catch (NumberFormatException e) {
+                    report.addError(section.getCurrentPath(), "chance",
+                        "Invalid chance decimal for power '" + powerId + "': " + chanceObj);
+                    continue;
+                }
+            } else if (chanceObj != null) {
+                report.addError(section.getCurrentPath(), "chance",
+                    "Invalid chance for power '" + powerId + "'");
+                continue;
+            }
+            List<String> effectCandidates = new ArrayList<>();
+            Object effectObj = map.get("effect-candidates");
+            if (effectObj instanceof List) {
+                for (Object o : (List<?>) effectObj) {
+                    effectCandidates.add(String.valueOf(o));
+                }
+            }
+            int durationTicks = 0;
+            Object durationObj = map.get("duration-ticks");
+            if (durationObj instanceof Number) {
+                durationTicks = ((Number) durationObj).intValue();
+            }
+            int amplifier = 0;
+            Object amplifierObj = map.get("amplifier");
+            if (amplifierObj instanceof Number) {
+                amplifier = ((Number) amplifierObj).intValue();
+            }
+            int fireTicks = 0;
+            Object fireObj = map.get("fire-ticks");
+            if (fireObj instanceof Number) {
+                fireTicks = ((Number) fireObj).intValue();
+            }
+            BigDecimal healAmount = BigDecimal.ZERO;
+            Object healObj = map.get("heal-amount");
+            if (healObj instanceof Number) {
+                healAmount = BigDecimal.valueOf(((Number) healObj).doubleValue());
+            } else if (healObj instanceof String) {
+                try {
+                    healAmount = new BigDecimal((String) healObj);
+                } catch (NumberFormatException e) {
+                    report.addError(section.getCurrentPath(), "heal-amount",
+                        "Invalid heal-amount decimal for power '" + powerId + "': " + healObj);
+                    continue;
+                }
+            } else if (healObj != null) {
+                report.addError(section.getCurrentPath(), "heal-amount",
+                    "Invalid heal-amount for power '" + powerId + "'");
+                continue;
+            }
+            BigDecimal horizontalStrength = BigDecimal.ONE;
+            Object horizObj = map.get("horizontal-strength");
+            if (horizObj instanceof Number) {
+                horizontalStrength = BigDecimal.valueOf(((Number) horizObj).doubleValue());
+            } else if (horizObj instanceof String) {
+                try {
+                    horizontalStrength = new BigDecimal((String) horizObj);
+                } catch (NumberFormatException e) {
+                    report.addError(section.getCurrentPath(), "horizontal-strength",
+                        "Invalid horizontal-strength decimal for power '" + powerId + "': " + horizObj);
+                    continue;
+                }
+            } else if (horizObj != null) {
+                report.addError(section.getCurrentPath(), "horizontal-strength",
+                    "Invalid horizontal-strength for power '" + powerId + "'");
+                continue;
+            }
+            BigDecimal verticalStrength = BigDecimal.ZERO;
+            Object vertObj = map.get("vertical-strength");
+            if (vertObj instanceof Number) {
+                verticalStrength = BigDecimal.valueOf(((Number) vertObj).doubleValue());
+            } else if (vertObj instanceof String) {
+                try {
+                    verticalStrength = new BigDecimal((String) vertObj);
+                } catch (NumberFormatException e) {
+                    report.addError(section.getCurrentPath(), "vertical-strength",
+                        "Invalid vertical-strength decimal for power '" + powerId + "': " + vertObj);
+                    continue;
+                }
+            } else if (vertObj != null) {
+                report.addError(section.getCurrentPath(), "vertical-strength",
+                    "Invalid vertical-strength for power '" + powerId + "'");
+                continue;
+            }
+            List<ForgePowerDefinition.ActivationSlot> activationSlots = new ArrayList<>();
+            Object slotObj = map.get("activation-slots");
+            if (slotObj instanceof List) {
+                for (Object slotRaw : (List<?>) slotObj) {
+                    String slotStr = String.valueOf(slotRaw).trim().toUpperCase(Locale.ROOT);
+                    String normalized = slotStr.replace("_", "");
+                    if (normalized.equals("MAINHAND")) {
+                        activationSlots.add(ForgePowerDefinition.ActivationSlot.MAINHAND);
+                    } else if (normalized.equals("OFFHAND")) {
+                        activationSlots.add(ForgePowerDefinition.ActivationSlot.OFFHAND);
+                    } else if (normalized.equals("ARMOR") || normalized.equals("HEADCHESTLEGSFEET")) {
+                        activationSlots.add(ForgePowerDefinition.ActivationSlot.HEAD);
+                        activationSlots.add(ForgePowerDefinition.ActivationSlot.CHEST);
+                        activationSlots.add(ForgePowerDefinition.ActivationSlot.LEGS);
+                        activationSlots.add(ForgePowerDefinition.ActivationSlot.FEET);
+                    } else if (normalized.equals("HEAD") || normalized.equals("CHEST") || normalized.equals("LEGS") || normalized.equals("FEET")) {
+                        try {
+                            activationSlots.add(ForgePowerDefinition.ActivationSlot.valueOf(normalized));
+                        } catch (IllegalArgumentException e) {
+                            report.addError(section.getCurrentPath(), "activation-slots",
+                                "Unknown activation slot '" + slotStr + "' for power '" + powerId + "'");
+                        }
+                    } else {
+                        report.addError(section.getCurrentPath(), "activation-slots",
+                            "Unknown activation slot '" + slotStr + "' for power '" + powerId + "'");
+                    }
+                }
+            }
+            result.add(new ForgePowerDefinition(powerId, type, cooldownTicks, hitInterval, chance,
+                effectCandidates, durationTicks, amplifier, fireTicks, healAmount,
+                horizontalStrength, verticalStrength, activationSlots));
+        }
+        return result;
     }
 
     private BigDecimal parseDecimal(YamlValues values, String path, BigDecimal def) {

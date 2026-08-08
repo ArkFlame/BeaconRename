@@ -235,29 +235,102 @@ class CostServiceTest {
     }
 
     @Test
-    void quoteWithZeroRequirementsReturnsZeroCost() {
-        TierRequirements zeroReq = new TierRequirements(
+    void quoteAllDisabledRequirementsIsFree() {
+        TierRequirements allDisabledReq = new TierRequirements(
             TierRequirements.Combine.ALL,
             new TierRequirements.XpRequirement(false, 0),
             new TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
             new TierRequirements.ItemsRequirement(false, Collections.emptyList())
         );
-        CostQuote quote = costService.quote(player, zeroReq);
-        assertEquals(0, quote.getXpRequired());
-        assertEquals(BigDecimal.ZERO, quote.getMoneyRequired());
+
+        CostQuote quote = costService.quote(player, allDisabledReq);
+        assertTrue(quote.isAffordable(), "All disabled requirements should be free");
     }
 
     @Test
-    void chargeWithEmptyItemListSucceeds() {
-        Player richPlayer = createFakePlayerWithLevel(100);
-        TierRequirements xpReq = new TierRequirements(
+    void quoteAllMoneyWithUnavailableEconomyFailsWithoutBalanceCall() {
+        economyService.available = false;
+        economyService.fakeBalance = new BigDecimal("999999");
+
+        TierRequirements moneyReq = new TierRequirements(
             TierRequirements.Combine.ALL,
-            new TierRequirements.XpRequirement(true, 10),
-            new TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
+            new TierRequirements.XpRequirement(false, 0),
+            new TierRequirements.MoneyRequirement(true, new BigDecimal("100")),
             new TierRequirements.ItemsRequirement(false, Collections.emptyList())
         );
-        ChargeReceipt receipt = costService.charge(richPlayer, xpReq, Collections.emptyList());
+
+        CostQuote quote = costService.quote(player, moneyReq);
+        assertFalse(quote.isAffordable(), "Should fail when economy unavailable even with high balance");
+        assertEquals(new BigDecimal("0"), quote.getMoneyAvailable());
+    }
+
+    @Test
+    void chargeAllMoneyWithUnavailableEconomyFailsWithoutWithdrawCall() {
+        economyService.available = false;
+        economyService.fakeBalance = new BigDecimal("999999");
+
+        TierRequirements moneyReq = new TierRequirements(
+            TierRequirements.Combine.ALL,
+            new TierRequirements.XpRequirement(false, 0),
+            new TierRequirements.MoneyRequirement(true, new BigDecimal("100")),
+            new TierRequirements.ItemsRequirement(false, Collections.emptyList())
+        );
+
+        ChargeReceipt receipt = costService.charge(player, moneyReq, Collections.singletonList(new org.bukkit.inventory.ItemStack(Material.AIR)));
+        assertFalse(receipt.isSuccess(), "Should fail when economy unavailable");
+        assertEquals(BigDecimal.ZERO, receipt.getMoneyCharged());
+    }
+
+    @Test
+    void exactXpAndMoneyRemovalMatchesRequirements() {
+        MutableInt mutableLevel = new MutableInt(150);
+        Player player = createFakePlayerWithMutableLevel(mutableLevel);
+        economyService.fakeBalance = new BigDecimal("1000");
+
+        TierRequirements req = new TierRequirements(
+            TierRequirements.Combine.ALL,
+            new TierRequirements.XpRequirement(true, 75),
+            new TierRequirements.MoneyRequirement(true, new BigDecimal("250")),
+            new TierRequirements.ItemsRequirement(false, Collections.emptyList())
+        );
+
+        int levelBefore = mutableLevel.value;
+        BigDecimal balanceBefore = economyService.fakeBalance;
+
+        ChargeReceipt receipt = costService.charge(player, req, Collections.singletonList(new org.bukkit.inventory.ItemStack(Material.AIR)));
         assertTrue(receipt.isSuccess());
+        assertEquals(75, receipt.getXpCharged());
+        assertEquals(0, new BigDecimal("250").compareTo(receipt.getMoneyCharged()));
+        assertEquals(levelBefore - 75, mutableLevel.value);
+        assertEquals(0, balanceBefore.compareTo(economyService.fakeBalance.add(new BigDecimal("250"))));
+    }
+
+    @Test
+    void exactRefundRestoresXpAndMoneyToOriginalValues() {
+        MutableInt mutableLevel = new MutableInt(200);
+        Player player = createFakePlayerWithMutableLevel(mutableLevel);
+        economyService.fakeBalance = new BigDecimal("500");
+
+        TierRequirements req = new TierRequirements(
+            TierRequirements.Combine.ALL,
+            new TierRequirements.XpRequirement(true, 100),
+            new TierRequirements.MoneyRequirement(true, new BigDecimal("200")),
+            new TierRequirements.ItemsRequirement(false, Collections.emptyList())
+        );
+
+        int levelBefore = mutableLevel.value;
+        BigDecimal balanceBefore = economyService.fakeBalance;
+
+        ChargeReceipt receipt = costService.charge(player, req, Collections.singletonList(new org.bukkit.inventory.ItemStack(Material.AIR)));
+        assertTrue(receipt.isSuccess());
+
+        int levelAfterCharge = mutableLevel.value;
+        BigDecimal balanceAfterCharge = economyService.fakeBalance;
+
+        costService.refund(player, receipt);
+
+        assertEquals(levelBefore, mutableLevel.value, "XP should be restored to original level");
+        assertEquals(0, balanceBefore.compareTo(economyService.fakeBalance), "Money should be restored to original balance");
     }
 
     private static Player createFakePlayer() {
@@ -272,8 +345,15 @@ class CostServiceTest {
         return createFakePlayerWithState(level, false);
     }
 
+    private static org.bukkit.inventory.PlayerInventory createFakePlayerInventory() {
+        org.bukkit.inventory.PlayerInventory mockInventory = mock(org.bukkit.inventory.PlayerInventory.class);
+        when(mockInventory.getContents()).thenReturn(new org.bukkit.inventory.ItemStack[36]);
+        return mockInventory;
+    }
+
     private static Player createFakePlayerWithState(int level, boolean hasBypass) {
         MutableInt mutableLevel = new MutableInt(level);
+        org.bukkit.inventory.PlayerInventory fakeInventory = createFakePlayerInventory();
         InvocationHandler handler = (proxy, method, args) -> {
             String name = method.getName();
             switch (name) {
@@ -289,7 +369,7 @@ class CostServiceTest {
                 case "getServer": return null;
                 case "getWorld": return null;
                 case "getLocation": return null;
-                case "getInventory": return null;
+                case "getInventory": return fakeInventory;
                 case "isPermissionSet": return false;
                 case "isOp": return false;
                 case "setOp": return null;
@@ -449,6 +529,7 @@ class CostServiceTest {
     }
 
     private static Player createFakePlayerWithMutableLevel(MutableInt mutableLevel) {
+        org.bukkit.inventory.PlayerInventory fakeInventory = createFakePlayerInventory();
         InvocationHandler handler = (proxy, method, args) -> {
             String name = method.getName();
             switch (name) {
@@ -461,7 +542,7 @@ class CostServiceTest {
                 case "getServer": return null;
                 case "getWorld": return null;
                 case "getLocation": return null;
-                case "getInventory": return null;
+                case "getInventory": return fakeInventory;
                 case "isPermissionSet": return false;
                 case "isOp": return false;
                 case "setOp": return null;

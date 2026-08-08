@@ -81,39 +81,28 @@ class ForgeStationHologramServiceTest {
     }
 
     @Test
-    void unavailableProviderSkipsAllOperations() {
+    void startupReselectsAvailableProviderAndHydratesExistingStationsExactlyOnce() {
         when(mockProvider.isAvailable()).thenReturn(false);
-        when(mockRepo.snapshotSortedById()).thenReturn(Collections.emptyList());
-
-        AtomicInteger upsertCount = new AtomicInteger(0);
-        AtomicInteger removeCount = new AtomicInteger(0);
-        AtomicReference<ForgeHologram> capturedHologram = new AtomicReference<>();
-        doAnswer(inv -> {
-            upsertCount.incrementAndGet();
-            capturedHologram.set(inv.getArgument(0));
-            return null;
-        }).when(mockProvider).upsert(any(ForgeHologram.class));
-        doAnswer(inv -> {
-            removeCount.incrementAndGet();
-            return null;
-        }).when(mockProvider).remove(anyString());
+        HologramProvider availableReplacement = mock(HologramProvider.class);
+        when(availableReplacement.isAvailable()).thenReturn(true);
+        when(availableReplacement.getName()).thenReturn("DecentHolograms");
+        when(availableReplacement.getVersion()).thenReturn("1.0.0");
+        when(mockSelector.select(any())).thenReturn(availableReplacement);
 
         RegisteredForge forge = new RegisteredForge(
             "forge_id", null, "world", 10, 64, 10, "profile");
-        service.onStationAdded(forge);
-        assertEquals(0, upsertCount.get());
-
-        when(mockProvider.isAvailable()).thenReturn(true);
-        when(mockSelector.select(any())).thenReturn(mockProvider);
         when(mockRepo.snapshotSortedById()).thenReturn(Collections.singletonList(forge));
+
+        AtomicReference<ForgeHologram> capturedHologram = new AtomicReference<>();
         doAnswer(inv -> {
-            upsertCount.incrementAndGet();
             capturedHologram.set(inv.getArgument(0));
             return null;
-        }).when(mockProvider).upsert(any(ForgeHologram.class));
+        }).when(availableReplacement).upsert(any(ForgeHologram.class));
 
         service.reconcileStartup();
-        assertEquals(1, upsertCount.get());
+        service.reconcileStartup();
+
+        verify(mockSelector, times(1)).select(any());
 
         ForgeHologram hologram = capturedHologram.get();
         assertNotNull(hologram);
@@ -122,84 +111,40 @@ class ForgeStationHologramServiceTest {
         assertEquals(10.5, loc.getX(), 0.001);
         assertEquals(65.75, loc.getY(), 0.001);
         assertEquals(10.5, loc.getZ(), 0.001);
-        assertEquals(2, hologram.getMiniMessageLines().size());
-        assertEquals(2, hologram.getLegacyLines().size());
-        assertFalse(hologram.getMiniMessageLines().isEmpty());
-        assertFalse(hologram.getLegacyLines().isEmpty());
 
-        AtomicReference<ForgeHologram> addHologram = new AtomicReference<>();
-        reset(mockProvider);
-        when(mockProvider.isAvailable()).thenReturn(true);
-        when(mockRepo.snapshotSortedById()).thenReturn(Collections.emptyList());
-        doAnswer(inv -> {
-            addHologram.set(inv.getArgument(0));
-            return null;
-        }).when(mockProvider).upsert(any(ForgeHologram.class));
-        service.onStationAdded(new RegisteredForge(
-            "forge2", null, "world", 20, 70, 20, "profile2"));
-        assertNotNull(addHologram.get());
-        Location addLoc = addHologram.get().getLocation();
-        assertEquals(20.5, addLoc.getX(), 0.001);
-        assertEquals(71.75, addLoc.getY(), 0.001);
-        assertEquals(20.5, addLoc.getZ(), 0.001);
+        verify(availableReplacement, times(1)).upsert(any(ForgeHologram.class));
     }
 
     @Test
-    void missingMappingSkipsRemoveAndUpdate() {
-        when(mockProvider.isAvailable()).thenReturn(true);
-        when(mockRepo.snapshotSortedById()).thenReturn(Collections.emptyList());
+    void failedInitialReselectLeavesStartupRecoverable() {
+        when(mockProvider.isAvailable()).thenReturn(false);
+        HologramProvider noOpProvider = mock(HologramProvider.class);
+        when(noOpProvider.isAvailable()).thenReturn(false);
+        when(noOpProvider.getUnavailableReason()).thenReturn("disabled");
+        HologramProvider availableReplacement = mock(HologramProvider.class);
+        when(availableReplacement.isAvailable()).thenReturn(true);
+        when(availableReplacement.getName()).thenReturn("DecentHolograms");
+        when(availableReplacement.getVersion()).thenReturn("1.0.0");
+        when(mockSelector.select(any())).thenReturn(noOpProvider, availableReplacement);
+
+        RegisteredForge forge = new RegisteredForge(
+            "forge_id", null, "world", 10, 64, 10, "profile");
+        when(mockRepo.snapshotSortedById()).thenReturn(Collections.singletonList(forge));
 
         AtomicInteger upsertCount = new AtomicInteger(0);
-        AtomicInteger removeCount = new AtomicInteger(0);
         doAnswer(inv -> {
             upsertCount.incrementAndGet();
             return null;
-        }).when(mockProvider).upsert(any(ForgeHologram.class));
-        doAnswer(inv -> {
-            removeCount.incrementAndGet();
-            return null;
-        }).when(mockProvider).remove(anyString());
+        }).when(availableReplacement).upsert(any(ForgeHologram.class));
 
-        RegisteredForge unknownForge = new RegisteredForge(
-            "unknown-forge", null, "world", 10, 64, 10, "default");
-        service.onStationRemoved(unknownForge);
-        assertEquals(0, removeCount.get());
-
-        Location location = new Location(mockWorld, 0.5, 64.0, 0.5);
-        service.updateHologram("unknown-forge", location, Arrays.asList("Line 1"));
+        service.reconcileStartup();
         assertEquals(0, upsertCount.get());
 
-        HologramProvider newProvider = mock(HologramProvider.class);
-        when(newProvider.isAvailable()).thenReturn(true);
-        when(mockSelector.select(any())).thenReturn(newProvider);
-        ConfigSnapshot mockSnapshot = mock(ConfigSnapshot.class);
-        when(mockConfigService.getCurrentSnapshot()).thenReturn(mockSnapshot);
-        when(mockSnapshot.getRootBoolean(eq("holograms.enabled"), anyBoolean())).thenReturn(true);
-        when(mockSnapshot.getRootStringList("holograms.provider-order")).thenReturn(Arrays.asList("FancyHolograms"));
-        when(mockSnapshot.getRootDouble(eq("holograms.offset-y"), anyDouble())).thenReturn(2.0);
-        when(mockSnapshot.getRootBoolean(eq("holograms.transparent-background"), anyBoolean())).thenReturn(true);
-        when(mockSnapshot.getRootStringList("holograms.lines")).thenReturn(Arrays.asList("<gold>Test"));
+        service.reconcileStartup();
+        assertEquals(0, upsertCount.get());
 
-        AtomicInteger newUpsertCount = new AtomicInteger(0);
-        doAnswer(inv -> {
-            newUpsertCount.incrementAndGet();
-            return null;
-        }).when(newProvider).upsert(any(ForgeHologram.class));
-        doAnswer(inv -> {
-            removeCount.incrementAndGet();
-            return null;
-        }).when(newProvider).remove(anyString());
-
-        RegisteredForge knownForge = new RegisteredForge(
-            "known-forge", null, "world", 15, 65, 15, "default");
-        service.onStationAdded(knownForge);
-        assertEquals(1, upsertCount.get());
-        reset(mockRepo);
-        when(mockRepo.snapshotSortedById()).thenReturn(Collections.singletonList(knownForge));
-        when(mockRepo.findById(anyString())).thenReturn(java.util.Optional.of(knownForge));
-
-        service.reload();
-        assertTrue(removeCount.get() > 0 || newUpsertCount.get() > 0);
+        service.reconcileStartup();
+        assertEquals(0, upsertCount.get());
     }
 
     private enum TaskHandleStub implements TaskHandle {

@@ -1,13 +1,14 @@
 package com.arkflame.flameforge.menu;
 
-import org.bukkit.Bukkit;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 public final class InventoryMenuBuilder {
     private final InventoryFactory factory;
@@ -16,7 +17,8 @@ public final class InventoryMenuBuilder {
     private final String legacyTitle;
     private ItemStack background;
     private final Map<Integer, ItemStack> slotOverlays = new HashMap<>();
-    private boolean built = false;
+    private final Set<Integer> explicitEmptySlots = new HashSet<>();
+    private boolean rendered = false;
 
     public InventoryMenuBuilder(InventoryFactory factory, InventoryHolder holder, int size, String legacyTitle) {
         this.factory = Objects.requireNonNull(factory);
@@ -43,12 +45,14 @@ public final class InventoryMenuBuilder {
         if (item == null) {
             throw new IllegalArgumentException("Slot item cannot be null");
         }
+        this.explicitEmptySlots.remove(slot);
         this.slotOverlays.put(slot, item.clone());
         return this;
     }
 
     public InventoryMenuBuilder restoreBackground(int slot) {
         this.slotOverlays.remove(slot);
+        this.explicitEmptySlots.remove(slot);
         return this;
     }
 
@@ -56,26 +60,49 @@ public final class InventoryMenuBuilder {
         if (slot < 0 || slot >= size) {
             throw new IndexOutOfBoundsException("Slot out of bounds: " + slot);
         }
-        this.slotOverlays.put(slot, null);
+        this.slotOverlays.remove(slot);
+        this.explicitEmptySlots.add(slot);
         return this;
     }
 
     public Inventory build() {
-        if (built) {
-            throw new IllegalStateException("Builder can only be built once");
-        }
+        claimRender();
         if (background == null) {
             throw new IllegalStateException("Background must be set before build");
         }
-        built = true;
         Inventory inv = factory.create(holder, size, legacyTitle);
-        ItemStack bg = background.clone();
-        for (int i = 0; i < size; i++) {
-            inv.setItem(i, bg);
-        }
-        for (Map.Entry<Integer, ItemStack> e : slotOverlays.entrySet()) {
-            inv.setItem(e.getKey(), e.getValue());
-        }
+        renderInto(inv);
         return inv;
+    }
+
+    public void applyTo(Inventory inventory) {
+        claimRender();
+        if (background == null) {
+            throw new IllegalStateException("Background must be set before applyTo");
+        }
+        Objects.requireNonNull(inventory, "Inventory cannot be null");
+        if (inventory.getSize() != size) {
+            throw new IllegalArgumentException("Inventory size mismatch: expected " + size + ", got " + inventory.getSize());
+        }
+        renderInto(inventory);
+    }
+
+    private void claimRender() {
+        if (rendered) {
+            throw new IllegalStateException("Builder can only be rendered once");
+        }
+        rendered = true;
+    }
+
+    private void renderInto(Inventory inventory) {
+        for (int i = 0; i < size; i++) {
+            if (explicitEmptySlots.contains(i)) {
+                inventory.setItem(i, null);
+            } else if (slotOverlays.containsKey(i)) {
+                inventory.setItem(i, slotOverlays.get(i).clone());
+            } else {
+                inventory.setItem(i, background.clone());
+            }
+        }
     }
 }

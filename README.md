@@ -23,7 +23,7 @@ FlameForge is a highly customizable Minecraft forge/reforge plugin for Spigot, P
 mvn clean package
 ```
 
-The compiled JAR will be at `target/FlameForge-1.0.0.jar`.
+The compiled JAR will be at `target/FlameForge-1.0.2.jar`.
 
 ### Installation
 
@@ -53,14 +53,14 @@ FlameForge will operate without Vault. Economy features require Vault and a comp
 
 ## Menu
 
-The forge GUI (27-slot single-input menu) contains:
+The forge GUI is a 54-slot single-input menu with these key slots:
 
-- **Input slot** (center): Place the item to reforge.
-- **Tier buttons** (right side): Tier selection with automatic next-tier progression.
-- **Confirm button** (bottom-center): Execute the forge with selected tier.
-- **Navigation** (bottom corners): Previous/Next page, Close.
+- **Input slot (slot 22)**: Center slot — place the item to reforge.
+- **Confirm button (slot 31)**: Bottom-center — executes the forge.
 
-**Note:** Catalyst, ward, and pity UI slots have been removed. Tier requirements replace catalyst mechanics. Automatic tier progression replaces manual tier selection.
+**Tier determination:** There are no tier buttons. The current item identity (stored on the item) determines the current tier. The forge automatically targets the exact next configured tier based on that identity. The confirm button lore shows the tier, requirements, chances, and available variants.
+
+**Note:** Catalyst, ward, and pity UI slots have been removed. Tier requirements replace catalyst mechanics.
 
 ## Tier Schema v2
 
@@ -151,7 +151,7 @@ Tiers have a `level` field instead of `priority`. Automatic next-tier progressio
 | File                    | Purpose                                      |
 |-------------------------|----------------------------------------------|
 | `config.yml`            | Root plugin settings, announcements |
-| `stations.yml`          | Registered forge station locations (auto-managed) |
+| `stations/<id>.yml`     | Individual station files (one per station)    |
 | `tiers/*.yml`           | Individual tier definitions (schema v2)         |
 | `messages.yml`          | Custom message strings                       |
 | `menus.yml`             | GUI layout and styling                       |

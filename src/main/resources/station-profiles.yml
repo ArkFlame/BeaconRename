@@ -8,17 +8,48 @@
 
 # Default profile - standard MMO forge experience
 default:
-  # Station identifier (can be same as profile id or custom)
   station-id: default
-  # Maximum tier level accessible at stations with this profile (-1 = all tiers)
   max-tier: -1
-  # Required permissions to use stations with this profile (empty = anyone)
   permissions: []
-  # Menu profile to use
   menu: default
-  # Animation profile to use
   animation: default
-  # Announcement broadcast radius (0 = global, >0 = local)
   announcement-radius: 0
 
+# Basic profile - limited tiers for new players
+basic:
+  station-id: basic
+  max-tier: 3
+  permissions: []
+  menu: default
+  animation: default
+  announcement-radius: 0
+
+# Premium profile - all tiers, requires permission
+premium:
+  station-id: premium
+  max-tier: -1
+  permissions:
+    - flameforge.premium
+  menu: default
+  animation: default
+  announcement-radius: 16
+
+# Admin profile - grants all command access
+admin:
+  station-id: admin
+  max-tier: -1
+  permissions:
+    - flameforge.admin
+  menu: default
+  animation: default
+  announcement-radius: 0
+
+# Compact profile - uses smaller menu
+compact-profile:
+  station-id: compact
+  max-tier: 5
+  permissions: []
+  menu: compact
+  animation: default
+  announcement-radius: 0
 

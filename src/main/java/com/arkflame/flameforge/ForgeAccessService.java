@@ -18,10 +18,12 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Collections;
+import java.util.logging.Level;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
 
 public final class ForgeAccessService {
 
@@ -82,12 +84,12 @@ public final class ForgeAccessService {
             return new OpenResult(OpenStatus.NO_ALLOWED_TIER, stationId, null, null, null);
         }
 
-        public static OpenResult schedulerRejected() {
-            return new OpenResult(OpenStatus.SCHEDULER_REJECTED, null, null, null, null);
+        public static OpenResult schedulerRejected(String stationId, String reason, String reference) {
+            return new OpenResult(OpenStatus.SCHEDULER_REJECTED, stationId, null, reason, reference);
         }
 
-        public static OpenResult menuOpenFailed(String reason, String reference) {
-            return new OpenResult(OpenStatus.MENU_OPEN_FAILED, null, null, reason, reference);
+        public static OpenResult menuOpenFailed(String stationId, String reason, String reference) {
+            return new OpenResult(OpenStatus.MENU_OPEN_FAILED, stationId, null, reason, reference);
         }
 
         public static OpenResult playerRetired() {
@@ -106,6 +108,7 @@ public final class ForgeAccessService {
     private final ForgeService forgeService;
     private final ParticleBridge particleBridge;
     private final TargetBlockBridge targetBlockBridge;
+    private final AtomicLong openFailureSequence = new AtomicLong();
 
     public ForgeAccessService(JavaPlugin plugin, SchedulerBridge scheduler,
                             ForgeStationService stationService, StationRepository stationRepository,
@@ -235,7 +238,7 @@ public final class ForgeAccessService {
 
     private void persistPlayerStateMerge(java.util.UUID uuid, PlayerForgeState state) {
         playerStateRepository.updateAndSave(uuid, existing -> {
-            int tier = state.getActiveTierLevel();
+            int tier = existing != null ? existing.tier : 0;
             long pityCooldown = existing != null ? existing.pityCooldown : 0L;
             return new PlayerStateRepository.PlayerState(uuid, tier, pityCooldown);
         });
@@ -243,6 +246,7 @@ public final class ForgeAccessService {
 
     private CompletableFuture<OpenResult> openMenuOnEntityScheduler(Player player, PlayerForgeState session, String stationId) {
         CompletableFuture<OpenResult> future = new CompletableFuture<>();
+        String menuFailureRef = "FF-MENU-OPEN-" + openFailureSequence.incrementAndGet();
 
         try {
             scheduler.runEntity(player, () -> {
@@ -251,16 +255,30 @@ public final class ForgeAccessService {
                         future.complete(OpenResult.playerOffline());
                         return;
                     }
-                    menuService.open(player, session);
+                    ForgeMenuService.MenuResult menuResult = menuService.open(player, session);
+                    if (!menuResult.isOpened()) {
+                        String reason = menuResult.getReason() != null ? menuResult.getReason() : "render failed";
+                        String ref = menuResult.getReference() != null ? menuResult.getReference() : menuFailureRef;
+                        plugin.getLogger().warning("Forge menu open failed for player " + player.getUniqueId() + ": " + reason);
+                        future.complete(OpenResult.menuOpenFailed(stationId, reason, ref));
+                        return;
+                    }
                     future.complete(OpenResult.opened(stationId));
                 } catch (Exception e) {
-                    future.complete(OpenResult.menuOpenFailed(e.getMessage(), stationId));
+                    String reason = e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : "");
+                    plugin.getLogger().severe("Forge menu open failed:\nplayer=" + player.getUniqueId() + "\nstation=" + stationId + "\nreference=" + menuFailureRef);
+                    plugin.getLogger().log(Level.SEVERE, "Forge menu open failed", e);
+                    future.complete(OpenResult.menuOpenFailed(stationId, reason, menuFailureRef));
                 }
             }, () -> {
                 future.complete(OpenResult.playerRetired());
             });
         } catch (Exception e) {
-            future.complete(OpenResult.schedulerRejected());
+            String schedulerFailureRef = "FF-MENU-SCHEDULER-" + openFailureSequence.incrementAndGet();
+            String reason = e.getClass().getSimpleName() + (e.getMessage() != null ? ": " + e.getMessage() : "");
+            plugin.getLogger().severe("Forge menu scheduler rejected:\nplayer=" + player.getUniqueId() + "\nstation=" + stationId + "\nreference=" + schedulerFailureRef);
+            plugin.getLogger().log(Level.SEVERE, "Forge menu scheduler rejected", e);
+            future.complete(OpenResult.schedulerRejected(stationId, reason, schedulerFailureRef));
         }
 
         return future;

@@ -52,13 +52,16 @@ public final class ChargeReceipt {
     public static final class RemovedItemStack {
         private final int sourceSlot;
         private final ItemStack clonedStack;
+        private final int exactRemovedAmount;
 
-        public RemovedItemStack(int sourceSlot, ItemStack clonedStack) {
+        public RemovedItemStack(int sourceSlot, ItemStack clonedStack, int exactRemovedAmount) {
             this.sourceSlot = sourceSlot;
             this.clonedStack = clonedStack != null ? clonedStack.clone() : null;
+            this.exactRemovedAmount = exactRemovedAmount;
         }
 
         public int getSourceSlot() { return sourceSlot; }
         public ItemStack getClonedStack() { return clonedStack != null ? clonedStack.clone() : null; }
+        public int getExactRemovedAmount() { return exactRemovedAmount; }
     }
 }

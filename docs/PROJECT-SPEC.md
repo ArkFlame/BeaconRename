@@ -1,6 +1,6 @@
 # FlameForge Project Specification
 
-This document constitutes the acceptance contract for FlameForge version 1.0.0.
+This document constitutes the acceptance contract for FlameForge version 1.0.2.
 
 ## Overview
 
@@ -8,11 +8,11 @@ FlameForge is a forge/reforge system for Minecraft servers. Players place items 
 
 ## Implemented Features
 
-The following features are selected for inclusion in version 1.0.0:
+The following features are selected for inclusion in version 1.0.2:
 
 ### F001 — Registered Forge Stations
 
-Players interact only with forge blocks that have been explicitly registered via the `/flameforge station add` command. Any non-air block can be registered; no specific block material is required. Registered forge data stores world, coordinates, and profile assignment in `stations.yml`.
+Players interact only with forge blocks that have been explicitly registered via the `/flameforge station add` command. Any non-air block can be registered; no specific block material is required. Registered forge data stores world, coordinates, and profile assignment in individual `stations/<id>.yml` files.
 
 **Acceptance criteria:**
 - Station registration requires player proximity to target block (6 blocks).
@@ -125,15 +125,15 @@ powers:
 
 Powers are applied via outcomes using `power: <power-id>`.
 
-## 27-Slot Menu
+## 54-Slot Menu
 
-The streamlined menu layout:
-- **Input slot** (center): Single item input
-- **Tier buttons** (right): Tier selection with automatic next-tier
-- **Confirm button** (bottom-center): Execute forge
-- **Navigation** (bottom corners): Paging and close
+The 54-slot forge menu layout:
+- **Input slot** (slot 22, center): Single item input
+- **Confirm button** (slot 31, bottom-center): Execute forge — lore shows tier/requirements/chances/variants
 
-**Removed:** Catalyst slot, ward slot, pity counter
+**Tier determination:** No tier buttons. The item's current identity determines current tier. The forge automatically targets the exact next configured tier.
+
+**Removed:** Catalyst slot, ward slot, pity counter, tier selection buttons
 
 ## Excluded Features
 
@@ -163,7 +163,7 @@ Deleting a tier file removes that tier from the active configuration. Players wh
 
 ## API Contract
 
-The plugin exposes no public API in version 1.0.0. External integration occurs through:
+The plugin exposes no public API in version 1.0.2. External integration occurs through:
 
 - Command-based hooks (outcome `COMMANDS` type)
 - Vault economy (if present)

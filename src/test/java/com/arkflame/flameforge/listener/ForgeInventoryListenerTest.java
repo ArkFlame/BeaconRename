@@ -1,27 +1,24 @@
 package com.arkflame.flameforge.listener;
 
-import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
-import com.arkflame.flameforge.compat.scheduler.TaskHandle;
-import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.menu.ForgeInventoryHolder;
-import com.arkflame.flameforge.menu.ForgeMenuContext;
-import com.arkflame.flameforge.menu.ForgeMenuService;
-import com.arkflame.flameforge.model.PlayerForgeState;
-import org.bukkit.Location;
-import org.bukkit.entity.Entity;
+import com.arkflame.flameforge.menu.ForgeMenuForgeService;
+import com.arkflame.flameforge.menu.ForgeMenuInputService;
+import com.arkflame.flameforge.menu.ForgeMenuViewResolver;
+import com.arkflame.flameforge.menu.MenuLayout;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.Optional;
+import java.util.Collections;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -30,300 +27,255 @@ import static org.mockito.Mockito.*;
 
 class ForgeInventoryListenerTest {
 
-    private ControlledScheduler scheduler;
-    private ForgeService forgeService;
-    private ForgeMenuService menuService;
-    private Player player;
-    private Inventory inventory;
-    private ForgeInventoryHolder menuHolder;
+    private ForgeMenuViewResolver viewResolver;
+    private ForgeMenuInputService inputService;
+    private ForgeMenuForgeService forgeService;
     private ForgeInventoryListener listener;
+
+    private Player player;
+    private Inventory topInventory;
+    private Inventory bottomInventory;
+    private InventoryView view;
+    private ForgeInventoryHolder holder;
+    private UUID playerId;
 
     @BeforeEach
     void setUp() {
-        scheduler = new ControlledScheduler();
-        forgeService = mock(ForgeService.class);
-        menuService = mock(ForgeMenuService.class);
-        player = mock(Player.class);
+        viewResolver = mock(ForgeMenuViewResolver.class);
+        inputService = mock(ForgeMenuInputService.class);
+        forgeService = mock(ForgeMenuForgeService.class);
 
-        UUID playerId = UUID.randomUUID();
+        listener = new ForgeInventoryListener(viewResolver, inputService, forgeService);
+
+        player = mock(Player.class);
+        playerId = UUID.randomUUID();
         when(player.getUniqueId()).thenReturn(playerId);
         when(player.isOnline()).thenReturn(true);
 
-        PlayerForgeState session = PlayerForgeState.of(playerId.toString())
-            .withActiveStation("station", 1);
-        menuHolder = new ForgeInventoryHolder(UUID.randomUUID(), playerId, "station");
-        inventory = mock(Inventory.class);
-        menuHolder.setInventory(inventory);
-        when(inventory.getHolder()).thenReturn(menuHolder);
-        when(inventory.getSize()).thenReturn(54);
-        when(inventory.getContents()).thenReturn(new ItemStack[54]);
+        topInventory = mock(Inventory.class);
+        bottomInventory = mock(Inventory.class);
+        view = mock(InventoryView.class);
+        holder = new ForgeInventoryHolder(UUID.randomUUID(), playerId, "station");
 
-        InventoryView view = mock(InventoryView.class);
+        when(topInventory.getHolder()).thenReturn(holder);
+        when(topInventory.getSize()).thenReturn(54);
+        when(bottomInventory.getHolder()).thenReturn(null);
+        when(bottomInventory.getType()).thenReturn(InventoryType.PLAYER);
+
+        when(view.getTopInventory()).thenReturn(topInventory);
+        when(view.getBottomInventory()).thenReturn(bottomInventory);
         when(player.getOpenInventory()).thenReturn(view);
-        when(view.getTopInventory()).thenReturn(inventory);
-
-        when(menuService.isCurrentMenu(any(Player.class), any(ForgeInventoryHolder.class))).thenReturn(true);
-        when(menuService.closeIfCurrent(any(UUID.class), any(ForgeInventoryHolder.class))).thenReturn(Optional.empty());
-
-        listener = new ForgeInventoryListener(
-            mock(JavaPlugin.class), menuService, scheduler
-        );
     }
 
     @Test
-    void menuOpenedByServiceImmediatelyAuthorizesClickAndDrag() {
-        InventoryClickEvent clickEvent = confirmClick();
-        clickEvent.setCancelled(false);
+    void normalPlayerInventoryClickIsUntouched() {
+        ForgeMenuViewResolver.ResolvedView notForgeView = mockResolvedView(ForgeMenuViewResolver.Status.NOT_FORGE, null, null, null);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(notForgeView);
 
-        listener.onInventoryClick(clickEvent);
+        InventoryClickEvent event = createClickEvent(bottomInventory, 0, ClickType.LEFT);
 
-        verify(menuService).isCurrentMenu(eq(player), eq(menuHolder));
+        listener.onInventoryClick(event);
+
+        verify(inputService, never()).requestInsertOne(any(), any(), any(), anyInt(), any());
+        verify(inputService, never()).requestReturnInput(any(), any());
+        verify(forgeService, never()).requestConfirm(any(), any());
     }
 
     @Test
-    void confirmClickProcessesOnEntityScheduler() {
-        ForgeMenuContext context = createOpenContext();
-        when(menuService.getContext(any(UUID.class))).thenReturn(context);
+    void normalPlayerInventoryDragIsUntouched() {
+        ForgeMenuViewResolver.ResolvedView notForgeView = mockResolvedView(ForgeMenuViewResolver.Status.NOT_FORGE, null, null, null);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(notForgeView);
 
-        listener.onInventoryClick(confirmClick());
+        InventoryDragEvent event = mockDragEvent(bottomInventory, Collections.singleton(0));
 
-        assertEquals(1, scheduler.entityTaskCount());
+        listener.onInventoryDrag(event);
+
+        verify(inputService, never()).requestCloseStaleView(any(), any());
     }
 
     @Test
-    void secondConfirmProcessesAnotherTask() {
-        ForgeMenuContext context = createOpenContext();
-        when(menuService.getContext(any(UUID.class))).thenReturn(context);
+    void currentForgeBottomLeftClickCancelsAndRoutesInsert() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
 
-        listener.onInventoryClick(confirmClick());
-        listener.onInventoryClick(confirmClick());
+        ItemStack currentItem = new ItemStack(org.bukkit.Material.DIAMOND);
+        InventoryClickEvent event = createBottomClickEvent(currentItem, ClickType.LEFT, true);
 
-        assertEquals(2, scheduler.entityTaskCount());
+        listener.onInventoryClick(event);
+
+        verify(event).setCancelled(true);
+        verify(inputService).requestInsertOne(eq(player), eq(holder), eq(bottomInventory), eq(0), eq(currentItem));
     }
 
     @Test
-    void menuCloseBeforeAsyncCompletionPreventsExecution() {
-        PlayerForgeState session = PlayerForgeState.of(player.getUniqueId().toString())
-            .withActiveStation("station", 1);
-        ForgeMenuContext context = new ForgeMenuContext(
-            UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis()
-        );
-        when(menuService.closeIfCurrent(any(UUID.class), any(ForgeInventoryHolder.class)))
-            .thenReturn(Optional.of(context));
-        when(menuService.getContext(any(UUID.class))).thenReturn(context);
+    void currentForgeBottomShiftClickCancelsAndRoutesInsert() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
 
-        ForgeInventoryListener testListener = new ForgeInventoryListener(
-            mock(JavaPlugin.class), menuService, scheduler
-        );
+        ItemStack currentItem = new ItemStack(org.bukkit.Material.DIAMOND);
+        InventoryClickEvent event = createBottomShiftClickEvent(currentItem);
 
-        testListener.onInventoryClick(confirmClick());
-        scheduler.runNextEntityTask();
-        testListener.onInventoryClose(closeEvent());
+        listener.onInventoryClick(event);
 
-        assertEquals(0, scheduler.entityTaskCount());
-        verify(forgeService, never()).createPlan(any(Player.class), any(PlayerForgeState.class), any(ItemStack.class));
+        verify(event).setCancelled(true);
+        verify(inputService).requestInsertOne(eq(player), eq(holder), eq(bottomInventory), eq(0), eq(currentItem));
     }
 
     @Test
-    void normalAndExplicitCloseSettleExactlyOnceAndClearContext() {
-        PlayerForgeState session = PlayerForgeState.of(player.getUniqueId().toString())
-            .withActiveStation("station", 1);
-        ForgeMenuContext context = new ForgeMenuContext(
-            UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis()
-        );
-        when(menuService.closeIfCurrent(any(UUID.class), any(ForgeInventoryHolder.class)))
-            .thenReturn(Optional.of(context), Optional.empty());
-        when(menuService.getContext(any(UUID.class))).thenReturn(context);
+    void currentForgeTopInputAndConfirmRouteToDedicatedServices() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
 
-        ForgeInventoryListener testListener = new ForgeInventoryListener(
-            mock(JavaPlugin.class), menuService, scheduler
-        );
+        InventoryClickEvent inputEvent = createClickEvent(topInventory, MenuLayout.SLOT_INPUT, ClickType.LEFT);
+        listener.onInventoryClick(inputEvent);
+        verify(inputEvent).setCancelled(true);
+        verify(inputService).requestReturnInput(eq(player), eq(holder));
+        verify(forgeService, never()).requestConfirm(any(), any());
 
-        InventoryCloseEvent closeEvt = closeEvent();
-        testListener.onInventoryClose(closeEvt);
-        verify(menuService).closeIfCurrent(eq(player.getUniqueId()), eq(menuHolder));
-        verify(player, never()).closeInventory();
+        reset(inputService);
 
-        InventoryClickEvent closeClick = createClickEvent(26);
-        testListener.onInventoryClick(closeClick);
-        verify(player).closeInventory();
-        verify(menuService, times(2)).closeIfCurrent(eq(player.getUniqueId()), eq(menuHolder));
+        InventoryClickEvent confirmEvent = createClickEvent(topInventory, MenuLayout.SLOT_CONFIRM, ClickType.LEFT);
+        listener.onInventoryClick(confirmEvent);
+        verify(confirmEvent).setCancelled(true);
+        verify(forgeService).requestConfirm(eq(player), eq(holder));
     }
 
     @Test
-    void lateConfirmationIsRejectedAfterContextRetires() {
-        when(menuService.isCurrentMenu(any(Player.class), any(ForgeInventoryHolder.class))).thenReturn(false);
+    void currentForgeBottomOnlyDragRemainsAllowed() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
 
-        ForgeInventoryListener testListener = new ForgeInventoryListener(
-            mock(JavaPlugin.class), menuService, scheduler
-        );
+        InventoryDragEvent event = mockDragEvent(topInventory, Collections.singleton(54));
 
-        InventoryClickEvent confirmEvent = confirmClick();
-        testListener.onInventoryClick(confirmEvent);
+        listener.onInventoryDrag(event);
 
-        assertEquals(0, scheduler.entityTaskCount());
-        verify(forgeService, never()).createPlan(any(Player.class), any(PlayerForgeState.class), any(ItemStack.class));
+        verify(event, never()).setCancelled(true);
     }
 
     @Test
-    void clickEventWithNullClickTypeHandledGracefully() {
+    void currentForgeDragTouchingTopIsCancelled() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
+
+        InventoryDragEvent event = mockDragEvent(topInventory, Collections.singleton(22));
+
+        listener.onInventoryDrag(event);
+
+        verify(event).setCancelled(true);
+        verify(inputService, never()).requestCloseStaleView(any(), any());
+    }
+
+    @Test
+    void staleForgeViewCancelsAndRequestsClose() {
+        ForgeMenuViewResolver.ResolvedView staleView = mockResolvedView(ForgeMenuViewResolver.Status.STALE, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(staleView);
+
+        InventoryClickEvent event = createClickEvent(topInventory, 22, ClickType.LEFT);
+
+        listener.onInventoryClick(event);
+
+        verify(event).setCancelled(true);
+        verify(inputService).requestCloseStaleView(eq(player), eq(holder));
+    }
+
+    @Test
+    void forgeCloseEventRoutesExactHolder() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
+
+        InventoryCloseEvent closeEvent = mock(InventoryCloseEvent.class);
+        when(closeEvent.getInventory()).thenReturn(topInventory);
+        when(closeEvent.getPlayer()).thenReturn(player);
+
+        listener.onInventoryClose(closeEvent);
+
+        verify(inputService).handleInventoryClose(eq(player), eq(holder));
+    }
+
+    @Test
+    void crossInventoryMoveToOtherRoutesInsert() {
+        ForgeMenuViewResolver.ResolvedView currentView = mockResolvedView(ForgeMenuViewResolver.Status.CURRENT, holder, topInventory, bottomInventory);
+        when(viewResolver.resolve(any(Player.class), any(InventoryView.class))).thenReturn(currentView);
+
+        ItemStack currentItem = new ItemStack(org.bukkit.Material.DIAMOND);
         InventoryClickEvent event = mock(InventoryClickEvent.class);
-        when(event.isCancelled()).thenReturn(false);
-        when(event.getInventory()).thenReturn(inventory);
+        when(event.getClickedInventory()).thenReturn(bottomInventory);
+        when(event.getInventory()).thenReturn(bottomInventory);
         when(event.getWhoClicked()).thenReturn(player);
-        when(event.getRawSlot()).thenReturn(22);
-        when(event.getClick()).thenReturn(null);
-        when(event.getAction()).thenReturn(InventoryAction.PICKUP_ALL);
+        when(event.getRawSlot()).thenReturn(0);
+        when(event.getSlot()).thenReturn(0);
+        when(event.getClick()).thenReturn(ClickType.SHIFT_LEFT);
+        when(event.getAction()).thenReturn(InventoryAction.MOVE_TO_OTHER_INVENTORY);
+        when(event.getCurrentItem()).thenReturn(currentItem);
+        when(event.getCursor()).thenReturn(new ItemStack(org.bukkit.Material.AIR));
+        when(event.getView()).thenReturn(view);
 
         listener.onInventoryClick(event);
 
-        assertEquals(0, scheduler.entityTaskCount());
+        verify(event).setCancelled(true);
+        verify(inputService).requestInsertOne(eq(player), eq(holder), eq(bottomInventory), eq(0), eq(currentItem));
     }
 
-    @Test
-    void clickOutsideConfirmSlotDoesNotTriggerForgeAction() {
-        InventoryClickEvent event = createClickEvent(0);
-
-        listener.onInventoryClick(event);
-
-        assertEquals(0, scheduler.entityTaskCount());
+    private ForgeMenuViewResolver.ResolvedView mockResolvedView(ForgeMenuViewResolver.Status status, ForgeInventoryHolder h, Inventory top, Inventory bottom) {
+        ForgeMenuViewResolver.ResolvedView resolvedView = mock(ForgeMenuViewResolver.ResolvedView.class);
+        lenient().when(resolvedView.getStatus()).thenReturn(status);
+        lenient().when(resolvedView.getHolder()).thenReturn(h);
+        lenient().when(resolvedView.getTopInventory()).thenReturn(top);
+        lenient().when(resolvedView.getBottomInventory()).thenReturn(bottom);
+        return resolvedView;
     }
 
-    @Test
-    void nullRawSlotInClickEventIsHandled() {
+    private InventoryClickEvent createClickEvent(Inventory clickedInventory, int rawSlot, ClickType clickType) {
         InventoryClickEvent event = mock(InventoryClickEvent.class);
-        when(event.isCancelled()).thenReturn(false);
-        when(event.getInventory()).thenReturn(inventory);
-        when(event.getWhoClicked()).thenReturn(player);
-        when(event.getRawSlot()).thenReturn(-1);
-        when(event.getClick()).thenReturn(ClickType.LEFT);
-        when(event.getAction()).thenReturn(InventoryAction.PICKUP_ALL);
-
-        listener.onInventoryClick(event);
-
-        assertEquals(0, scheduler.entityTaskCount());
-    }
-
-    @Test
-    void listenerHasNoSecondaryMenuOpenAuthority() {
-        ForgeInventoryListener testListener = new ForgeInventoryListener(
-            mock(JavaPlugin.class), menuService, scheduler
-        );
-
-        InventoryClickEvent clickEvent = confirmClick();
-        testListener.onInventoryClick(clickEvent);
-
-        verify(menuService).isCurrentMenu(eq(player), eq(menuHolder));
-        verify(menuService, never()).open(any(Player.class), any(PlayerForgeState.class));
-    }
-
-    private ForgeMenuContext createOpenContext() {
-        PlayerForgeState session = PlayerForgeState.of(player.getUniqueId().toString())
-            .withActiveStation("station", 1);
-        return new ForgeMenuContext(
-            UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis()
-        );
-    }
-
-    private InventoryClickEvent confirmClick() {
-        return createClickEvent(22);
-    }
-
-    private InventoryClickEvent createClickEvent(int rawSlot) {
-        InventoryClickEvent event = mock(InventoryClickEvent.class);
-        when(event.isCancelled()).thenReturn(false);
-        when(event.getInventory()).thenReturn(inventory);
+        when(event.getClickedInventory()).thenReturn(clickedInventory);
+        when(event.getInventory()).thenReturn(clickedInventory);
         when(event.getWhoClicked()).thenReturn(player);
         when(event.getRawSlot()).thenReturn(rawSlot);
-        when(event.getClick()).thenReturn(ClickType.LEFT);
+        when(event.getSlot()).thenReturn(rawSlot);
+        when(event.getClick()).thenReturn(clickType);
         when(event.getAction()).thenReturn(InventoryAction.PICKUP_ALL);
+        when(event.getCurrentItem()).thenReturn(new ItemStack(org.bukkit.Material.DIAMOND));
+        when(event.getCursor()).thenReturn(new ItemStack(org.bukkit.Material.AIR));
+        when(event.getView()).thenReturn(view);
         return event;
     }
 
-    private InventoryCloseEvent closeEvent() {
-        InventoryCloseEvent event = mock(InventoryCloseEvent.class);
+    private InventoryClickEvent createBottomClickEvent(ItemStack currentItem, ClickType clickType, boolean emptyCursor) {
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.getClickedInventory()).thenReturn(bottomInventory);
+        when(event.getInventory()).thenReturn(bottomInventory);
+        when(event.getWhoClicked()).thenReturn(player);
+        when(event.getRawSlot()).thenReturn(0);
+        when(event.getSlot()).thenReturn(0);
+        when(event.getClick()).thenReturn(clickType);
+        when(event.getAction()).thenReturn(InventoryAction.PICKUP_ALL);
+        when(event.getCurrentItem()).thenReturn(currentItem);
+        when(event.getCursor()).thenReturn(emptyCursor ? new ItemStack(org.bukkit.Material.AIR) : new ItemStack(org.bukkit.Material.DIAMOND));
+        when(event.getView()).thenReturn(view);
+        return event;
+    }
+
+    private InventoryClickEvent createBottomShiftClickEvent(ItemStack currentItem) {
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.getClickedInventory()).thenReturn(bottomInventory);
+        when(event.getInventory()).thenReturn(bottomInventory);
+        when(event.getWhoClicked()).thenReturn(player);
+        when(event.getRawSlot()).thenReturn(0);
+        when(event.getSlot()).thenReturn(0);
+        when(event.getClick()).thenReturn(ClickType.SHIFT_LEFT);
+        when(event.getAction()).thenReturn(InventoryAction.MOVE_TO_OTHER_INVENTORY);
+        when(event.getCurrentItem()).thenReturn(currentItem);
+        when(event.getCursor()).thenReturn(new ItemStack(org.bukkit.Material.AIR));
+        when(event.getView()).thenReturn(view);
+        return event;
+    }
+
+    private InventoryDragEvent mockDragEvent(Inventory inventory, java.util.Set<Integer> rawSlots) {
+        InventoryDragEvent event = mock(InventoryDragEvent.class);
+        when(event.getWhoClicked()).thenReturn(player);
+        when(event.getView()).thenReturn(view);
         when(event.getInventory()).thenReturn(inventory);
-        when(event.getPlayer()).thenReturn(player);
+        when(event.getRawSlots()).thenReturn(rawSlots);
         return event;
-    }
-
-    private static final class ControlledScheduler implements SchedulerBridge {
-        private static final TaskHandle HANDLE = new TaskHandle() {
-            @Override
-            public void cancel() {
-            }
-
-            @Override
-            public boolean isCancelled() {
-                return false;
-            }
-        };
-
-        private final java.util.List<Runnable> entityTasks = new java.util.ArrayList<>();
-        private boolean runningEntityTask;
-
-        @Override
-        public TaskHandle runGlobal(JavaPlugin plugin, Runnable task) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runGlobalLater(JavaPlugin plugin, Runnable task, long delay) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runEntity(Entity entity, Runnable runnable, Runnable retireCallback) {
-            entityTasks.add(runnable);
-            return HANDLE;
-        }
-
-        void runNextEntityTask() {
-            if (entityTasks.isEmpty()) return;
-            Runnable task = entityTasks.remove(0);
-            runningEntityTask = true;
-            try {
-                task.run();
-            } finally {
-                runningEntityTask = false;
-            }
-        }
-
-        int entityTaskCount() {
-            return entityTasks.size();
-        }
-
-        boolean isRunningEntityTask() {
-            return runningEntityTask;
-        }
-
-        @Override
-        public TaskHandle runEntityLater(Entity entity, Runnable runnable, Runnable retireCallback, long delay) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runRegion(Location location, Runnable task) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runRegionLater(Location location, Runnable task, long delay) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runAsync(JavaPlugin plugin, Runnable task) {
-            return HANDLE;
-        }
-
-        @Override
-        public void cancelAll(JavaPlugin plugin) {
-        }
-
-        @Override
-        public boolean isFolia() {
-            return false;
-        }
     }
 }

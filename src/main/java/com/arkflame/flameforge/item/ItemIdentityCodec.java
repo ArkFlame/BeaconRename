@@ -260,7 +260,15 @@ public final class ItemIdentityCodec {
             String lastTierId = readString(json, "lastTierId");
             String lastVariantId = readString(json, "lastVariantId");
             String forgeIdStr = readString(json, "forgeId");
-            UUID forgeId = forgeIdStr != null ? UUID.fromString(forgeIdStr) : UUID.randomUUID();
+            if (forgeIdStr == null || forgeIdStr.isEmpty()) {
+                return Decoded.invalid();
+            }
+            UUID forgeId;
+            try {
+                forgeId = UUID.fromString(forgeIdStr);
+            } catch (IllegalArgumentException e) {
+                return Decoded.invalid();
+            }
             String baseMaterial = readString(json, "baseMaterial");
             String baseDisplayName = readString(json, "baseDisplayName");
             Map<String, Integer> originalEnchantments = readIntMap(json, "originalEnchantments");

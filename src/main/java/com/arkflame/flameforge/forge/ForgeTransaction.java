@@ -1,7 +1,5 @@
 package com.arkflame.flameforge.forge;
 
-import com.arkflame.flameforge.chance.ChanceEntry;
-import com.arkflame.flameforge.chance.ChanceTable;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
 import org.bukkit.entity.Player;
@@ -19,10 +17,7 @@ public final class ForgeTransaction {
     private final ForgePlan plan;
     private final CostQuote quote;
     private final ChargeReceipt chargeReceipt;
-    private final ChanceTable chanceTable;
-    private final ChanceEntry selectedEntry;
     private final ForgeOutcomeCategory outcomeCategory;
-    private final String selectedOutcomeId;
     private final List<ItemStack> custodySnapshot;
     private final List<ItemStack> mutatedItems;
     private final ForgeVariant usedVariant;
@@ -36,10 +31,7 @@ public final class ForgeTransaction {
         this.plan = builder.plan;
         this.quote = builder.quote;
         this.chargeReceipt = builder.chargeReceipt;
-        this.chanceTable = builder.chanceTable;
-        this.selectedEntry = builder.selectedEntry;
         this.outcomeCategory = builder.outcomeCategory;
-        this.selectedOutcomeId = builder.selectedOutcomeId;
         this.custodySnapshot = builder.custodySnapshot != null ?
             Collections.unmodifiableList(new ArrayList<>(builder.custodySnapshot)) :
             Collections.emptyList();
@@ -76,20 +68,8 @@ public final class ForgeTransaction {
         return chargeReceipt;
     }
 
-    public ChanceTable getChanceTable() {
-        return chanceTable;
-    }
-
-    public ChanceEntry getSelectedEntry() {
-        return selectedEntry;
-    }
-
     public ForgeOutcomeCategory getOutcomeCategory() {
         return outcomeCategory;
-    }
-
-    public String getSelectedOutcomeId() {
-        return selectedOutcomeId;
     }
 
     public List<ItemStack> getCustodySnapshot() {
@@ -118,14 +98,6 @@ public final class ForgeTransaction {
 
     public boolean hasQuote() {
         return quote != null;
-    }
-
-    public boolean hasChanceTable() {
-        return chanceTable != null;
-    }
-
-    public boolean hasSelectedOutcomeId() {
-        return selectedOutcomeId != null;
     }
 
     public boolean hasChargeReceipt() {
@@ -163,7 +135,6 @@ public final class ForgeTransaction {
     public static enum RollbackReason {
         PRE_TERMINAL_FAILURE,
         PLAYER_QUIT,
-        ANIMATION_FAILED,
         ANIMATION_FAILURE,
         OUTCOME_EXECUTION_FAILED,
         DELIVERY_FAILED
@@ -175,10 +146,7 @@ public final class ForgeTransaction {
         private ForgePlan plan;
         private CostQuote quote;
         private ChargeReceipt chargeReceipt;
-        private ChanceTable chanceTable;
-        private ChanceEntry selectedEntry;
         private ForgeOutcomeCategory outcomeCategory;
-        private String selectedOutcomeId;
         private List<ItemStack> custodySnapshot;
         private List<ItemStack> mutatedItems;
         private ForgeVariant usedVariant;
@@ -208,23 +176,8 @@ public final class ForgeTransaction {
             return this;
         }
 
-        public Builder chanceTable(ChanceTable chanceTable) {
-            this.chanceTable = chanceTable;
-            return this;
-        }
-
-        public Builder selectedEntry(ChanceEntry selectedEntry) {
-            this.selectedEntry = selectedEntry;
-            return this;
-        }
-
         public Builder outcomeCategory(ForgeOutcomeCategory outcomeCategory) {
             this.outcomeCategory = outcomeCategory;
-            return this;
-        }
-
-        public Builder selectedOutcomeId(String selectedOutcomeId) {
-            this.selectedOutcomeId = selectedOutcomeId;
             return this;
         }
 

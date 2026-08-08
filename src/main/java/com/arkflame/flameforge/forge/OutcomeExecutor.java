@@ -1,8 +1,8 @@
 package com.arkflame.flameforge.forge;
 
+import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.item.ItemMutationService;
-import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
@@ -20,18 +20,22 @@ import java.util.UUID;
 
 public final class OutcomeExecutor {
     private final ItemMutationService mutationService;
+    private final ItemIdentityService identityService;
     private final AuditLogService auditLog;
     private final Map<String, Object> wardConfig;
 
-    public OutcomeExecutor(ItemMutationService mutationService, AuditLogService auditLog,
-                          Map<String, Object> wardConfig) {
+    public OutcomeExecutor(ItemMutationService mutationService, ItemIdentityService identityService,
+                          AuditLogService auditLog, Map<String, Object> wardConfig) {
         this.mutationService = Objects.requireNonNull(mutationService);
+        this.identityService = Objects.requireNonNull(identityService);
         this.auditLog = Objects.requireNonNull(auditLog);
         this.wardConfig = wardConfig;
     }
 
     public OutcomeExecutionResult execute(ForgePlan plan, ItemStack inputItem,
-                                        Player player, UUID forgeId) {
+                                        Player player, UUID forgeId,
+                                        ForgeOutcomeCategory category,
+                                        ForgeVariant selectedVariant) {
         Objects.requireNonNull(plan);
         Set<String> executedIds = new HashSet<>();
         executedIds.add("forge_execution");
@@ -43,40 +47,15 @@ public final class OutcomeExecutor {
             return OutcomeExecutionResult.wardConverted("forge_execution", executedIds);
         }
 
-        ForgeOutcomeCategory category = plan.getSelectedVariant() != null ?
-            ForgeOutcomeCategory.SUCCESS : rollCategory(plan);
-
         switch (category) {
             case SUCCESS:
-                return executeSuccess(plan, inputItem, executedIds, player, forgeId);
+                return executeSuccess(plan, inputItem, executedIds, player, forgeId, selectedVariant);
             case BREAK:
                 return executeBreak(plan, inputItem, executedIds, player, forgeId);
             case CURSE:
                 return executeCurse(plan, inputItem, executedIds, player, forgeId);
             default:
                 return OutcomeExecutionResult.error("forge_execution", "Unknown outcome category: " + category);
-        }
-    }
-
-    private ForgeOutcomeCategory rollCategory(ForgePlan plan) {
-        if (plan.getChances() == null) {
-            return ForgeOutcomeCategory.BREAK;
-        }
-        double total = plan.getChances().getSuccessPercent() +
-                       plan.getChances().getBreakPercent() +
-                       plan.getChances().getCursePercent();
-        if (total <= 0) {
-            return ForgeOutcomeCategory.BREAK;
-        }
-        double roll = Math.random() * total;
-        double successThreshold = plan.getChances().getSuccessPercent();
-        double breakThreshold = successThreshold + plan.getChances().getBreakPercent();
-        if (roll < successThreshold) {
-            return ForgeOutcomeCategory.SUCCESS;
-        } else if (roll < breakThreshold) {
-            return ForgeOutcomeCategory.BREAK;
-        } else {
-            return ForgeOutcomeCategory.CURSE;
         }
     }
 
@@ -103,24 +82,18 @@ public final class OutcomeExecutor {
 
     private OutcomeExecutionResult executeSuccess(ForgePlan plan, ItemStack inputItem,
                                                   Set<String> executedIds, Player player,
-                                                  UUID forgeId) {
+                                                  UUID forgeId, ForgeVariant selectedVariant) {
         if (inputItem == null) {
             return OutcomeExecutionResult.error("forge_execution", "Cannot success mutate: null input");
         }
+        if (selectedVariant == null) {
+            return OutcomeExecutionResult.error("forge_execution", "Cannot success mutate: null variant");
+        }
 
-        ItemIdentityService.IdentityData identity = readOrFreshIdentity(inputItem, forgeId);
-
-        Map<org.bukkit.enchantments.Enchantment, Integer> baselineEnchants =
-            readBaselineEnchants(inputItem);
-        List<AttributeSpec> baselineAttributes = readBaselineAttributes(inputItem);
-        List<String> baselinePowers = readBaselinePowers(inputItem);
-
-        ForgeVariant variant = plan.getSelectedVariant();
-        int targetTier = plan.getTargetTierLevel();
+        ItemIdentityCodec.Identity identity = readRichIdentity(inputItem, forgeId);
 
         ItemMutationService.MutationResult result = mutationService.mutateSuccess(
-            inputItem, variant, baselineEnchants, baselineAttributes, baselinePowers,
-            targetTier, identity);
+            inputItem, plan.getTargetTier(), selectedVariant, identity, forgeId);
 
         if (!result.isSuccess()) {
             StringBuilder sb = new StringBuilder();
@@ -137,17 +110,17 @@ public final class OutcomeExecutor {
     }
 
     private OutcomeExecutionResult executeBreak(ForgePlan plan, ItemStack inputItem,
-                                               Set<String> executedIds, Player player,
-                                               UUID forgeId) {
+                                                 Set<String> executedIds, Player player,
+                                                 UUID forgeId) {
         if (inputItem == null) {
             return OutcomeExecutionResult.error("forge_execution", "Cannot break mutate: null input");
         }
 
-        ItemIdentityService.IdentityData identity = readOrFreshIdentity(inputItem, forgeId);
+        ItemIdentityCodec.Identity identity = readRichIdentity(inputItem, forgeId);
         BreakPolicy policy = getBreakPolicy(plan);
 
         ItemMutationService.MutationResult result = mutationService.mutateBreak(
-            inputItem, policy, identity);
+            inputItem, policy, identity, forgeId);
 
         if (!result.isSuccess()) {
             StringBuilder sb = new StringBuilder();
@@ -170,18 +143,18 @@ public final class OutcomeExecutor {
     }
 
     private OutcomeExecutionResult executeCurse(ForgePlan plan, ItemStack inputItem,
-                                                Set<String> executedIds, Player player,
-                                                UUID forgeId) {
+                                                 Set<String> executedIds, Player player,
+                                                 UUID forgeId) {
         if (inputItem == null) {
             return OutcomeExecutionResult.error("forge_execution", "Cannot curse mutate: null input");
         }
 
-        ItemIdentityService.IdentityData identity = readOrFreshIdentity(inputItem, forgeId);
+        ItemIdentityCodec.Identity identity = readRichIdentity(inputItem, forgeId);
         CurseDefinition curse = getCurseDefinition(plan);
         boolean currentlyCursed = isCurrentlyCursed(inputItem);
 
         ItemMutationService.MutationResult result = mutationService.mutateCurse(
-            inputItem, curse, currentlyCursed, identity);
+            inputItem, curse, currentlyCursed, identity, forgeId);
 
         if (!result.isSuccess()) {
             StringBuilder sb = new StringBuilder();
@@ -197,48 +170,49 @@ public final class OutcomeExecutor {
         return OutcomeExecutionResult.curseResult("forge_execution", executedIds, result.getResult());
     }
 
-    private ItemIdentityService.IdentityData readOrFreshIdentity(ItemStack item, UUID forgeId) {
+    private ItemIdentityCodec.Identity readRichIdentity(ItemStack item, UUID forgeId) {
         if (item == null) {
-            return ItemIdentityService.IdentityData.fresh();
+            return ItemIdentityCodec.Identity.empty().withForgeId(forgeId != null ? forgeId : UUID.randomUUID());
         }
-        return ItemIdentityService.getInstance().readIdentity(item)
-            .map(id -> {
-                if (forgeId != null && id.getForgeId() == null) {
-                    return new ItemIdentityService.IdentityData(
-                        id.getReforgeCount(), id.getHighestTier(),
-                        id.getLastTier(), id.getLastOutcome(), forgeId);
+
+        ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
+        ItemIdentityService.ForgeIdentityStatus status = read.getStatus();
+
+        switch (status) {
+            case VALID: {
+                ItemIdentityCodec.Identity identity = read.getIdentity();
+                if (forgeId != null && identity.getForgeId() == null) {
+                    identity = identity.withForgeId(forgeId);
                 }
-                return id;
-            })
-            .orElse(ItemIdentityService.IdentityData.fresh());
-    }
-
-    private Map<org.bukkit.enchantments.Enchantment, Integer> readBaselineEnchants(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) {
-            return new java.util.HashMap<>();
+                return identity;
+            }
+            case INVALID:
+                return ItemIdentityCodec.Identity.empty().withForgeId(forgeId != null ? forgeId : UUID.randomUUID());
+            case NONE:
+            default: {
+                UUID actualForgeId = forgeId != null ? forgeId : UUID.randomUUID();
+                String baseMaterial = item.getType().name();
+                String baseDisplayName = identityService.defaultBaseDisplayName(item.getType());
+                return ItemIdentityCodec.Identity.empty()
+                        .withForgeId(actualForgeId)
+                        .withBaseMaterial(baseMaterial)
+                        .withBaseDisplayName(baseDisplayName);
+            }
         }
-        try {
-            return new java.util.HashMap<>(item.getItemMeta().getEnchants());
-        } catch (Exception e) {
-            return new java.util.HashMap<>();
-        }
-    }
-
-    private List<AttributeSpec> readBaselineAttributes(ItemStack item) {
-        return new java.util.ArrayList<>();
-    }
-
-    private List<String> readBaselinePowers(ItemStack item) {
-        return new java.util.ArrayList<>();
     }
 
     private BreakPolicy getBreakPolicy(ForgePlan plan) {
-        return BreakPolicy.none();
+        if (plan == null || plan.getTargetTier() == null) {
+            return BreakPolicy.none();
+        }
+        return plan.getTargetTier().getBreakPolicy();
     }
 
     private CurseDefinition getCurseDefinition(ForgePlan plan) {
-        return new CurseDefinition("", java.util.Collections.emptyList(),
-            java.util.Collections.singletonList("VANISHING_CURSE"));
+        if (plan == null || plan.getTargetTier() == null) {
+            return null;
+        }
+        return plan.getTargetTier().getCurseDefinition();
     }
 
     private boolean isCurrentlyCursed(ItemStack item) {

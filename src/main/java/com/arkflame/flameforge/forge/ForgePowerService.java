@@ -13,7 +13,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 
+import org.bukkit.Location;
+import org.bukkit.util.Vector;
+
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -25,7 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class ForgePowerService {
 
-    private static final int MAX_COOLDOWN_ENTRIES = 4096;
+    private static final int DEFAULT_MAX_COOLDOWN_ENTRIES = 4096;
     private static final long TICK_MS = 50L;
 
     private final JavaPlugin plugin;
@@ -34,9 +38,13 @@ public final class ForgePowerService {
     private final EquipmentBridge equipmentBridge;
     private final ItemIdentityService identityService;
     private final TimeSource timeSource;
+    private final int maxCooldownEntries;
 
     private final Map<CooldownKey, Long> cooldowns = new ConcurrentHashMap<>();
+    private final Map<HitCounterKey, AtomicLong> hitCounters = new ConcurrentHashMap<>();
     private final AtomicLong evictionCounter = new AtomicLong(0);
+    private static final int MAX_PASSIVE_TASKS_PER_PLAYER = 64;
+    private final Map<UUID, List<TaskHandle>> passiveTasksByPlayer = new ConcurrentHashMap<>();
 
     public interface TimeSource {
         long monotonicMillis();
@@ -53,20 +61,32 @@ public final class ForgePowerService {
                             PotionEffectResolver potionEffectResolver,
                             EquipmentBridge equipmentBridge,
                             ItemIdentityService identityService) {
-        this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService, new SystemTimeSource());
+        this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
                             PotionEffectResolver potionEffectResolver,
                             EquipmentBridge equipmentBridge,
                             ItemIdentityService identityService,
-                            TimeSource timeSource) {
+                            int maxCooldownEntries) {
+        this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             new SystemTimeSource(), maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES);
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                            PotionEffectResolver potionEffectResolver,
+                            EquipmentBridge equipmentBridge,
+                            ItemIdentityService identityService,
+                            TimeSource timeSource,
+                            int maxCooldownEntries) {
         this.plugin = Objects.requireNonNull(plugin);
         this.schedulerBridge = Objects.requireNonNull(schedulerBridge);
         this.potionEffectResolver = Objects.requireNonNull(potionEffectResolver);
         this.equipmentBridge = Objects.requireNonNull(equipmentBridge);
         this.identityService = Objects.requireNonNull(identityService);
         this.timeSource = Objects.requireNonNull(timeSource);
+        this.maxCooldownEntries = maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES;
     }
 
     public boolean usePower(Player player, ForgePowerDefinition power, UUID forgeId) {
@@ -94,7 +114,7 @@ public final class ForgePowerService {
     }
 
     private void evictIfNeeded() {
-        if (cooldowns.size() < MAX_COOLDOWN_ENTRIES) {
+        if (cooldowns.size() < maxCooldownEntries) {
             return;
         }
         Iterator<Map.Entry<CooldownKey, Long>> iter = cooldowns.entrySet().iterator();
@@ -108,6 +128,17 @@ public final class ForgePowerService {
         cooldowns.keySet().removeIf(key -> key.playerUuid.equals(player.getUniqueId()));
     }
 
+    public void clearPassiveTasksForPlayer(Player player) {
+        List<TaskHandle> tasks = passiveTasksByPlayer.remove(player.getUniqueId());
+        if (tasks != null) {
+            for (TaskHandle task : tasks) {
+                if (task != null) {
+                    task.cancel();
+                }
+            }
+        }
+    }
+
     public void clearCooldowns(UUID playerId) {
         cooldowns.keySet().removeIf(key -> key.playerUuid.equals(playerId));
     }
@@ -116,8 +147,31 @@ public final class ForgePowerService {
         cooldowns.keySet().removeIf(key -> key.playerUuid.equals(player.getUniqueId()) && key.forgeUuid.equals(forgeId));
     }
 
+    public void clearHitCountersForPlayer(UUID playerId) {
+        hitCounters.keySet().removeIf(key -> key.playerUuid.equals(playerId));
+    }
+
+    public void clearHitCountersForPlayerAndForge(UUID playerId, UUID forgeId) {
+        hitCounters.keySet().removeIf(key -> key.playerUuid.equals(playerId) && key.forgeUuid.equals(forgeId));
+    }
+
     public void clearAll() {
         cooldowns.clear();
+        hitCounters.clear();
+        clearAllPassiveTasks();
+    }
+
+    public void clearAllPassiveTasks() {
+        passiveTasksByPlayer.values().forEach(list -> {
+            if (list != null) {
+                for (TaskHandle task : list) {
+                    if (task != null) {
+                        task.cancel();
+                    }
+                }
+            }
+        });
+        passiveTasksByPlayer.clear();
     }
 
     public long getEvictionCount() {
@@ -165,8 +219,12 @@ public final class ForgePowerService {
         if (item == null || !item.hasItemMeta()) {
             return false;
         }
-        Optional<ItemIdentityService.IdentityData> identity = identityService.readIdentity(item);
-        return identity.map(data -> forgeId.equals(data.getForgeId())).orElse(false);
+        ItemIdentityService.ForgeIdentityRead identityRead = identityService.readForgeIdentity(item);
+        if (identityRead.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID) {
+            return false;
+        }
+        UUID richForgeId = identityRead.getIdentity().getForgeId();
+        return forgeId.equals(richForgeId);
     }
 
     private EquipmentBridge.Slot convertSlot(ForgePowerDefinition.ActivationSlot slot) {
@@ -206,19 +264,45 @@ public final class ForgePowerService {
         LivingEntity entity = player;
         entity.addPotionEffect(new PotionEffect(effectType, duration, amplifier, false, false));
         long delayTicks = duration;
-        schedulerBridge.runEntityLater(entity, () -> {
+        UUID playerId = player.getUniqueId();
+        TaskHandle handle = schedulerBridge.runEntityLater(entity, () -> {
             if (!player.isOnline()) {
                 return;
             }
             if (!isForgeItemEquipped(player, forgeId, power)) {
                 return;
             }
+            passiveTasksByPlayer.computeIfAbsent(playerId, k -> new ArrayList<>()).removeIf(t -> t == null || t.isCancelled());
             applyPassivePotionEffect(player, power, forgeId);
-        }, () -> {}, delayTicks);
+        }, () -> {
+            passiveTasksByPlayer.computeIfPresent(playerId, (k, list) -> {
+                list.removeIf(t -> t == null || t.isCancelled());
+                return list.isEmpty() ? null : list;
+            });
+        }, delayTicks);
+        if (handle != null) {
+            passiveTasksByPlayer.compute(playerId, (k, list) -> {
+                if (list == null) {
+                    list = new ArrayList<>();
+                } else {
+                    list.removeIf(t -> t == null || t.isCancelled());
+                }
+                if (list.size() < MAX_PASSIVE_TASKS_PER_PLAYER) {
+                    list.add(handle);
+                } else {
+                    handle.cancel();
+                }
+                return list;
+            });
+        }
     }
 
     public boolean triggerOnHitPower(Player attacker, LivingEntity victim, ForgePowerDefinition power, UUID forgeId) {
         ForgePowerDefinition.PowerType type = power.getPowerType();
+        if (type == ForgePowerDefinition.PowerType.EVERY_N_HIT_LIGHTNING
+            || type == ForgePowerDefinition.PowerType.EVERY_N_HIT_KNOCKBACK) {
+            return triggerEveryNHitPower(attacker, victim, power, forgeId);
+        }
         if (type != ForgePowerDefinition.PowerType.ON_HIT_POTION
             && type != ForgePowerDefinition.PowerType.ON_HIT_FIRE
             && type != ForgePowerDefinition.PowerType.ON_HIT_HEAL) {
@@ -244,6 +328,76 @@ public final class ForgePowerService {
                 break;
         }
         return true;
+    }
+
+    private boolean triggerEveryNHitPower(Player attacker, LivingEntity victim, ForgePowerDefinition power, UUID forgeId) {
+        ForgePowerDefinition.PowerType type = power.getPowerType();
+        HitCounterKey counterKey = new HitCounterKey(attacker.getUniqueId(), forgeId, power.getId());
+        AtomicLong counter = hitCounters.computeIfAbsent(counterKey, k -> new AtomicLong(0));
+        long hits = counter.incrementAndGet();
+        int hitInterval = power.getHitInterval();
+        if (hitInterval <= 0) {
+            return false;
+        }
+        if (hits < hitInterval) {
+            return false;
+        }
+        counter.set(0);
+        if (!rollChance(power.getChance())) {
+            return false;
+        }
+        if (!usePower(attacker, power, forgeId)) {
+            return false;
+        }
+        switch (type) {
+            case EVERY_N_HIT_LIGHTNING:
+                applyLightning(victim.getLocation().clone());
+                break;
+            case EVERY_N_HIT_KNOCKBACK:
+                applyKnockback(attacker, victim, power);
+                break;
+            default:
+                break;
+        }
+        return true;
+    }
+
+    private void applyLightning(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return;
+        }
+        schedulerBridge.runRegion(location, () -> location.getWorld().strikeLightning(location));
+    }
+
+    private void applyKnockback(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
+        BigDecimal horizontal = power.getHorizontalStrength();
+        BigDecimal vertical = power.getVerticalStrength();
+        double horizontalStrength = horizontal != null ? horizontal.doubleValue() : 1.0;
+        double verticalStrength = vertical != null ? vertical.doubleValue() : 0.3;
+        double victimX = victim.getLocation().getX();
+        double victimZ = victim.getLocation().getZ();
+        double attackerX = attacker.getLocation().getX();
+        double attackerZ = attacker.getLocation().getZ();
+        double dirX = victimX - attackerX;
+        double dirZ = victimZ - attackerZ;
+        double len = Math.sqrt(dirX * dirX + dirZ * dirZ);
+        if (len < 0.001) {
+            org.bukkit.util.Vector facing = attacker.getLocation().getDirection();
+            dirX = facing.getX();
+            dirZ = facing.getZ();
+            len = Math.sqrt(dirX * dirX + dirZ * dirZ);
+        }
+        if (len < 0.001) {
+            dirX = 0;
+            dirZ = 1;
+            len = 1;
+        }
+        double normX = dirX / len;
+        double normZ = dirZ / len;
+        double knockX = normX * horizontalStrength;
+        double knockZ = normZ * horizontalStrength;
+        Vector vector = new Vector(knockX, verticalStrength, knockZ);
+        schedulerBridge.runEntity(victim, () -> victim.setVelocity(vector), () -> {});
     }
 
     private boolean rollChance(BigDecimal chance) {
@@ -287,9 +441,9 @@ public final class ForgePowerService {
             return;
         }
         double heal = healAmount.doubleValue();
-        double maxHealth = victim.getMaxHealth();
-        double newHealth = Math.min(victim.getHealth() + heal, maxHealth);
-        victim.setHealth(newHealth);
+        double maxHealth = attacker.getMaxHealth();
+        double newHealth = Math.min(attacker.getHealth() + heal, maxHealth);
+        attacker.setHealth(newHealth);
     }
 
     public boolean activateDash(Player player, ForgePowerDefinition power, UUID forgeId) {
@@ -365,6 +519,31 @@ public final class ForgePowerService {
             if (this == o) return true;
             if (!(o instanceof CooldownKey)) return false;
             CooldownKey that = (CooldownKey) o;
+            return playerUuid.equals(that.playerUuid) && forgeUuid.equals(that.forgeUuid) && powerId.equals(that.powerId);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * playerUuid.hashCode() + 17 * forgeUuid.hashCode() + powerId.hashCode();
+        }
+    }
+
+    private static final class HitCounterKey {
+        private final UUID playerUuid;
+        private final UUID forgeUuid;
+        private final String powerId;
+
+        HitCounterKey(UUID playerUuid, UUID forgeUuid, String powerId) {
+            this.playerUuid = playerUuid;
+            this.forgeUuid = forgeUuid;
+            this.powerId = powerId;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof HitCounterKey)) return false;
+            HitCounterKey that = (HitCounterKey) o;
             return playerUuid.equals(that.playerUuid) && forgeUuid.equals(that.forgeUuid) && powerId.equals(that.powerId);
         }
 

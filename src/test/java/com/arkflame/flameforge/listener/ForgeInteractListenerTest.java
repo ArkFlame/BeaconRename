@@ -4,13 +4,14 @@ import com.arkflame.flameforge.ForgeAccessService;
 import com.arkflame.flameforge.compat.interaction.InteractionHandBridge;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.station.ForgeStationService;
+import com.arkflame.flameforge.text.MessageArguments;
+import com.arkflame.flameforge.text.MessageService;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -27,16 +28,15 @@ class ForgeInteractListenerTest {
     private ForgeAccessService accessService;
     private ForgeStationService stationService;
     private InteractionHandBridge handBridge;
-    private JavaPlugin fakePlugin;
+    private MessageService messageService;
 
     @BeforeEach
     void setUp() throws Exception {
-        fakePlugin = mock(JavaPlugin.class);
-        when(fakePlugin.getLogger()).thenReturn(Logger.getLogger("ForgeInteractListenerTest"));
         accessService = mock(ForgeAccessService.class);
         stationService = mock(ForgeStationService.class);
         handBridge = new InteractionHandBridge(Logger.getLogger("ForgeInteractListenerTest"));
-        listener = new ForgeInteractListener(fakePlugin, accessService, stationService, handBridge);
+        messageService = mock(MessageService.class);
+        listener = new ForgeInteractListener(accessService, stationService, handBridge, messageService);
     }
 
     @Test
@@ -151,7 +151,7 @@ class ForgeInteractListenerTest {
         when(offHandBridge.isPrimary(event)).thenReturn(false);
 
         ForgeInteractListener offHandListener = new ForgeInteractListener(
-            fakePlugin, accessService, stationService, offHandBridge
+            accessService, stationService, offHandBridge, messageService
         );
         offHandListener.onPlayerInteract(event);
 
@@ -166,7 +166,7 @@ class ForgeInteractListenerTest {
         );
 
         ForgeInteractListener legacyListener = new ForgeInteractListener(
-            fakePlugin, accessService, stationService, legacyBridge
+            accessService, stationService, legacyBridge, messageService
         );
 
         Player player = mock(Player.class);

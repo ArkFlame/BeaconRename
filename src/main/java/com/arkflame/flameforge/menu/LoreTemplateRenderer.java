@@ -1,63 +1,55 @@
 package com.arkflame.flameforge.menu;
 
+import com.arkflame.flameforge.text.MessageArguments;
+
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Renders lore templates with scalar and expandable placeholders.
- * - line equal to one expandable token -> splice list
- * - ordinary line -> scalar replacement
- * - resolved "" -> omit
- * - resolved " " -> retain
+ * Renders lore templates with expandable line placeholders.
+ * - line exactly "%key%" AND args has lineValues[key] -> splice list
+ * - null line -> omit
+ * - empty expansion line -> omit
+ * - literal " " -> retain
+ * - other lines -> return unchanged to TextRenderer
  */
 public final class LoreTemplateRenderer {
 
-    public List<String> render(List<String> templates, Map<String, String> scalar, Map<String, List<String>> expandable) {
+    public List<String> render(final List<String> templates, final MessageArguments arguments) {
         if (templates == null || templates.isEmpty()) {
             return Collections.emptyList();
         }
-        Map<String, String> safeScalar = scalar != null ? new HashMap<>(scalar) : new HashMap<>();
-        Map<String, List<String>> safeExpandable = expandable != null ? new HashMap<>(expandable) : new HashMap<>();
+        Map<String, List<String>> lineValues = arguments != null ? arguments.getLineValues() : Collections.emptyMap();
 
         List<String> result = new ArrayList<>();
         for (String line : templates) {
             if (line == null) {
                 continue;
             }
-            String resolved = resolveScalar(line, safeScalar);
-            String expandableKey = resolved.startsWith("%") && resolved.endsWith("%")
-                ? resolved.substring(1, resolved.length() - 1)
-                : resolved;
-            if (safeExpandable.containsKey(expandableKey)) {
-                List<String> expansion = safeExpandable.get(expandableKey);
-                if (expansion != null) {
-                    for (String expLine : expansion) {
-                        result.add(expLine);
+            if (line.startsWith("%") && line.endsWith("%") && line.length() > 2) {
+                String key = line.substring(1, line.length() - 1);
+                if (lineValues.containsKey(key)) {
+                    List<String> expansion = lineValues.get(key);
+                    if (expansion != null) {
+                        for (String expLine : expansion) {
+                            if (expLine != null && !expLine.isEmpty()) {
+                                result.add(expLine);
+                            }
+                        }
                     }
+                    continue;
                 }
+            }
+            if (line.isEmpty()) {
+                continue;
+            } else if (" ".equals(line)) {
+                result.add(line);
             } else {
-                if (resolved.isEmpty()) {
-                    // omit empty
-                } else if (" ".equals(resolved)) {
-                    result.add(resolved);
-                } else {
-                    result.add(resolved);
-                }
+                result.add(line);
             }
         }
         return Collections.unmodifiableList(result);
-    }
-
-    private String resolveScalar(String input, Map<String, String> scalar) {
-        String result = input;
-        for (Map.Entry<String, String> e : scalar.entrySet()) {
-            String placeholder = "%" + e.getKey() + "%";
-            String value = e.getValue() != null ? e.getValue() : "";
-            result = result.replace(placeholder, value);
-        }
-        return result;
     }
 }

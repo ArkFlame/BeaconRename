@@ -1,12 +1,10 @@
 package com.arkflame.flameforge.listener;
 
-import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.menu.ForgeInventoryHolder;
-import com.arkflame.flameforge.menu.ForgeMenuContext;
-import com.arkflame.flameforge.menu.ForgeMenuService;
-import com.arkflame.flameforge.model.PlayerForgeState;
-import org.bukkit.Bukkit;
-import org.bukkit.Material;
+import com.arkflame.flameforge.menu.ForgeMenuForgeService;
+import com.arkflame.flameforge.menu.ForgeMenuInputService;
+import com.arkflame.flameforge.menu.ForgeMenuViewResolver;
+import com.arkflame.flameforge.menu.MenuLayout;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -16,30 +14,22 @@ import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
-import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.plugin.java.JavaPlugin;
-
-import java.util.Optional;
-import java.util.UUID;
 
 public final class ForgeInventoryListener implements Listener {
 
-    private static final int SLOT_INPUT = 13;
-    private static final int SLOT_CONFIRM = 22;
-    private static final int SLOT_CLOSE = 26;
+    private final ForgeMenuViewResolver viewResolver;
+    private final ForgeMenuInputService inputService;
+    private final ForgeMenuForgeService forgeService;
 
-    private final JavaPlugin plugin;
-    private final ForgeMenuService menuService;
-    private final SchedulerBridge scheduler;
-
-    public ForgeInventoryListener(JavaPlugin plugin, ForgeMenuService menuService,
-                                  SchedulerBridge scheduler) {
-        this.plugin = plugin;
-        this.menuService = menuService;
-        this.scheduler = scheduler;
+    public ForgeInventoryListener(ForgeMenuViewResolver viewResolver, ForgeMenuInputService inputService,
+                                  ForgeMenuForgeService forgeService) {
+        this.viewResolver = viewResolver;
+        this.inputService = inputService;
+        this.forgeService = forgeService;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
@@ -48,73 +38,98 @@ public final class ForgeInventoryListener implements Listener {
             return;
         }
 
-        Inventory inventory = event.getInventory();
-        if (inventory == null) {
+        Inventory clickedInventory = event.getClickedInventory();
+        if (clickedInventory == null) {
             return;
         }
 
-        InventoryHolder genericHolder = inventory.getHolder();
-        if (!(genericHolder instanceof ForgeInventoryHolder)) {
-            return;
-        }
-        ForgeInventoryHolder holder = (ForgeInventoryHolder) genericHolder;
-
+        InventoryView view = event.getView();
         Player player = event.getWhoClicked() instanceof Player ? (Player) event.getWhoClicked() : null;
         if (player == null) {
-            event.setCancelled(true);
             return;
         }
 
-        if (!menuService.isCurrentMenu(player, holder)) {
+        ForgeMenuViewResolver.ResolvedView resolved = viewResolver.resolve(player, view);
+
+        if (resolved.getStatus() == ForgeMenuViewResolver.Status.NOT_FORGE) {
+            return;
+        }
+
+        if (resolved.getStatus() == ForgeMenuViewResolver.Status.STALE) {
             event.setCancelled(true);
+            inputService.requestCloseStaleView(player, resolved.getHolder());
+            return;
+        }
+
+        ForgeInventoryHolder holder = resolved.getHolder();
+        boolean bottomClick = (clickedInventory == resolved.getBottomInventory());
+
+        if (bottomClick) {
+            handleBottomClick(event, player, holder);
             return;
         }
 
         int rawSlot = event.getRawSlot();
-
-        if (event.getInventory().getType() == InventoryType.PLAYER) {
-            if (event.getClick() == ClickType.NUMBER_KEY) {
-                event.setCancelled(true);
-                return;
-            }
-            if (event.getClick().isShiftClick()) {
-                handleBottomShiftClick(player, holder, event);
-                return;
-            }
-            if (event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
-                handleBottomMoveToTop(player, holder, event);
-                return;
-            }
-            return;
-        }
-
-        if (rawSlot < 0 || rawSlot >= inventory.getSize()) {
-            event.setCancelled(true);
-            return;
-        }
-
-        ClickType click = event.getClick();
-        if (click == ClickType.CREATIVE || click == ClickType.DOUBLE_CLICK) {
-            event.setCancelled(true);
-            return;
-        }
-
         event.setCancelled(true);
 
-        if (rawSlot == SLOT_INPUT) {
-            handleInputClick(player, holder);
+        if (rawSlot == MenuLayout.SLOT_INPUT) {
+            inputService.requestReturnInput(player, holder);
             return;
         }
 
-        if (rawSlot == SLOT_CONFIRM) {
-            handleConfirmClick(player, holder);
+        if (rawSlot == MenuLayout.SLOT_CONFIRM) {
+            forgeService.requestConfirm(player, holder);
+            return;
+        }
+    }
+
+    private void handleBottomClick(InventoryClickEvent event, Player player, ForgeInventoryHolder holder) {
+        ClickType click = event.getClick();
+        Inventory clickedInventory = event.getClickedInventory();
+
+        if (click == null) {
             return;
         }
 
-        if (rawSlot == SLOT_CLOSE) {
-            handleCloseClick(player, holder);
+        boolean isShiftClick = click.isShiftClick();
+        boolean isMoveToOther = event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY;
+        boolean isDoubleClick = click == ClickType.DOUBLE_CLICK;
+        boolean isCollectToCursor = event.getAction() == InventoryAction.COLLECT_TO_CURSOR;
+        boolean isNumberKey = click == ClickType.NUMBER_KEY;
+        boolean isLeft = click == ClickType.LEFT;
+        boolean isRight = click == ClickType.RIGHT;
+
+        boolean isCrossInventory = isShiftClick || isMoveToOther || isDoubleClick || isCollectToCursor;
+
+        if (isCrossInventory) {
+            event.setCancelled(true);
+            if (isShiftClick || isMoveToOther) {
+                ItemStack currentItem = event.getCurrentItem();
+                if (currentItem != null && currentItem.getType() != org.bukkit.Material.AIR) {
+                    inputService.requestInsertOne(player, holder, clickedInventory, event.getSlot(), currentItem);
+                }
+            }
             return;
         }
+
+        if (isNumberKey) {
+            return;
+        }
+
+        if ((isLeft || isRight)) {
+            ItemStack currentItem = event.getCurrentItem();
+            ItemStack cursorItem = event.getCursor();
+
+            if (currentItem != null && currentItem.getType() != org.bukkit.Material.AIR) {
+                if (cursorItem == null || cursorItem.getType() == org.bukkit.Material.AIR) {
+                    event.setCancelled(true);
+                    inputService.requestInsertOne(player, holder, clickedInventory, event.getSlot(), currentItem);
+                    return;
+                }
+            }
+        }
+
+        return;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
@@ -132,7 +147,6 @@ public final class ForgeInventoryListener implements Listener {
         if (!(genericHolder instanceof ForgeInventoryHolder)) {
             return;
         }
-        ForgeInventoryHolder holder = (ForgeInventoryHolder) genericHolder;
 
         Player player = event.getWhoClicked() instanceof Player ? (Player) event.getWhoClicked() : null;
         if (player == null) {
@@ -140,13 +154,22 @@ public final class ForgeInventoryListener implements Listener {
             return;
         }
 
-        if (!menuService.isCurrentMenu(player, holder)) {
-            event.setCancelled(true);
+        InventoryView view = event.getView();
+        ForgeMenuViewResolver.ResolvedView resolved = viewResolver.resolve(player, view);
+
+        if (resolved.getStatus() == ForgeMenuViewResolver.Status.NOT_FORGE) {
             return;
         }
 
+        if (resolved.getStatus() == ForgeMenuViewResolver.Status.STALE) {
+            event.setCancelled(true);
+            inputService.requestCloseStaleView(player, resolved.getHolder());
+            return;
+        }
+
+        int topSize = resolved.getTopInventory().getSize();
         for (int slot : event.getRawSlots()) {
-            if (slot >= 0 && slot < inventory.getSize()) {
+            if (slot < topSize) {
                 event.setCancelled(true);
                 return;
             }
@@ -168,182 +191,14 @@ public final class ForgeInventoryListener implements Listener {
         if (!(genericHolder instanceof ForgeInventoryHolder)) {
             return;
         }
-        ForgeInventoryHolder holder = (ForgeInventoryHolder) genericHolder;
 
         Player player = event.getPlayer() instanceof Player ? (Player) event.getPlayer() : null;
         if (player == null) {
             return;
         }
 
-        UUID playerId = player.getUniqueId();
-        Optional<ForgeMenuContext> ctxOpt = menuService.closeIfCurrent(playerId, holder);
-        if (!ctxOpt.isPresent()) {
-            return;
-        }
-
-        ForgeMenuContext ctx = ctxOpt.get();
-        if (ctx.isForging()) {
-            return;
-        }
-
-        if (ctx.isOpen()) {
-            scheduler.runEntity(player, () -> {
-                if (!player.isOnline()) {
-                    return;
-                }
-                Optional<ItemStack> returned = ctx.extractInput();
-                if (returned.isPresent()) {
-                    giveItemToPlayer(player, returned.get());
-                }
-            }, () -> {});
-        }
-    }
-
-    private void handleInputClick(Player player, ForgeInventoryHolder holder) {
-        UUID playerId = player.getUniqueId();
-        ForgeMenuContext ctx = menuService.getContext(playerId);
-        if (ctx == null || !ctx.isOpen()) {
-            return;
-        }
-
-        scheduler.runEntity(player, () -> {
-            if (!player.isOnline()) {
-                return;
-            }
-            Optional<ItemStack> returned = ctx.extractInput();
-            if (returned.isPresent()) {
-                giveItemToPlayer(player, returned.get());
-            }
-            menuService.rerender(player);
-        }, () -> {});
-    }
-
-    private void handleConfirmClick(Player player, ForgeInventoryHolder holder) {
-        UUID playerId = player.getUniqueId();
-        ForgeMenuContext ctx = menuService.getContext(playerId);
-        if (ctx == null || !ctx.isOpen()) {
-            return;
-        }
-
-        scheduler.runEntity(player, () -> {
-            if (!player.isOnline()) {
-                return;
-            }
-            if (ctx.beginForge()) {
-                PlayerForgeState session = ctx.getSession();
-                if (session != null) {
-                    menuService.refresh(player, session);
-                }
-            }
-        }, () -> {});
-    }
-
-    private void handleCloseClick(Player player, ForgeInventoryHolder holder) {
-        UUID playerId = player.getUniqueId();
-        Optional<ForgeMenuContext> ctxOpt = menuService.closeIfCurrent(playerId, holder);
-        if (!ctxOpt.isPresent()) {
-            player.closeInventory();
-            return;
-        }
-
-        ForgeMenuContext ctx = ctxOpt.get();
-        if (ctx.isForging()) {
-            player.closeInventory();
-            return;
-        }
-
-        scheduler.runEntity(player, () -> {
-            if (!player.isOnline()) {
-                return;
-            }
-            Optional<ItemStack> returned = ctx.extractInput();
-            if (returned.isPresent()) {
-                giveItemToPlayer(player, returned.get());
-            }
-            player.closeInventory();
-        }, () -> {});
-    }
-
-    private void handleBottomShiftClick(Player player, ForgeInventoryHolder holder, InventoryClickEvent event) {
-        ItemStack currentItem = event.getCurrentItem();
-        if (currentItem == null || currentItem.getType() == Material.AIR) {
-            return;
-        }
-
-        UUID playerId = player.getUniqueId();
-        ForgeMenuContext ctx = menuService.getContext(playerId);
-        if (ctx == null || !ctx.isOpen()) {
-            event.setCancelled(true);
-            return;
-        }
-
-        ItemStack toInsert = currentItem.clone();
-        toInsert.setAmount(1);
-
-        if (!ctx.tryInsert(toInsert)) {
-            event.setCancelled(true);
-            return;
-        }
-
-        ItemStack remainder = currentItem.clone();
-        remainder.setAmount(currentItem.getAmount() - 1);
-        if (remainder.getAmount() <= 0) {
-            event.setCurrentItem(null);
-        } else {
-            event.setCurrentItem(remainder);
-        }
-
-        scheduler.runEntity(player, () -> {
-            if (player.isOnline()) {
-                menuService.rerender(player);
-            }
-        }, () -> {});
-    }
-
-    private void handleBottomMoveToTop(Player player, ForgeInventoryHolder holder, InventoryClickEvent event) {
-        ItemStack currentItem = event.getCurrentItem();
-        if (currentItem == null || currentItem.getType() == Material.AIR) {
-            return;
-        }
-
-        UUID playerId = player.getUniqueId();
-        ForgeMenuContext ctx = menuService.getContext(playerId);
-        if (ctx == null || !ctx.isOpen()) {
-            event.setCancelled(true);
-            return;
-        }
-
-        ItemStack toInsert = currentItem.clone();
-        toInsert.setAmount(1);
-
-        if (!ctx.tryInsert(toInsert)) {
-            event.setCancelled(true);
-            return;
-        }
-
-        ItemStack remainder = currentItem.clone();
-        remainder.setAmount(currentItem.getAmount() - 1);
-        if (remainder.getAmount() <= 0) {
-            event.setCurrentItem(null);
-        } else {
-            event.setCurrentItem(remainder);
-        }
-
-        scheduler.runEntity(player, () -> {
-            if (player.isOnline()) {
-                menuService.rerender(player);
-            }
-        }, () -> {});
-    }
-
-    private void giveItemToPlayer(Player player, ItemStack item) {
-        if (item == null || item.getType() == Material.AIR) {
-            return;
-        }
-        java.util.Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
-        for (ItemStack overflowItem : overflow.values()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), overflowItem);
-        }
+        ForgeInventoryHolder holder = (ForgeInventoryHolder) genericHolder;
+        inputService.handleInventoryClose(player, holder);
     }
 
 }

@@ -10,6 +10,7 @@ import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.forge.ForgeItemPolicy;
 import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.forge.ForgeService;
+import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.menu.MenuInputReturnService;
@@ -41,6 +42,7 @@ public final class ReadyServices {
     private final PotionEffectResolver potionEffectResolver;
     private final EquipmentBridge equipmentBridge;
     private final ForgePowerService forgePowerService;
+    private final ForgeVariantEligibility forgeVariantEligibility;
     private final MenuInputReturnService menuInputReturnService;
 
     public ReadyServices(ConfigService configService, TierRepository tierRepository,
@@ -52,6 +54,7 @@ public final class ReadyServices {
                          ItemIdentityCodec itemIdentityCodec, ItemIdentityService itemIdentityService,
                          ForgeItemPolicy forgeItemPolicy, PotionEffectResolver potionEffectResolver,
                          EquipmentBridge equipmentBridge, ForgePowerService forgePowerService,
+                         ForgeVariantEligibility forgeVariantEligibility,
                          MenuInputReturnService menuInputReturnService) {
         this.configService = configService;
         this.tierRepository = tierRepository;
@@ -70,6 +73,7 @@ public final class ReadyServices {
         this.potionEffectResolver = potionEffectResolver;
         this.equipmentBridge = equipmentBridge;
         this.forgePowerService = forgePowerService;
+        this.forgeVariantEligibility = forgeVariantEligibility;
         this.menuInputReturnService = menuInputReturnService;
     }
 
@@ -139,6 +143,10 @@ public final class ReadyServices {
 
     public ForgePowerService getForgePowerService() {
         return forgePowerService;
+    }
+
+    public ForgeVariantEligibility getForgeVariantEligibility() {
+        return forgeVariantEligibility;
     }
 
     public MenuInputReturnService getMenuInputReturnService() {

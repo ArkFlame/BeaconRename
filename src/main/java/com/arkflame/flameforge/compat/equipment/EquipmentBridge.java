@@ -74,10 +74,6 @@ public final class EquipmentBridge {
     }
 
     private ItemStack getOffHandFallback(Player player) {
-        ItemStack[] armor = player.getInventory().getArmorContents();
-        if (armor.length > 3) {
-            return armor[3];
-        }
         return new ItemStack(Material.AIR);
     }
 

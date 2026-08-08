@@ -191,13 +191,17 @@ public final class ForgeStationService {
                     RegisteredForge addedForge = outcome.getAddedForge();
                     hologramService.onStationAdded(addedForge);
                     return AddForgeOutcome.added(addedForge.getId(), addedForge);
+                case INVALID_ID:
+                    return AddForgeOutcome.invalidId(id);
                 case DUPLICATE_ID:
                     return AddForgeOutcome.duplicateId(id);
                 case DUPLICATE_LOCATION:
                     return AddForgeOutcome.duplicateLocation(id);
+                case STORAGE_CONFLICT:
+                    return AddForgeOutcome.storageConflict(id, outcome.getReference());
                 case PERSISTENCE_FAILED:
                 default:
-                    return AddForgeOutcome.persistenceFailed(id);
+                    return AddForgeOutcome.persistenceFailed(id, outcome.getReference());
             }
         });
     }
@@ -223,11 +227,13 @@ public final class ForgeStationService {
                             AddForgeOutcome.added(addedForge.getId(), addedForge));
                 case DUPLICATE_ID:
                     return persistGeneratedForge(target, profile, attempt + 1);
-                case DUPLICATE_LOCATION:
-                    return CompletableFuture.completedFuture(AddForgeOutcome.duplicateLocation(candidate));
+                case STORAGE_CONFLICT:
+                    return CompletableFuture.completedFuture(
+                            AddForgeOutcome.storageConflict(candidate, outcome.getReference()));
                 case PERSISTENCE_FAILED:
                 default:
-                    return CompletableFuture.completedFuture(AddForgeOutcome.persistenceFailed(candidate));
+                    return CompletableFuture.completedFuture(
+                            AddForgeOutcome.persistenceFailed(candidate, outcome.getReference()));
             }
         });
     }
@@ -489,6 +495,10 @@ public final class ForgeStationService {
         hologramService.reconcileStartup();
     }
 
+    public void reconcileOptionalHolograms(long epoch) {
+        hologramService.reconcileStartup();
+    }
+
     public void reloadHolograms() {
         hologramService.reload();
     }
@@ -498,13 +508,14 @@ public final class ForgeStationService {
     }
 
     public enum Result {
-        ADDED,
+        SUCCESS,
         INVALID_ID,
         UNKNOWN_PROFILE,
         NO_TARGET,
         TARGET_UNAVAILABLE,
         DUPLICATE_ID,
         DUPLICATE_LOCATION,
+        STORAGE_CONFLICT,
         PERSISTENCE_FAILED,
         ID_GENERATION_EXHAUSTED,
         PLAYER_RETIRED
@@ -514,51 +525,57 @@ public final class ForgeStationService {
         private final Result result;
         private final String finalId;
         private final RegisteredForge forge;
+        private final String reference;
 
-        private AddForgeOutcome(Result result, String finalId, RegisteredForge forge) {
+        private AddForgeOutcome(Result result, String finalId, RegisteredForge forge, String reference) {
             this.result = result;
             this.finalId = finalId;
             this.forge = forge;
+            this.reference = reference;
         }
 
         public static AddForgeOutcome added(String finalId, RegisteredForge forge) {
-            return new AddForgeOutcome(Result.ADDED, finalId, forge);
+            return new AddForgeOutcome(Result.SUCCESS, finalId, forge, null);
         }
 
         public static AddForgeOutcome invalidId(String finalId) {
-            return new AddForgeOutcome(Result.INVALID_ID, finalId, null);
+            return new AddForgeOutcome(Result.INVALID_ID, finalId, null, null);
         }
 
         public static AddForgeOutcome unknownProfile(String finalId) {
-            return new AddForgeOutcome(Result.UNKNOWN_PROFILE, finalId, null);
+            return new AddForgeOutcome(Result.UNKNOWN_PROFILE, finalId, null, null);
         }
 
         public static AddForgeOutcome noTarget(String finalId) {
-            return new AddForgeOutcome(Result.NO_TARGET, finalId, null);
+            return new AddForgeOutcome(Result.NO_TARGET, finalId, null, null);
         }
 
         public static AddForgeOutcome targetUnavailable(String finalId) {
-            return new AddForgeOutcome(Result.TARGET_UNAVAILABLE, finalId, null);
+            return new AddForgeOutcome(Result.TARGET_UNAVAILABLE, finalId, null, null);
         }
 
         public static AddForgeOutcome duplicateId(String finalId) {
-            return new AddForgeOutcome(Result.DUPLICATE_ID, finalId, null);
+            return new AddForgeOutcome(Result.DUPLICATE_ID, finalId, null, null);
         }
 
         public static AddForgeOutcome duplicateLocation(String finalId) {
-            return new AddForgeOutcome(Result.DUPLICATE_LOCATION, finalId, null);
+            return new AddForgeOutcome(Result.DUPLICATE_LOCATION, finalId, null, null);
         }
 
-        public static AddForgeOutcome persistenceFailed(String finalId) {
-            return new AddForgeOutcome(Result.PERSISTENCE_FAILED, finalId, null);
+        public static AddForgeOutcome storageConflict(String finalId, String reference) {
+            return new AddForgeOutcome(Result.STORAGE_CONFLICT, finalId, null, reference);
+        }
+
+        public static AddForgeOutcome persistenceFailed(String finalId, String reference) {
+            return new AddForgeOutcome(Result.PERSISTENCE_FAILED, finalId, null, reference);
         }
 
         public static AddForgeOutcome idGenerationExhausted(String finalId) {
-            return new AddForgeOutcome(Result.ID_GENERATION_EXHAUSTED, finalId, null);
+            return new AddForgeOutcome(Result.ID_GENERATION_EXHAUSTED, finalId, null, null);
         }
 
         public static AddForgeOutcome playerRetired() {
-            return new AddForgeOutcome(Result.PLAYER_RETIRED, null, null);
+            return new AddForgeOutcome(Result.PLAYER_RETIRED, null, null, null);
         }
 
         public Result result() {
@@ -571,6 +588,10 @@ public final class ForgeStationService {
 
         public RegisteredForge forge() {
             return forge;
+        }
+
+        public String reference() {
+            return reference;
         }
     }
 

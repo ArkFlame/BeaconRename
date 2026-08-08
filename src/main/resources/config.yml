@@ -3,7 +3,7 @@
 # All values use MiniMessage formatting unless noted
 
 # Schema version - do not modify
-schema-version: 1
+schema-version: 2
 
 # Plugin enabled state
 enabled: true
@@ -109,16 +109,18 @@ cost-display:
   show-zero-xp: false
   show-zero-money: false
 
+# Cost color overrides
+cost-colors:
+  xp: "light_purple"
+  money: "green"
+  item: "aqua"
+
 forge:
   passive-refresh-ticks: 20
   power-cooldown-max-entries: 4096
   reject-foreign-persistent-data: true
   menu:
     profile: default
-
-tier-migration:
-  schema-v1-backup-directory: ".legacy-v1-backup"
-  replace-schema-v1-with-bundled-v2: true
 
 # Hologram settings
 holograms:

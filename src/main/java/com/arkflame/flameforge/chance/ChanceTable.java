@@ -54,7 +54,7 @@ public final class ChanceTable {
 
         List<ChanceEntry> entries = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
-            BigDecimal percentage = microWeights[i] == 0 ? BigDecimal.ZERO :
+            BigDecimal percentage = sumBd.compareTo(BigDecimal.ZERO) == 0 ? BigDecimal.ZERO :
                 new BigDecimal(microWeights[i]).multiply(HUNDRED).divide(sumBd, 6, RoundingMode.HALF_UP);
             BigDecimal displayPct = percentage.setScale(DISPLAY_SCALE, RoundingMode.HALF_UP);
 

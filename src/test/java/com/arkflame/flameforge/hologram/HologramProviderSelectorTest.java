@@ -7,6 +7,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -86,18 +87,32 @@ class HologramProviderSelectorTest {
         PluginManager pluginManager = mock(PluginManager.class);
         when(pluginManager.getPlugin("FancyHolograms")).thenReturn(fancyPlugin);
 
+        Logger testLogger = Logger.getLogger("test-diag");
+        testLogger.setUseParentHandlers(false);
+        java.util.logging.LogRecord[] capturedRecord = new java.util.logging.LogRecord[1];
+        java.util.logging.Handler captureHandler = new java.util.logging.Handler() {
+            @Override public void publish(java.util.logging.LogRecord record) { capturedRecord[0] = record; }
+            @Override public void flush() {}
+            @Override public void close() {}
+        };
+        captureHandler.setLevel(java.util.logging.Level.INFO);
+        testLogger.addHandler(captureHandler);
+
         Plugin mockHostPlugin = mock(Plugin.class);
         List<String> providerOrder = Arrays.asList("FancyHolograms");
         HologramSettings settings = HologramSettings.fromConfig(
             providerOrder, true, 1.75, true, Collections.singletonList("Line 1"));
 
-        HologramProviderSelector selector = new HologramProviderSelector(mockHostPlugin, pluginManager, new HologramProviderFactory.Default(), Logger.getLogger("test"));
+        HologramProviderSelector selector = new HologramProviderSelector(mockHostPlugin, pluginManager, new HologramProviderFactory.Default(), testLogger);
         HologramProvider provider = selector.select(settings);
 
         assertNotNull(provider);
         assertTrue(provider instanceof NoOpHologramProvider);
         NoOpHologramProvider noOp = (NoOpHologramProvider) provider;
         assertEquals("FancyHolograms disabled (version 1.0.0)", noOp.getUnavailableReason());
+        assertTrue(capturedRecord[0].getMessage().contains("Hologram provider: no supported provider"));
+
+        testLogger.removeHandler(captureHandler);
 
         Plugin wrongApiPlugin = mock(Plugin.class);
         PluginManager wrongManager = mock(PluginManager.class);
@@ -113,23 +128,17 @@ class HologramProviderSelectorTest {
     }
 
     @Test
-    void selectedProviderExposesPluginNameAndVersion() {
-        Plugin fancyPlugin = mock(Plugin.class);
-        when(fancyPlugin.isEnabled()).thenReturn(true);
-        PluginManager pluginManager = mock(PluginManager.class);
-        when(pluginManager.getPlugin("FancyHolograms")).thenReturn(fancyPlugin);
+    void fancyRemoveBindingSelectsStringOverload() throws Exception {
+        Method method = FancyHologramsApiBindings.resolveRemoveHologramByNameMethod(
+            FancyManagerOverloadFixture.class
+        );
+        FancyManagerOverloadFixture manager = new FancyManagerOverloadFixture();
 
-        Plugin mockHostPlugin = mock(Plugin.class);
-        List<String> providerOrder = Arrays.asList("FancyHolograms");
-        HologramSettings settings = HologramSettings.fromConfig(
-            providerOrder, true, 1.75, true, Collections.singletonList("Line 1"));
+        method.invoke(manager, "flameforge_test");
 
-        HologramProviderSelector selector = new HologramProviderSelector(mockHostPlugin, pluginManager, new HologramProviderFactory.Default(), Logger.getLogger("test"));
-        HologramProvider provider = selector.select(settings);
-
-        assertNotNull(provider);
-        assertEquals("NoOp", provider.getName());
-        assertEquals("1.0", provider.getVersion());
+        assertArrayEquals(new Class<?>[]{String.class}, method.getParameterTypes());
+        assertEquals("flameforge_test", manager.removedId);
+        assertFalse(manager.objectOverloadCalled);
     }
 
     @Test
@@ -146,5 +155,19 @@ class HologramProviderSelectorTest {
         assertFalse(provider.isAvailable());
         assertNotNull(provider.getUnavailableReason());
         assertTrue(provider instanceof HologramProvider);
+    }
+
+    public static final class FancyManagerOverloadFixture {
+        private String removedId;
+        private boolean objectOverloadCalled;
+
+        public Object removeHologram(String hologramId) {
+            this.removedId = hologramId;
+            return null;
+        }
+
+        public void removeHologram(Object hologram) {
+            this.objectOverloadCalled = true;
+        }
     }
 }

@@ -24,7 +24,7 @@ public final class HologramProviderSelector {
     public HologramProvider select(HologramSettings settings) {
         if (!settings.isEnabled()) {
             String reason = "disabled by configuration";
-            logger.info("[FlameForge] Hologram provider: " + reason);
+            logger.info("Hologram provider: " + reason);
             return new NoOpHologramProvider(reason);
         }
 
@@ -50,7 +50,7 @@ public final class HologramProviderSelector {
             try {
                 HologramProvider provider = providerFactory.create(plugin, logger);
                 if (provider.isAvailable()) {
-                    logger.info("[FlameForge] Hologram provider: " + provider.getName() + " v" + provider.getVersion());
+                    logger.info("Hologram provider: " + provider.getName() + " v" + provider.getVersion());
                     return provider;
                 } else {
                     combinedReasons.add(trimmed + " unavailable: " + provider.getUnavailableReason());
@@ -68,7 +68,7 @@ public final class HologramProviderSelector {
             reasonBuilder.append(combinedReasons.get(i));
         }
         String combinedReason = reasonBuilder.toString();
-        logger.info("[FlameForge] Hologram provider: no supported provider");
+        logger.info("Hologram provider: no supported provider");
         return new NoOpHologramProvider(combinedReason.isEmpty() ? "no supported provider available" : combinedReason);
     }
 }

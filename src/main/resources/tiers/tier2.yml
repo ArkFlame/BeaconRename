@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 2</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 2"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#60a5fa:#c4b5fd>Shape a stronger forge imprint.</gradient>"
 cooldown-seconds: 8
 input:
   allowed-groups:

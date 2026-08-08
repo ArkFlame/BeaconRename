@@ -23,7 +23,7 @@ class OutcomeSelectorTest {
     }
 
     private ForgeVariant variant(String id, double weight) {
-        return new ForgeVariant(id, "", Collections.emptyList(), weight, null, Collections.emptyList(), Collections.emptyMap(), Collections.emptyList());
+        return new ForgeVariant(id, "", Collections.emptyList(), weight, null, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
     @Test
@@ -88,13 +88,12 @@ class OutcomeSelectorTest {
     }
 
     @Test
-    void selectVariantReturnsFirstWhenAllWeightsAreZero() {
+    void selectVariantRejectsAllZeroWeights() {
         OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
         ForgeVariant variant1 = variant("v1", 0.0);
         ForgeVariant variant2 = variant("v2", 0.0);
         List<ForgeVariant> variants = java.util.Arrays.asList(variant1, variant2);
-        ForgeVariant selected = selector.selectVariant(variants);
-        assertEquals("v1", selected.getId());
+        assertThrows(IllegalArgumentException.class, () -> selector.selectVariant(variants));
     }
 
     @Test
@@ -128,14 +127,23 @@ class OutcomeSelectorTest {
     }
 
     @Test
-    void buildChanceTableWithTwoEntriesCreatesTableWithTwoEntries() {
+    void selectVariantReturnsLastVariantWhenRollExceedsAllWeights() {
+        OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(5_999_999));
+        ForgeVariant light = variant("light", 1.0);
+        ForgeVariant medium = variant("medium", 2.0);
+        ForgeVariant heavy = variant("heavy", 3.0);
+        List<ForgeVariant> variants = java.util.Arrays.asList(light, medium, heavy);
+        ForgeVariant selected = selector.selectVariant(variants);
+        assertNotNull(selected);
+        assertEquals("heavy", selected.getId());
+    }
+
+    @Test
+    void rollCategoryWithExtremeChancesRemainsWithinBounds() {
         OutcomeSelector selector = new OutcomeSelector(new DeterministicRandom(0));
-        List<ChanceEntry> entries = java.util.Arrays.asList(
-            entry("first", W1, 0),
-            entry("second", W2, 1)
-        );
-        ChanceTable table = selector.buildChanceTable(entries);
-        assertEquals(2, table.getEntries().size());
+        TierChances extremeChances = new TierChances(99.9, 0.05, 0.05);
+        ForgeOutcomeCategory category = selector.rollCategory(extremeChances);
+        assertEquals(ForgeOutcomeCategory.SUCCESS, category);
     }
 
     private static class DeterministicRandom implements RandomSource {

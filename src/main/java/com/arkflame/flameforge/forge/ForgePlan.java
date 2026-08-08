@@ -10,6 +10,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.Objects;
+import java.util.UUID;
 
 public final class ForgePlan {
     private final ItemStack input;
@@ -17,9 +18,15 @@ public final class ForgePlan {
     private final int targetTierLevel;
     private final TierRequirements requirements;
     private final TierChances chances;
-    private final ForgeVariant selectedVariant;
     private final TierDefinition targetTier;
     private final CostQuote costQuote;
+    private final String stationId;
+    private final String stationProfileId;
+    private final UUID stationWorldUuid;
+    private final String stationWorldName;
+    private final int stationBlockX;
+    private final int stationBlockY;
+    private final int stationBlockZ;
 
     private ForgePlan(Builder builder) {
         this.input = builder.input != null ? builder.input.clone() : null;
@@ -27,24 +34,62 @@ public final class ForgePlan {
         this.targetTierLevel = builder.targetTierLevel;
         this.requirements = builder.requirements;
         this.chances = builder.chances;
-        this.selectedVariant = builder.selectedVariant;
         this.targetTier = builder.targetTier;
         this.costQuote = builder.costQuote;
+        this.stationId = builder.stationId;
+        this.stationProfileId = builder.stationProfileId;
+        this.stationWorldUuid = builder.stationWorldUuid;
+        this.stationWorldName = builder.stationWorldName;
+        this.stationBlockX = builder.stationBlockX;
+        this.stationBlockY = builder.stationBlockY;
+        this.stationBlockZ = builder.stationBlockZ;
     }
 
     public static ForgePlan create(Player player, PlayerForgeState session, ItemStack inputItem,
                                    TierDefinition targetTier, TierRequirements requirements,
-                                   TierChances chances, ForgeVariant variant, CostQuote costQuote) {
-        int currentLevel = session.getActiveTierLevel();
+                                   TierChances chances, CostQuote costQuote,
+                                   String stationId, String stationProfileId,
+                                   UUID stationWorldUuid, String stationWorldName,
+                                   int stationBlockX, int stationBlockY, int stationBlockZ) {
         return builder()
             .input(inputItem)
-            .currentTierLevel(currentLevel)
-            .targetTierLevel(currentLevel + 1)
+            .currentTierLevel(session.getActiveTierLevel())
+            .targetTierLevel(session.getActiveTierLevel() + 1)
             .requirements(requirements)
             .chances(chances)
-            .selectedVariant(variant)
             .targetTier(targetTier)
             .costQuote(costQuote)
+            .stationId(stationId)
+            .stationProfileId(stationProfileId)
+            .stationWorldUuid(stationWorldUuid)
+            .stationWorldName(stationWorldName)
+            .stationBlockX(stationBlockX)
+            .stationBlockY(stationBlockY)
+            .stationBlockZ(stationBlockZ)
+            .build();
+    }
+
+    public static ForgePlan createWithTier(ItemStack inputItem, int currentTierLevel,
+                                   TierDefinition targetTier, TierRequirements requirements,
+                                   TierChances chances, CostQuote costQuote,
+                                   String stationId, String stationProfileId,
+                                   UUID stationWorldUuid, String stationWorldName,
+                                   int stationBlockX, int stationBlockY, int stationBlockZ) {
+        return builder()
+            .input(inputItem)
+            .currentTierLevel(currentTierLevel)
+            .targetTierLevel(currentTierLevel + 1)
+            .requirements(requirements)
+            .chances(chances)
+            .targetTier(targetTier)
+            .costQuote(costQuote)
+            .stationId(stationId)
+            .stationProfileId(stationProfileId)
+            .stationWorldUuid(stationWorldUuid)
+            .stationWorldName(stationWorldName)
+            .stationBlockX(stationBlockX)
+            .stationBlockY(stationBlockY)
+            .stationBlockZ(stationBlockZ)
             .build();
     }
 
@@ -72,16 +117,40 @@ public final class ForgePlan {
         return chances;
     }
 
-    public ForgeVariant getSelectedVariant() {
-        return selectedVariant;
-    }
-
     public TierDefinition getTargetTier() {
         return targetTier;
     }
 
     public CostQuote getCostQuote() {
         return costQuote;
+    }
+
+    public String getStationId() {
+        return stationId;
+    }
+
+    public String getStationProfileId() {
+        return stationProfileId;
+    }
+
+    public UUID getStationWorldUuid() {
+        return stationWorldUuid;
+    }
+
+    public String getStationWorldName() {
+        return stationWorldName;
+    }
+
+    public int getStationBlockX() {
+        return stationBlockX;
+    }
+
+    public int getStationBlockY() {
+        return stationBlockY;
+    }
+
+    public int getStationBlockZ() {
+        return stationBlockZ;
     }
 
     public boolean isAffordable() {
@@ -94,9 +163,15 @@ public final class ForgePlan {
         private int targetTierLevel;
         private TierRequirements requirements;
         private TierChances chances;
-        private ForgeVariant selectedVariant;
         private TierDefinition targetTier;
         private CostQuote costQuote;
+        private String stationId;
+        private String stationProfileId;
+        private UUID stationWorldUuid;
+        private String stationWorldName;
+        private int stationBlockX;
+        private int stationBlockY;
+        private int stationBlockZ;
 
         public Builder input(ItemStack input) {
             this.input = input;
@@ -123,11 +198,6 @@ public final class ForgePlan {
             return this;
         }
 
-        public Builder selectedVariant(ForgeVariant selectedVariant) {
-            this.selectedVariant = selectedVariant;
-            return this;
-        }
-
         public Builder targetTier(TierDefinition targetTier) {
             this.targetTier = targetTier;
             return this;
@@ -135,6 +205,41 @@ public final class ForgePlan {
 
         public Builder costQuote(CostQuote costQuote) {
             this.costQuote = costQuote;
+            return this;
+        }
+
+        public Builder stationId(String stationId) {
+            this.stationId = stationId;
+            return this;
+        }
+
+        public Builder stationProfileId(String stationProfileId) {
+            this.stationProfileId = stationProfileId;
+            return this;
+        }
+
+        public Builder stationWorldUuid(UUID stationWorldUuid) {
+            this.stationWorldUuid = stationWorldUuid;
+            return this;
+        }
+
+        public Builder stationWorldName(String stationWorldName) {
+            this.stationWorldName = stationWorldName;
+            return this;
+        }
+
+        public Builder stationBlockX(int stationBlockX) {
+            this.stationBlockX = stationBlockX;
+            return this;
+        }
+
+        public Builder stationBlockY(int stationBlockY) {
+            this.stationBlockY = stationBlockY;
+            return this;
+        }
+
+        public Builder stationBlockZ(int stationBlockZ) {
+            this.stationBlockZ = stationBlockZ;
             return this;
         }
 

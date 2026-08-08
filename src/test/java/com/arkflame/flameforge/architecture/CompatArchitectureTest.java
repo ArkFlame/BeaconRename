@@ -148,8 +148,60 @@ class CompatArchitectureTest {
             "de.oliver.fancyholograms (Fancy provider) must be present");
         assertTrue(scanForPattern(hologramDir, "HologramData"),
             "Fancy create lookup names HologramData must exist");
-        assertTrue(scanForPattern(hologramDir, ".ifPresent"),
-            "Optional unwrap using ifPresent must exist");
+
+        File fancyBindingsFile = new File(projectDir,
+            "src/main/java/com/arkflame/flameforge/hologram/FancyHologramsApiBindings.java");
+        File fancyProviderFile = new File(projectDir,
+            "src/main/java/com/arkflame/flameforge/hologram/FancyHologramsProvider.java");
+
+        assertTrue(fancyBindingsFile.exists(), "FancyHologramsApiBindings.java must exist");
+        assertTrue(fancyProviderFile.exists(), "FancyHologramsProvider.java must exist");
+
+        String fancyBindings = readFile(fancyBindingsFile);
+        String fancyProvider = readFile(fancyProviderFile);
+
+        assertTrue(fancyBindings.contains("resolveRemoveHologramByNameMethod"),
+            "Fancy binding must resolve name-based removal through one exact seam");
+        assertTrue(fancyBindings.contains("getMethod(\"removeHologram\", String.class)"),
+            "Fancy binding must resolve removeHologram(String)");
+        assertFalse(fancyBindings.contains("getHologramMethod"),
+            "Fancy binding must not retain the unused Optional lookup");
+        assertFalse(fancyBindings.contains("removeHologramMethod"),
+            "Fancy binding must not retain the unused Hologram overload");
+        assertTrue(fancyProvider.contains("removeHologramStringMethod.invoke"),
+            "Fancy provider must remove by hologram ID");
+        assertFalse(fancyProvider.contains(".ifPresent"),
+            "Fancy provider must not reintroduce Optional lookup/unwrap removal");
+
+        File flameForgePluginFile = new File(projectDir,
+            "src/main/java/com/arkflame/flameforge/FlameForgePlugin.java");
+        assertTrue(flameForgePluginFile.exists(), "FlameForgePlugin.java must exist");
+        String flameForgePluginContent = readFile(flameForgePluginFile);
+
+        assertTrue(flameForgePluginContent.contains("reconcileOptionalHolograms(epoch)"),
+            "FlameForgePlugin must call reconcileOptionalHolograms(epoch)");
+        assertTrue(flameForgePluginContent.contains("runGlobalLater"),
+            "FlameForgePlugin must use runGlobalLater for delayed hologram work");
+        assertTrue(flameForgePluginContent.contains("holograms="),
+            "FlameForgePlugin must include holograms= in ready summary");
+
+        File forgeStationHologramServiceFile = new File(projectDir,
+            "src/main/java/com/arkflame/flameforge/hologram/ForgeStationHologramService.java");
+        assertTrue(forgeStationHologramServiceFile.exists(), "ForgeStationHologramService.java must exist");
+        String forgeStationHologramServiceContent = readFile(forgeStationHologramServiceFile);
+
+        assertTrue(forgeStationHologramServiceContent.contains("provider.isAvailable()"),
+            "ForgeStationHologramService must check provider availability");
+        assertTrue(forgeStationHologramServiceContent.contains("startupReconciled.compareAndSet(false, true)"),
+            "ForgeStationHologramService must use startupReconciled.compareAndSet");
+
+        File selectorFile = new File(projectDir,
+            "src/main/java/com/arkflame/flameforge/hologram/HologramProviderSelector.java");
+        assertTrue(selectorFile.exists(), "HologramProviderSelector.java must exist");
+        String selectorContent = readFile(selectorFile);
+
+        assertTrue(selectorContent.contains("combinedReasons") && selectorContent.contains("no supported provider"),
+            "Selector source must contain accumulated reason in final no-provider log");
     }
 
     @Test

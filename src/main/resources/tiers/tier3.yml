@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 3</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 3"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#34d399:#22d3ee>Awaken deeper effects.</gradient>"
 cooldown-seconds: 12
 input:
   allowed-groups:

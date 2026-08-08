@@ -1,5 +1,7 @@
 package com.arkflame.flameforge.command;
 
+import com.arkflame.flameforge.FlameForgePlugin;
+import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.ConfigSnapshot;
@@ -19,6 +21,7 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +48,7 @@ class FlameForgeCommandTest {
     private TextBridge textBridge;
     private ConfigService configService;
     private TierRepository tierRepository;
-    private JavaPlugin fakePlugin;
+    private FlameForgePlugin fakePlugin;
     private SchedulerBridge schedulerBridge;
     private MessageService messageService;
     private CommandSuggestionIndex suggestionIndex;
@@ -55,7 +58,12 @@ class FlameForgeCommandTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        fakePlugin = mock(JavaPlugin.class);
+        fakePlugin = mock(FlameForgePlugin.class);
+        PluginDescriptionFile desc = mock(PluginDescriptionFile.class);
+        when(desc.getName()).thenReturn("FlameForge");
+        when(desc.getVersion()).thenReturn("1.0.2");
+        when(desc.getAuthors()).thenReturn(Arrays.asList("ArkFlame Studios"));
+        when(fakePlugin.getDescription()).thenReturn(desc);
         textBridge = mock(TextBridge.class);
         configService = mock(ConfigService.class);
         tierRepository = mock(TierRepository.class);
@@ -188,7 +196,12 @@ class FlameForgeCommandTest {
 
         ConfigService bundledConfig = mock(ConfigService.class);
         when(bundledConfig.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder().build());
-        JavaPlugin bundledPlugin = mock(JavaPlugin.class);
+        FlameForgePlugin bundledPlugin = mock(FlameForgePlugin.class);
+        PluginDescriptionFile bundledDesc = mock(PluginDescriptionFile.class);
+        when(bundledDesc.getName()).thenReturn("FlameForge");
+        when(bundledDesc.getVersion()).thenReturn("1.0.2");
+        when(bundledDesc.getAuthors()).thenReturn(Arrays.asList("ArkFlame Studios"));
+        when(bundledPlugin.getDescription()).thenReturn(bundledDesc);
         InputStream resource = FlameForgeCommandTest.class.getResourceAsStream("/messages.yml");
         assertNotNull(resource);
         when(bundledPlugin.getResource("messages.yml")).thenReturn(resource);
@@ -305,11 +318,11 @@ class FlameForgeCommandTest {
         outcomes.put(ForgeStationService.Result.TARGET_UNAVAILABLE, ForgeStationService.AddForgeOutcome.targetUnavailable(null));
         outcomes.put(ForgeStationService.Result.DUPLICATE_ID, ForgeStationService.AddForgeOutcome.duplicateId("duplicate"));
         outcomes.put(ForgeStationService.Result.DUPLICATE_LOCATION, ForgeStationService.AddForgeOutcome.duplicateLocation("duplicate"));
-        outcomes.put(ForgeStationService.Result.PERSISTENCE_FAILED, ForgeStationService.AddForgeOutcome.persistenceFailed("failed"));
+        outcomes.put(ForgeStationService.Result.PERSISTENCE_FAILED, ForgeStationService.AddForgeOutcome.persistenceFailed("failed-id", "REF-WRITE-001"));
         outcomes.put(ForgeStationService.Result.ID_GENERATION_EXHAUSTED, ForgeStationService.AddForgeOutcome.idGenerationExhausted(null));
         outcomes.put(ForgeStationService.Result.NO_TARGET, ForgeStationService.AddForgeOutcome.noTarget(null));
         outcomes.put(ForgeStationService.Result.PLAYER_RETIRED, ForgeStationService.AddForgeOutcome.playerRetired());
-        outcomes.put(ForgeStationService.Result.ADDED, ForgeStationService.AddForgeOutcome.added("forge-success", forge));
+        outcomes.put(ForgeStationService.Result.SUCCESS, ForgeStationService.AddForgeOutcome.added("forge-success", forge));
 
         Map<ForgeStationService.Result, String> expectedFailureKeys = new LinkedHashMap<>();
         expectedFailureKeys.put(ForgeStationService.Result.INVALID_ID, "station-add.invalid-id");
@@ -328,7 +341,7 @@ class FlameForgeCommandTest {
 
             command.onCommand(sender, mock(Command.class), "flameforge", new String[]{"station", "add", "auto"});
 
-            if (entry.getKey() == ForgeStationService.Result.ADDED) {
+            if (entry.getKey() == ForgeStationService.Result.SUCCESS) {
                 assertEquals(Arrays.asList("station-add.success", "station-list.entry"), sentMessageKeys);
                 verify(stationService).listStations();
                 assertTrue(command.onTabComplete(sender, mock(Command.class), "flameforge", new String[]{"tp", ""})
@@ -344,7 +357,7 @@ class FlameForgeCommandTest {
                 assertEquals(Collections.singletonList(expectedKey), sentMessageKeys);
                 verify(stationService, never()).listStations();
             }
-            if (entry.getKey() != ForgeStationService.Result.ADDED) {
+            if (entry.getKey() != ForgeStationService.Result.SUCCESS) {
                 assertTrue(command.onTabComplete(sender, mock(Command.class), "flameforge", new String[]{"tp", ""})
                     .isEmpty());
             }
@@ -397,24 +410,39 @@ class FlameForgeCommandTest {
     }
 
     @Test
-    void notReadyOperationalCommandUsesLoadingFailedOrUnavailableMessage() {
+    void reloadUsesStateSpecificLoadingUnavailableAndReadyMessages() {
         CommandSender sender = adminSender();
 
         command.markLoading();
         sentMessageKeys.clear();
         command.onCommand(sender, mock(Command.class), "flameforge", new String[]{"reload"});
-        assertTrue(sentMessageKeys.stream().anyMatch(k -> k.equals("reload.started")));
+        assertTrue(sentMessageKeys.contains("startup.loading"));
+        assertFalse(sentMessageKeys.contains("reload.started"));
 
         command.markUnavailable();
         sentMessageKeys.clear();
         command.onCommand(sender, mock(Command.class), "flameforge", new String[]{"reload"});
-        assertTrue(sentMessageKeys.stream().anyMatch(k -> k.equals("reload.started")));
+        assertTrue(sentMessageKeys.contains("reload.unavailable"));
+        assertFalse(sentMessageKeys.contains("reload.started"));
+        verify(configService, never()).reloadAsync();
+
+        when(configService.reloadAsync()).thenReturn(CompletableFuture.completedFuture(ConfigService.ReloadResult.alreadyRunning()));
+        when(schedulerBridge.runGlobal(eq(fakePlugin), any(Runnable.class))).thenAnswer(invocation -> {
+            ((Runnable) invocation.getArgument(1)).run();
+            return TaskHandleStub.INSTANCE;
+        });
 
         ReadyServices services = mock(ReadyServices.class);
         command.markReady(services);
         sentMessageKeys.clear();
         command.onCommand(sender, mock(Command.class), "flameforge", new String[]{"reload"});
-        assertFalse(sentMessageKeys.stream().anyMatch(k -> k.equals("command.loading") || k.equals("command.unavailable")));
+        assertTrue(sentMessageKeys.contains("reload.started"));
+        assertFalse(sentMessageKeys.contains("startup.loading"));
+        assertFalse(sentMessageKeys.contains("reload.unavailable"));
+        verify(configService, times(1)).reloadAsync();
+        sentMessageKeys.clear();
+        command.onCommand(sender, mock(Command.class), "flameforge", new String[]{"reload"});
+        assertTrue(sentMessageKeys.contains("reload.already-running"));
     }
 
     private CommandSender adminSender() {
@@ -434,6 +462,7 @@ class FlameForgeCommandTest {
         ReadyServices services = mock(ReadyServices.class);
         when(services.getStationService()).thenReturn(stationService);
         when(services.getAccessService()).thenReturn(accessService);
+        when(services.getForgeVariantEligibility()).thenReturn(mock(ForgeVariantEligibility.class));
         return services;
     }
 

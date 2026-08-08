@@ -135,6 +135,49 @@ outcomes:
     power: blazing
 ```
 
+## Variant Effects
+
+Variants are defined as a list-of-map in tier files. Each variant can specify enchantments, attributes, and powers with eligibility constraints.
+
+### Variant Structure
+
+Each variant entry in the `variants` list contains:
+
+- `id`: Unique variant identifier
+- `display-name`: MiniMessage display name
+- `weight`: Selection weight
+- `applicable-groups`: List of groups that can receive this variant (ANY, WEAPON, ARMOR, or custom)
+- `enchantments`: List-of-map enchantment specs with `candidates`, `min-level`, `max-level`, `unsafe`
+- `attributes`: List-of-map attribute specs with `id`, `type` (PASSIVE|ACTIVE|ON_HIT), `value`
+- `powers`: List-of-map power specs with `id`, `type`, `cooldown-ticks`, `hit-interval`, `chance`
+
+### Power Types and Activation
+
+| Type                  | Activation     | Description |
+|-----------------------|----------------|-------------|
+| `ON_HIT_POTION`       | On hit         | Potion effect applied to target on hit |
+| `ON_HIT_FIRE`         | On hit         | Sets target on fire |
+| `ON_HIT_HEAL`         | On hit         | Heals attacker on hit |
+| `PASSIVE_POTION`      | Passive        | Always active while equipped |
+| `SHIFT_RIGHT_CLICK_DASH` | Active      | Dash on shift+right-click |
+| `SHIFT_RIGHT_CLICK_HEAL` | Active      | Heal on shift+right-click |
+| `EVERY_N_HIT_LIGHTNING` | Every N hits | Lightning strikes every Nth hit |
+| `EVERY_N_HIT_KNOCKBACK` | Every N hits | Knockback every Nth hit |
+
+### Activation Semantics
+
+- **Passive**: Effect is always active while the item is equipped
+- **Active**: Effect triggers on player action (e.g., shift+right-click)
+- **On-hit**: Effect triggers each time the item lands a hit on a target
+
+### Hit Interval
+
+For `EVERY_N_HIT_*` power types, `hit-interval` specifies how many hits must occur before the effect triggers. For example, `hit-interval: 3` means the effect triggers on every 3rd hit.
+
+### Variant Eligibility
+
+The `applicable-groups` field controls which items can receive a variant. If not specified, defaults to `ANY`. Group matching is done against the item's material name pattern or equipped slot type.
+
 ## Hook System
 
 ### Vault Economy

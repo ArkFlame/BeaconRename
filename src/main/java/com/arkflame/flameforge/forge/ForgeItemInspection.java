@@ -50,6 +50,7 @@ public final class ForgeItemInspection {
     private final ItemIdentityService identityService;
     private final AttributeBridge attributeBridge;
     private final TierRepository tierRepository;
+    private final ForgeVariantEligibility variantEligibility;
 
     private Method pdcGetMethod;
     private Method pdcKeysMethod;
@@ -57,11 +58,13 @@ public final class ForgeItemInspection {
     private Class<?> pdcTypeClass;
 
     public ForgeItemInspection(ItemIdentityCodec codec, ItemIdentityService identityService,
-                               AttributeBridge attributeBridge, TierRepository tierRepository) {
+                               AttributeBridge attributeBridge, TierRepository tierRepository,
+                               ForgeVariantEligibility variantEligibility) {
         this.codec = codec;
         this.identityService = identityService;
         this.attributeBridge = attributeBridge;
         this.tierRepository = tierRepository;
+        this.variantEligibility = variantEligibility;
         initReflection();
     }
 
@@ -85,16 +88,39 @@ public final class ForgeItemInspection {
             return new InspectionResult(Status.EMPTY, null);
         }
 
-        Optional<ItemIdentityCodec.Identity> identityOpt = readIdentity(item);
-        if (!identityOpt.isPresent()) {
-            return new InspectionResult(Status.INVALID_IDENTITY, null);
+        ItemIdentityService.ForgeIdentityRead identityRead = identityService.readForgeIdentity(item);
+        ItemIdentityCodec.Identity identity;
+
+        switch (identityRead.getStatus()) {
+            case NONE:
+                identity = synthesizeFreshIdentity(item);
+                break;
+            case INVALID:
+                return new InspectionResult(Status.INVALID_IDENTITY, null);
+            case VALID:
+            default:
+                identity = identityRead.getIdentity();
+                break;
         }
-        ItemIdentityCodec.Identity identity = identityOpt.get();
 
         int currentTier = identity.getCurrentTier();
         TierDefinition currentTierDef = findTierByLevel(currentTier).orElse(null);
 
         if (currentTierDef != null && !currentTierDef.isEnabled()) {
+            return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
+        }
+
+        int targetTier = currentTier + 1;
+        TierDefinition targetTierDef = findTierByLevel(targetTier).orElse(null);
+
+        if (targetTierDef == null) {
+            if (isMaxReachableTier(currentTier)) {
+                return new InspectionResult(Status.MAX_TIER, identity);
+            }
+            return new InspectionResult(Status.NEXT_TIER_MISSING, identity);
+        }
+
+        if (!targetTierDef.isEnabled()) {
             return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
         }
 
@@ -124,23 +150,46 @@ public final class ForgeItemInspection {
             return new InspectionResult(Status.CURSED, identity);
         }
 
+        if (targetTierDef != null) {
+            List<String> deniedMaterials = targetTierDef.getDeniedMaterials();
+            if (!deniedMaterials.isEmpty()) {
+                Material mat = item.getType();
+                String matName = mat.name();
+                for (String denied : deniedMaterials) {
+                    if (denied.equalsIgnoreCase(matName) || denied.equalsIgnoreCase("*")) {
+                        return new InspectionResult(Status.DENIED_MATERIAL, identity);
+                    }
+                }
+            }
+
+            List<String> allowedGroups = targetTierDef.getAllowedGroups();
+            if (!allowedGroups.isEmpty()) {
+                Optional<String> groupOpt = identityService.getMaterialGroup(item.getType());
+                if (groupOpt.isPresent()) {
+                    String group = groupOpt.get();
+                    boolean allowed = allowedGroups.stream()
+                        .anyMatch(g -> g.equalsIgnoreCase("ANY") || identityService.matchesMaterialGroup(item.getType(), g));
+                    if (!allowed) {
+                        return new InspectionResult(Status.DENIED_GROUP, identity);
+                    }
+                }
+            }
+
+            List<com.arkflame.flameforge.model.ForgeVariant> variants = targetTierDef.getVariants();
+            if (variants == null || variants.isEmpty()) {
+                return new InspectionResult(Status.NO_ELIGIBLE_VARIANTS, identity);
+            }
+            List<com.arkflame.flameforge.model.ForgeVariant> eligible = variantEligibility.eligibleVariants(item, variants);
+            if (eligible.isEmpty()) {
+                return new InspectionResult(Status.NO_ELIGIBLE_VARIANTS, identity);
+            }
+        }
+
         if (session == null) {
             return new InspectionResult(Status.READY, identity);
         }
 
         String stationId = session.getActiveStationId();
-
-        TierDefinition targetTierDef = findNextTier(currentTier).orElse(null);
-        if (targetTierDef == null) {
-            if (isMaxReachableTier(currentTier)) {
-                return new InspectionResult(Status.MAX_TIER, identity);
-            }
-            return new InspectionResult(Status.NEXT_TIER_MISSING, identity);
-        }
-
-        if (!targetTierDef.isEnabled()) {
-            return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
-        }
 
         Optional<StationProfile> profileOpt = resolveStationProfile(stationId);
         if (profileOpt.isPresent()) {
@@ -158,98 +207,14 @@ public final class ForgeItemInspection {
             }
         }
 
-        if (currentTierDef != null) {
-            List<String> deniedMaterials = currentTierDef.getDeniedMaterials();
-            if (!deniedMaterials.isEmpty()) {
-                Material mat = item.getType();
-                String matName = mat.name();
-                for (String denied : deniedMaterials) {
-                    if (denied.equalsIgnoreCase(matName) || denied.equalsIgnoreCase("*")) {
-                        return new InspectionResult(Status.DENIED_MATERIAL, identity);
-                    }
-                }
-            }
-
-            List<String> allowedGroups = currentTierDef.getAllowedGroups();
-            if (!allowedGroups.isEmpty()) {
-                Optional<String> groupOpt = identityService.getMaterialGroup(item.getType());
-                if (groupOpt.isPresent()) {
-                    String group = groupOpt.get();
-                    boolean allowed = allowedGroups.stream()
-                        .anyMatch(g -> g.equalsIgnoreCase("ANY") || g.equalsIgnoreCase(group));
-                    if (!allowed) {
-                        return new InspectionResult(Status.DENIED_GROUP, identity);
-                    }
-                }
-            }
-        }
-
-        if (targetTierDef != null) {
-            List<com.arkflame.flameforge.model.ForgeVariant> variants = targetTierDef.getVariants();
-            if (variants == null || variants.isEmpty()) {
-                return new InspectionResult(Status.NO_ELIGIBLE_VARIANTS, identity);
-            }
-            boolean hasContent = variants.stream()
-                .anyMatch(v -> !v.getEnchantmentCandidates().isEmpty()
-                    || !v.getAttributeModifiers().isEmpty()
-                    || !v.getPowerIds().isEmpty());
-            if (!hasContent) {
-                return new InspectionResult(Status.NO_ELIGIBLE_VARIANTS, identity);
-            }
-        }
-
         return new InspectionResult(Status.READY, identity);
     }
 
-    private Optional<ItemIdentityCodec.Identity> readIdentity(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) {
-            return Optional.empty();
-        }
-
-        Optional<ItemIdentityService.IdentityData> legacyData = identityService.readIdentity(item);
-        if (legacyData.isPresent()) {
-            ItemIdentityService.IdentityData data = legacyData.get();
-            ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
-                .withForgeId(data.getForgeId())
-                .withReforgeCount(data.getReforgeCount())
-                .withCurrentTier(data.getHighestTier())
-                .withHighestTier(data.getHighestTier());
-            if (data.getLastTier() != null) {
-                identity = identity.withLastTierId(data.getLastTier());
-            }
-            identity = identity.withLastVariantId(data.getLastOutcome());
-            return Optional.of(identity);
-        }
-
-        return readModernIdentity(item);
-    }
-
-    private Optional<ItemIdentityCodec.Identity> readModernIdentity(ItemStack item) {
-        try {
-            ItemMeta meta = item.getItemMeta();
-            if (meta == null) {
-                return Optional.empty();
-            }
-            Method getPdcMethod = ItemMeta.class.getMethod("getPersistentDataContainer");
-            Object pdc = getPdcMethod.invoke(meta);
-            if (pdc == null) {
-                return Optional.empty();
-            }
-            Object stateKey = namespacedKeyClass.getConstructor(String.class, String.class)
-                .newInstance("flameforge", "state");
-            Object stringType = pdcTypeClass.getField("STRING").get(null);
-            Object payload = pdcGetMethod.invoke(pdc, stateKey, stringType);
-            if (payload == null || !(payload instanceof String)) {
-                return Optional.empty();
-            }
-            ItemIdentityCodec.Decoded decoded = codec.decodeFromString((String) payload);
-            if (decoded.isValid()) {
-                return Optional.of(decoded.getIdentity());
-            }
-            return Optional.empty();
-        } catch (Exception e) {
-            return Optional.empty();
-        }
+    private ItemIdentityCodec.Identity synthesizeFreshIdentity(ItemStack item) {
+        return ItemIdentityCodec.Identity.empty()
+            .withForgeId(java.util.UUID.randomUUID())
+            .withBaseMaterial(item.getType().name())
+            .withBaseDisplayName(identityService.defaultBaseDisplayName(item.getType()));
     }
 
     private Status checkTier0CustomName(ItemStack item, ItemIdentityCodec.Identity identity) {
@@ -341,12 +306,6 @@ public final class ForgeItemInspection {
     private Optional<TierDefinition> findTierByLevel(int level) {
         return tierRepository.all().stream()
             .filter(t -> t.getLevel() == level)
-            .findFirst();
-    }
-
-    private Optional<TierDefinition> findNextTier(int currentTier) {
-        return tierRepository.all().stream()
-            .filter(t -> t.getLevel() == currentTier + 1)
             .findFirst();
     }
 

@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.command;
 
+import com.arkflame.flameforge.FlameForgePlugin;
 import com.arkflame.flameforge.ForgeAccessService;
 import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
@@ -8,6 +9,7 @@ import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.config.ValidationIssue;
 import com.arkflame.flameforge.config.ValidationReport;
+import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
@@ -28,7 +30,6 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -45,7 +47,7 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
 
     private static final int LIST_PAGE_SIZE = 8;
 
-    private final JavaPlugin plugin;
+    private final FlameForgePlugin plugin;
     private final SchedulerBridge scheduler;
     private final MessageService messageService;
     private final ConfigService configService;
@@ -54,7 +56,7 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
     private final CommandSuggestionIndex suggestionIndex;
     private final AtomicReference<CommandContext> context = new AtomicReference<>(CommandContext.loading());
 
-    public FlameForgeCommand(JavaPlugin plugin, SchedulerBridge scheduler, MessageService messageService,
+    public FlameForgeCommand(FlameForgePlugin plugin, SchedulerBridge scheduler, MessageService messageService,
                              ConfigService configService, TierRepository tierRepository,
                              CommandSuggestionIndex suggestionIndex) {
         this.plugin = plugin;
@@ -220,12 +222,29 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
     private void sendStartupBlocker(CommandSender sender, CommandContext ctx) {
         if (ctx.isFailed()) {
             StartupFailure failure = ctx.getStartupFailure();
+            String component = failure != null ? failure.getComponentDisplayName() : "unknown";
             String reason = failure != null ? failure.getReason() : "unknown";
-            send(sender, "startup.failed", messageArguments("reason", reason));
+            String reference = failure != null ? failure.getReference() : "none";
+            if (failure != null && failure.isRetryable()) {
+                send(sender, "startup.failed", messageArguments("component", component, "reason", reason, "reference", reference));
+                send(sender, "startup.failed-retryable");
+            } else {
+                send(sender, "startup.failed", messageArguments("component", component, "reason", reason, "reference", reference));
+                send(sender, "startup.restart-required");
+            }
         } else if (ctx.isUnavailable()) {
             send(sender, "startup.unavailable");
         } else {
-            send(sender, "startup.loading");
+            Set<StartupFailure.Component> pending = ctx.getPendingComponents();
+            String pendingStr;
+            if (pending == null || pending.isEmpty()) {
+                pendingStr = "startup components";
+            } else {
+                pendingStr = pending.stream()
+                    .map(StartupFailure.Component::getDisplayName)
+                    .collect(Collectors.joining(", "));
+            }
+            send(sender, "startup.loading", messageArguments("pending_components", pendingStr));
         }
     }
 
@@ -263,7 +282,10 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
         send(sender, "help.border");
         String headerKey = parentPath.isEmpty() ? "help.root-header" : "help.group-header";
         if (parentPath.isEmpty()) {
-            send(sender, headerKey, messageArguments("plugin_name", pluginName));
+            send(sender, headerKey, messageArguments("plugin_name", pluginName,
+                "plugin_version", plugin.getDescription().getVersion(),
+                "plugin_authors", plugin.getDescription().getAuthors().stream()
+                    .collect(Collectors.joining(", "))));
         } else {
             send(sender, headerKey, messageArguments("plugin_name", pluginName, "group_name", groupName));
         }
@@ -381,10 +403,16 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                                 send(sender, "open.no-allowed-tier", messageArguments("station_id", result.getStationId()));
                                 break;
                             case SCHEDULER_REJECTED:
-                                send(sender, "open.scheduler-rejected", messageArguments("reference", result.getReference()));
+                                send(sender, "open.scheduler-rejected", messageArguments(
+                                    "station_id", result.getStationId() != null ? result.getStationId() : "",
+                                    "reason", result.getReason() != null ? result.getReason() : "",
+                                    "reference", result.getReference() != null ? result.getReference() : ""));
                                 break;
                             case MENU_OPEN_FAILED:
-                                send(sender, "open.menu-open-failed", messageArguments("reference", result.getReference()));
+                                send(sender, "open.menu-open-failed", messageArguments(
+                                    "station_id", result.getStationId() != null ? result.getStationId() : "",
+                                    "reason", result.getReason() != null ? result.getReason() : "",
+                                    "reference", result.getReference() != null ? result.getReference() : ""));
                                 break;
                             case PLAYER_RETIRED:
                                 send(sender, "open.player-retired");
@@ -397,6 +425,37 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
 
     private boolean commandReload(CommandSender sender) {
         if (!requirePermission(sender, "reload.no-permission", "flameforge.command.reload")) {
+            return true;
+        }
+        CommandContext ctx = snapshot();
+        if (ctx.isFailed()) {
+            StartupFailure failure = ctx.getStartupFailure();
+            FlameForgePlugin.StartupRetryResult result = plugin.retryStartup();
+            switch (result) {
+                case STARTED:
+                    send(sender, "reload.startup-retry-started");
+                    break;
+                case ALREADY_LOADING:
+                    send(sender, "reload.startup-already-loading");
+                    break;
+                case ALREADY_READY:
+                    send(sender, "reload.startup-already-ready");
+                    break;
+                case RESTART_REQUIRED:
+                    send(sender, "reload.restart-required");
+                    break;
+                case UNAVAILABLE:
+                    send(sender, "reload.unavailable");
+                    break;
+            }
+            return true;
+        }
+        if (ctx.isLoading()) {
+            sendStartupBlocker(sender, ctx);
+            return true;
+        }
+        if (ctx.isUnavailable()) {
+            send(sender, "reload.unavailable");
             return true;
         }
         send(sender, "reload.started");
@@ -432,22 +491,40 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         send(sender, "validate.started");
-        scheduler.runAsync(plugin, () -> configService.asyncReloadWithCallback(() ->
-            runOnSenderScheduler(sender, () -> sendValidationResult(sender))));
+        configService.validateAsync().whenComplete((result, ex) -> runOnSenderScheduler(sender, () -> {
+            if (ex != null) {
+                send(sender, "validate.load-failed", messageArguments("reason", ex.getMessage(), "reference", "FF-VALIDATE-EX"));
+                return;
+            }
+            switch (result.getStatus()) {
+                case COMPLETED:
+                    sendValidationResult(sender, result.getValidationReport());
+                    break;
+                case ALREADY_RUNNING:
+                    send(sender, "validate.already-running");
+                    break;
+                case SCHEDULER_REJECTED:
+                    send(sender, "validate.scheduler-rejected", messageArguments("reference", result.getReference()));
+                    break;
+                case LOAD_FAILED:
+                    send(sender, "validate.load-failed", messageArguments("reason", result.getReason(),
+                        "reference", result.getReference()));
+                    break;
+            }
+        }));
         return true;
     }
 
-    private void sendValidationResult(CommandSender sender) {
-        ValidationReport report = configService.getValidationReport();
+    private void sendValidationResult(CommandSender sender, ValidationReport report) {
         if (!report.hasErrors() && !report.hasWarnings()) {
             send(sender, "validate.passed");
             return;
         }
         for (ValidationIssue issue : report.getErrors()) {
-            send(sender, "validate.error", messageArguments("path", issue.getPath(), "message", issue.getMessage()));
+            send(sender, "validate.error", messageArguments("path", issue.getFullPath(), "message", issue.getMessage()));
         }
         for (ValidationIssue issue : report.getWarnings()) {
-            send(sender, "validate.warning", messageArguments("path", issue.getPath(), "message", issue.getMessage()));
+            send(sender, "validate.warning", messageArguments("path", issue.getFullPath(), "message", issue.getMessage()));
         }
     }
 
@@ -593,40 +670,19 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        ForgeVariant selectedVariant = selectEligibleVariant(variants, heldItem);
-        if (selectedVariant == null) {
+        ForgeVariantEligibility variantEligibility = snapshot().getReadyServices().getForgeVariantEligibility();
+        List<ForgeVariant> eligible = variantEligibility.eligibleVariants(heldItem, variants);
+        if (eligible.isEmpty()) {
             send(sender, "preview.no-eligible-variant");
             return true;
         }
 
+        ForgeVariant selectedVariant = eligible.get(0);
         send(sender, "preview.variant", messageArguments("tier_id", tierId,
             "variant_id", selectedVariant.getId(),
             "variant_name", selectedVariant.getName()));
         send(sender, "preview.material", messageArguments("material", heldItem.getType().name()));
         return true;
-    }
-
-    private ForgeVariant selectEligibleVariant(List<ForgeVariant> variants, ItemStack item) {
-        for (ForgeVariant variant : variants) {
-            if (isVariantEligible(variant, item)) {
-                return variant;
-            }
-        }
-        return null;
-    }
-
-    private boolean isVariantEligible(ForgeVariant variant, ItemStack item) {
-        List<String> candidates = variant.getEnchantmentCandidates();
-        if (candidates == null || candidates.isEmpty()) {
-            return true;
-        }
-        String itemMaterial = item.getType().name();
-        for (String candidate : candidates) {
-            if (candidate.equalsIgnoreCase(itemMaterial) || candidate.equalsIgnoreCase("ANY")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private boolean commandHistory(CommandSender sender, String[] args) {
@@ -752,7 +808,7 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
 
     private void sendAddOutcome(CommandSender sender, ForgeStationService.AddForgeOutcome outcome) {
         switch (outcome.result()) {
-            case ADDED:
+            case SUCCESS:
                 StationRepository.RegisteredForge forge = outcome.forge();
                 send(sender, "station-add.success", messageArguments("station_id", outcome.finalId(),
                     "world", forge.getWorldName(), "x", String.valueOf(forge.getX()),
@@ -779,8 +835,13 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             case DUPLICATE_LOCATION:
                 send(sender, "station-add.duplicate-location", messageArguments("station_id", outcome.finalId()));
                 return;
+            case STORAGE_CONFLICT:
+                send(sender, "station-add.storage-conflict", messageArguments("station_id", outcome.finalId(),
+                    "reference", outcome.reference()));
+                return;
             case PERSISTENCE_FAILED:
-                send(sender, "station-add.persistence-failed", messageArguments("station_id", outcome.finalId()));
+                send(sender, "station-add.persistence-failed", messageArguments("station_id", outcome.finalId(),
+                    "reference", outcome.reference()));
                 return;
             case ID_GENERATION_EXHAUSTED:
                 send(sender, "station-add.id-generation-exhausted", messageArguments("station_id", outcome.finalId()));

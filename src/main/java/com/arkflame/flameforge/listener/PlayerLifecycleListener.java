@@ -5,8 +5,7 @@ import com.arkflame.flameforge.command.ReadyServices;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.forge.DeliveryService;
 import com.arkflame.flameforge.forge.ForgePowerService;
-import com.arkflame.flameforge.menu.ForgeMenuContext;
-import com.arkflame.flameforge.menu.ForgeMenuService;
+import com.arkflame.flameforge.menu.ForgeMenuInputService;
 import com.arkflame.flameforge.model.ForgeSessionState;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
@@ -19,7 +18,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.world.WorldUnloadEvent;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Optional;
@@ -34,7 +32,7 @@ public final class PlayerLifecycleListener implements Listener {
     private final PlayerStateRepository playerStateRepository;
     private final DeliveryService deliveryService;
     private final ForgePowerService powerService;
-    private final ForgeMenuService menuService;
+    private final ForgeMenuInputService menuInputService;
     private final SchedulerBridge scheduler;
     private final ReadyServices readyServices;
     private final CommandSuggestionIndex suggestionIndex;
@@ -44,7 +42,7 @@ public final class PlayerLifecycleListener implements Listener {
                                    PlayerStateRepository playerStateRepository,
                                    DeliveryService deliveryService,
                                    ForgePowerService powerService,
-                                   ForgeMenuService menuService,
+                                   ForgeMenuInputService menuInputService,
                                    SchedulerBridge scheduler,
                                    ReadyServices readyServices,
                                    CommandSuggestionIndex suggestionIndex) {
@@ -53,7 +51,7 @@ public final class PlayerLifecycleListener implements Listener {
         this.playerStateRepository = playerStateRepository;
         this.deliveryService = deliveryService;
         this.powerService = powerService;
-        this.menuService = menuService;
+        this.menuInputService = menuInputService;
         this.scheduler = scheduler;
         this.readyServices = readyServices;
         this.suggestionIndex = suggestionIndex;
@@ -99,7 +97,7 @@ public final class PlayerLifecycleListener implements Listener {
 
         powerService.clearCooldowns(uuid);
 
-        returnMenuInput(uuid, player);
+        menuInputService.handlePlayerQuit(player);
 
         PlayerForgeState session = activeSessions.remove(uuid);
 
@@ -125,46 +123,6 @@ public final class PlayerLifecycleListener implements Listener {
             if (player != null && player.getWorld().getName().equals(worldName)) {
                 warnStationIfNeeded(player);
             }
-        }
-    }
-
-    private void returnMenuInput(UUID uuid, Player player) {
-        ForgeMenuContext ctx = menuService.getContext(uuid);
-        if (ctx == null) {
-            return;
-        }
-
-        Optional<ItemStack> extracted = ctx.retireAndExtract();
-        if (extracted.isPresent() && player.isOnline()) {
-            giveItemToPlayer(player, extracted.get());
-        }
-
-        menuService.close(player);
-    }
-
-    public void retireAllMenuInputs() {
-        for (UUID uuid : menuService.getAllOpenPlayerIds()) {
-            Player player = Bukkit.getPlayer(uuid);
-            ForgeMenuContext ctx = menuService.getContext(uuid);
-            if (ctx == null) {
-                continue;
-            }
-
-            Optional<ItemStack> extracted = ctx.retireAndExtract();
-            if (extracted.isPresent() && player != null && player.isOnline()) {
-                giveItemToPlayer(player, extracted.get());
-            }
-        }
-        menuService.closeAll();
-    }
-
-    private void giveItemToPlayer(Player player, ItemStack item) {
-        if (item == null || item.getType() == org.bukkit.Material.AIR) {
-            return;
-        }
-        java.util.Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
-        for (ItemStack overflowItem : overflow.values()) {
-            player.getWorld().dropItemNaturally(player.getLocation(), overflowItem);
         }
     }
 

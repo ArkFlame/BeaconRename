@@ -12,8 +12,8 @@
 startup:
   loading: "<yellow>FlameForge is still loading: <white>%pending_components%"
   failed: "<red>FlameForge startup failed in <white>%component%<red>: <white>%reason% <gray>(reference: %reference%)"
-  failed-retryable: "<yellow>Run <white>/flameforge reload <yellow>after correcting the data/configuration problem."
-  restart-required: "<red>This startup failure requires a full server restart after correcting the console error."
+  failed-retryable: "<yellow>Correct the reported file and run <white>/flameforge reload<yellow> to retry startup."
+  restart-required: "<red>Correct the console error and restart the server."
   unavailable: "<red>FlameForge is disabled or shutting down."
 
 # ============================================================
@@ -68,10 +68,14 @@ open:
   profile-not-found: "<red>Forge '<white>%station_id%<red>' has no valid station profile."
   station-permission-required: "<red>You do not have permission to use this forge. Required: <white>%permission%"
   no-allowed-tier: "<red>You do not have an allowed tier for this forge."
-  scheduler-rejected: "<red>The scheduler rejected the forge open task. Reference: %reference%"
-  menu-open-failed: "<red>Failed to open forge menu. Reference: %reference%"
+  scheduler-rejected: "<red>The scheduler rejected opening forge '<white>%station_id%<red>': <white>%reason% <gray>(reference: %reference%)"
+  menu-open-failed: "<red>Failed to open forge '<white>%station_id%<red>': <white>%reason% <gray>(reference: %reference%)"
   player-retired: "<red>The player disconnected before the forge could be opened."
-  menu-opened: "<green>Forge menu opened."
+  menu-opened: "<green>Forge menu opened for <white>%player_name%<green> at station <white>%station_id%<green>."
+
+# Forge interact listener
+forge-interact:
+  open-failed: "<red>Failed to open forge: <white>%status%<red><gray> (station: <white>%station_id%<gray>)"
 
 # Reload command
 reload:
@@ -82,8 +86,10 @@ reload:
   validation-error-entry: "<red>%path%: %message%"
   already-running: "<yellow>A FlameForge reload is already running."
   already-loading: "<yellow>FlameForge startup is already running."
-  startup-retry-started: "<yellow>Retrying FlameForge startup data loads..."
-  restart-required: "<red>The startup failure occurred during %component% and cannot be safely retried. Correct the console error and restart the server. Reference: %reference%"
+  startup-retry-started: "<yellow>Retrying FlameForge startup..."
+  startup-already-loading: "<yellow>FlameForge startup is already running."
+  startup-already-ready: "<yellow>FlameForge is already ready."
+  restart-required: "<red>This startup failure requires a full server restart."
   scheduler-rejected: "<red>The scheduler rejected the reload task. Reference: %reference%"
   load-failed: "<red>Configuration reload could not read/parse the files: %reason% <gray>(%reference%)"
   runtime-refresh-failed: "<red>Configuration loaded, but runtime refresh failed: %reason% <gray>(%reference%)"
@@ -96,9 +102,9 @@ validate:
   passed: "<green>Configuration validation passed with no errors."
   error: "<red>%path%: %message%"
   warning: "<yellow>%path%: %message%"
-  already-running: "<yellow>A configuration validation is already running."
-  scheduler-rejected: "<red>The scheduler rejected the validation task. Reference: %reference%"
-  load-failed: "<red>Configuration validation could not read/parse the files: %reason% <gray>(%reference%)"
+  already-running: "<yellow>A configuration reload or validation is already running."
+  scheduler-rejected: "<red>The scheduler rejected validation. Reference: %reference%"
+  load-failed: "<red>Configuration validation could not run: <white>%reason% <gray>(reference: %reference%)"
 
 # Tiers command
 tiers:
@@ -162,7 +168,8 @@ station-add:
   target-unavailable: "<red>The targeted block's world/chunk is unavailable. Move closer and retry."
   duplicate-id: "<red>A forge already uses id: <white>%station_id%"
   duplicate-location: "<red>A forge is already registered at that block."
-  persistence-failed: "<red>The forge could not be saved to stations.yml. No forge was registered. Reference: %reference%"
+  storage-conflict: "<red>The station file <white>stations/%station_id%.yml<red> already exists but was not loaded. Correct or remove that file before reusing this ID. Reference: %reference%"
+  persistence-failed: "<red>The station could not be saved to <white>stations/%station_id%.yml<red>. No station was registered. Reference: %reference%"
   id-generation-exhausted: "<red>Could not generate a unique forge id after eight attempts."
   player-retired: "<red>The player disconnected before the target block could be resolved."
   success: "<green>Forge registered: <white>%station_id%"
@@ -186,7 +193,7 @@ station-remove:
   no-permission: "<red>Permission required: <white>%permission%"
   success: "<green>Forge removed: <white>%station_id%"
   not-found: "<red>No forge found with id: <white>%station_id%"
-  persistence-failed: "<red>Forge '<white>%station_id%<red>' exists, but stations.yml could not be updated. The forge remains registered. Reference: %reference%"
+  persistence-failed: "<red>Station '<white>%station_id%<red>' remains registered because <white>stations/%station_id%.yml<red> could not be removed. Reference: %reference%"
 
 # Station list
 station-list:
@@ -326,6 +333,26 @@ menu:
     name: "<red><bold>Close"
     lore:
       - "<gray>Click to close the menu"
+  input-occupied: "<red>That input slot is already occupied."
+  item-inserted: "<green>Item inserted into the forge."
+  item-denied:
+    no-tier: "<red>This item cannot be forged because there are no tiers available."
+    invalid-identity: "<red>This forged item contains invalid FlameForge data and cannot be used safely."
+    unsupported: "<red>This item type is not supported by the next forge tier."
+    customized: "<red>This item contains custom data that cannot be forged safely."
+    cursed: "<red>This cursed item cannot be forged again."
+    station: "<red>This forge station cannot upgrade this item to its next tier."
+    permission: "<red>You do not have permission to use the next forge tier."
+    empty: "<red>Please insert an item."
+  requirements-not-met: "<red>You do not meet the forge requirements yet."
+  item-returned: "<green>Item returned to your inventory."
+  item-dropped: "<yellow>Item dropped at your feet."
+  item-queued: "<green>Item added to delivery queue."
+  stale-click: "<yellow>Nothing happened. Try again."
+  cursor-not-empty: "<red>Your cursor must be empty."
+  forge-already-started: "<yellow>The forge is already processing an item."
+  forge-start-failed: "<red>Failed to start forging."
+  no-input: "<red>No item found in input slot."
   info:
     name: "<gold><bold>FlameForge"
     lore:

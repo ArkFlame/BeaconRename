@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 5</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 5"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#facc15:#f97316>Power and defense become specialized.</gradient>"
 cooldown-seconds: 20
 input:
   allowed-groups:
@@ -108,6 +107,7 @@ variants:
       - "<gray>Tier V forged variant"
       - "<dark_gray>● <gold>25% infernal strike"
       - "<dark_gray>● <red>+1 raw attack damage"
+      - "<dark_gray>● <yellow>Every 5th hit calls lightning"
     enchantments: []
     attributes:
       - id: infernal_damage
@@ -119,6 +119,11 @@ variants:
         cooldown-ticks: 40
         chance: "0.25"
         fire-ticks: 100
+      - id: storm_every_five
+        type: EVERY_N_HIT_LIGHTNING
+        hit-interval: 5
+        cooldown-ticks: 0
+        chance: "1.0"
   aegis:
     weight: "40.0"
     applicable-groups:

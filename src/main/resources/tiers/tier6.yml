@@ -5,8 +5,7 @@ enabled: true
 display:
   name: "<gradient:#ff7a18:#ffd166><bold>Tier 6</bold></gradient>"
   lore:
-    - "<gray>Automatic upgrade target: <white>Tier 6"
-    - "<gray>The original item material is always retained."
+    - "<gradient:#a78bfa:#ec4899>Master advanced combat effects.</gradient>"
 cooldown-seconds: 25
 input:
   allowed-groups:
@@ -127,13 +126,20 @@ variants:
     lore:
       - "<gray>Tier VI forged variant"
       - "<dark_gray>● <red>+4 raw attack damage"
-      - "<dark_gray>● <white>Original enchantments retained"
+      - "<dark_gray>● <yellow>Every 4th hit launches the target"
     enchantments: []
     attributes:
       - id: executioner_damage
         type: ATTACK_DAMAGE_FLAT
         value: "4.0"
-    powers: []
+    powers:
+      - id: crushing_every_four
+        type: EVERY_N_HIT_KNOCKBACK
+        hit-interval: 4
+        cooldown-ticks: 0
+        chance: "1.0"
+        horizontal-strength: "1.35"
+        vertical-strength: "0.35"
   restoration:
     weight: "30.0"
     applicable-groups:

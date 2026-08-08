@@ -1,7 +1,5 @@
 package com.arkflame.flameforge.forge;
 
-import com.arkflame.flameforge.chance.ChanceEntry;
-import com.arkflame.flameforge.chance.ChanceTable;
 import com.arkflame.flameforge.model.ForgeHistory;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
@@ -16,8 +14,6 @@ public final class ForgeResolution {
     private final UUID transactionId;
     private final boolean success;
     private final ForgeOutcomeCategory category;
-    private final ChanceTable chanceTable;
-    private final ChanceEntry selectedEntry;
     private final ForgeVariant usedVariant;
     private final String outcomeId;
     private final ItemStack mutatedItem;
@@ -32,8 +28,6 @@ public final class ForgeResolution {
         this.transactionId = Objects.requireNonNull(builder.transactionId);
         this.success = builder.success;
         this.category = builder.category;
-        this.chanceTable = builder.chanceTable;
-        this.selectedEntry = builder.selectedEntry;
         this.usedVariant = builder.usedVariant;
         this.outcomeId = builder.outcomeId;
         this.mutatedItem = builder.mutatedItem;
@@ -65,7 +59,7 @@ public final class ForgeResolution {
     }
 
     public static ForgeResolution success(UUID transactionId, ForgeOutcomeCategory category,
-            ChanceTable chanceTable, ChanceEntry selectedEntry, ForgeVariant usedVariant,
+            ForgeVariant usedVariant,
             String outcomeId, ItemStack mutatedItem, List<ItemStack> allMutatedItems,
             ForgeHistory historyEntry, ChargeReceipt chargeReceipt,
             List<ItemStack> custodyReturned) {
@@ -73,8 +67,6 @@ public final class ForgeResolution {
             .transactionId(transactionId)
             .success(true)
             .category(category)
-            .chanceTable(chanceTable)
-            .selectedEntry(selectedEntry)
             .usedVariant(usedVariant)
             .outcomeId(outcomeId)
             .mutatedItem(mutatedItem)
@@ -96,14 +88,6 @@ public final class ForgeResolution {
 
     public ForgeOutcomeCategory getCategory() {
         return category;
-    }
-
-    public ChanceTable getChanceTable() {
-        return chanceTable;
-    }
-
-    public ChanceEntry getSelectedEntry() {
-        return selectedEntry;
     }
 
     public ForgeVariant getUsedVariant() {
@@ -154,8 +138,6 @@ public final class ForgeResolution {
         private UUID transactionId;
         private boolean success;
         private ForgeOutcomeCategory category;
-        private ChanceTable chanceTable;
-        private ChanceEntry selectedEntry;
         private ForgeVariant usedVariant;
         private String outcomeId;
         private ItemStack mutatedItem;
@@ -178,16 +160,6 @@ public final class ForgeResolution {
 
         public Builder category(ForgeOutcomeCategory category) {
             this.category = category;
-            return this;
-        }
-
-        public Builder chanceTable(ChanceTable chanceTable) {
-            this.chanceTable = chanceTable;
-            return this;
-        }
-
-        public Builder selectedEntry(ChanceEntry selectedEntry) {
-            this.selectedEntry = selectedEntry;
             return this;
         }
 

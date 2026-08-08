@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.forge;
 
+import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.hook.EconomyService;
 import com.arkflame.flameforge.model.TierRequirements;
 import org.bukkit.Material;
@@ -11,8 +12,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
 public final class CostService {
 
@@ -22,10 +26,19 @@ public final class CostService {
 
     private final JavaPlugin plugin;
     private final EconomyService economyService;
+    private final MaterialResolver materialResolver;
+    private final DeliveryService deliveryService;
 
     public CostService(JavaPlugin plugin, EconomyService economyService) {
+        this(plugin, economyService, MaterialResolver.getInstance(), null);
+    }
+
+    public CostService(JavaPlugin plugin, EconomyService economyService,
+                       MaterialResolver materialResolver, DeliveryService deliveryService) {
         this.plugin = Objects.requireNonNull(plugin);
         this.economyService = Objects.requireNonNull(economyService);
+        this.materialResolver = materialResolver != null ? materialResolver : MaterialResolver.getInstance();
+        this.deliveryService = deliveryService;
     }
 
     public CostQuote quote(Player player, TierRequirements requirements) {
@@ -43,16 +56,10 @@ public final class CostService {
         final TierRequirements.XpRequirement xpReq = requirements.getXp();
         final int xpRequired = xpReq.isEnabled() ? xpReq.getLevel() : 0;
         final int xpAvailable = player.getLevel();
-        if (xpReq.isEnabled() && xpAvailable < xpRequired) {
-            missingReasonKeys.add("forge.error.insufficient_xp");
-        }
 
         final TierRequirements.MoneyRequirement moneyReq = requirements.getMoney();
         final BigDecimal moneyRequired = moneyReq.isEnabled() ? moneyReq.getAmount().setScale(MONEY_SCALE, MONEY_ROUNDING) : BigDecimal.ZERO;
         final BigDecimal moneyAvailable = economyAvailable ? economyService.balance(player) : BigDecimal.ZERO;
-        if (moneyReq.isEnabled() && moneyAvailable.compareTo(moneyRequired) < 0) {
-            missingReasonKeys.add("forge.error.insufficient_money");
-        }
 
         final TierRequirements.ItemsRequirement itemsReq = requirements.getItems();
         if (itemsReq.isEnabled()) {
@@ -61,15 +68,57 @@ public final class CostService {
                 int amountHave = countItems(player, itemReq.getMaterialCandidates());
                 boolean available = amountHave >= amountNeeded;
                 itemQuotes.add(new CostQuote.ItemRequirementQuote(
-                        itemReq.getMaterialCandidates(), amountNeeded, itemReq.getDisplayName(), available));
-                if (!available) {
+                        itemReq.getMaterialCandidates(), amountNeeded, amountHave, itemReq.getDisplayName(), available, -1, null, 0));
+            }
+        }
+
+        final boolean xpEnabled = xpReq.isEnabled();
+        final boolean moneyEnabled = moneyReq.isEnabled();
+        final boolean itemsEnabled = itemsReq.isEnabled();
+        final int enabledCount = (xpEnabled ? 1 : 0) + (moneyEnabled ? 1 : 0) + (itemsEnabled ? 1 : 0);
+
+        final boolean xpSatisfied = !xpEnabled || xpAvailable >= xpRequired;
+        final boolean moneySatisfied = !moneyEnabled || (economyAvailable && moneyAvailable.compareTo(moneyRequired) >= 0);
+        final boolean itemsSatisfied = !itemsEnabled || itemQuotes.stream().allMatch(CostQuote.ItemRequirementQuote::isAvailable);
+
+        final TierRequirements.Combine combine = requirements.getCombine();
+        final boolean ready;
+        if (enabledCount == 0) {
+            ready = true;
+        } else if (combine == TierRequirements.Combine.ALL) {
+            ready = xpSatisfied && moneySatisfied && itemsSatisfied;
+        } else {
+            ready = (xpEnabled && xpSatisfied)
+                 || (moneyEnabled && moneySatisfied)
+                 || (itemsEnabled && itemsSatisfied);
+        }
+
+        if (combine == TierRequirements.Combine.ALL) {
+            if (xpEnabled && !xpSatisfied) {
+                missingReasonKeys.add("forge.error.insufficient_xp");
+            }
+            if (moneyEnabled && !moneySatisfied) {
+                missingReasonKeys.add("forge.error.insufficient_money");
+            }
+            if (itemsEnabled && !itemsSatisfied) {
+                missingReasonKeys.add("forge.error.insufficient_items");
+            }
+        } else {
+            if (ready) {
+                // empty missing reasons
+            } else {
+                if (xpEnabled && !xpSatisfied) {
+                    missingReasonKeys.add("forge.error.insufficient_xp");
+                }
+                if (moneyEnabled && !moneySatisfied) {
+                    missingReasonKeys.add("forge.error.insufficient_money");
+                }
+                if (itemsEnabled && !itemsSatisfied) {
                     missingReasonKeys.add("forge.error.insufficient_items");
-                    break;
                 }
             }
         }
 
-        final boolean ready = missingReasonKeys.isEmpty();
         return CostQuote.of(requirements, ready, economyAvailable, xpRequired, xpAvailable,
                 moneyRequired, moneyAvailable, itemQuotes, missingReasonKeys);
     }
@@ -83,18 +132,40 @@ public final class CostService {
             return ChargeReceipt.zero();
         }
 
+        final Set<Integer> inputSlots = buildInputSlotSet(player, inputItems);
         final TierRequirements.Combine combine = requirements.getCombine();
         final List<ChargeReceipt.RemovedItemStack> removedItems = new ArrayList<>();
 
         if (combine == TierRequirements.Combine.ALL) {
-            return chargeAll(player, requirements, inputItems, removedItems);
+            return chargeAll(player, requirements, inputSlots, removedItems);
         } else {
-            return chargeAny(player, requirements, inputItems, removedItems);
+            return chargeAny(player, requirements, inputSlots, removedItems);
         }
     }
 
+    private Set<Integer> buildInputSlotSet(Player player, List<ItemStack> inputItems) {
+        Set<Integer> slots = new HashSet<>();
+        if (inputItems == null || inputItems.isEmpty()) {
+            return slots;
+        }
+        ItemStack[] contents = player.getInventory().getContents();
+        for (ItemStack input : inputItems) {
+            if (input == null || input.getType() == Material.AIR) {
+                continue;
+            }
+            for (int i = 0; i < contents.length; i++) {
+                ItemStack invItem = contents[i];
+                if (invItem != null && invItem.isSimilar(input)) {
+                    slots.add(i);
+                    break;
+                }
+            }
+        }
+        return slots;
+    }
+
     private ChargeReceipt chargeAll(Player player, TierRequirements requirements,
-                                    List<ItemStack> inputItems, List<ChargeReceipt.RemovedItemStack> removedItems) {
+                                    Set<Integer> inputSlots, List<ChargeReceipt.RemovedItemStack> removedItems) {
         final TierRequirements.XpRequirement xpReq = requirements.getXp();
         final int xpRequired = xpReq.isEnabled() ? xpReq.getLevel() : 0;
         final TierRequirements.MoneyRequirement moneyReq = requirements.getMoney();
@@ -104,12 +175,12 @@ public final class CostService {
         if (xpReq.isEnabled() && player.getLevel() < xpRequired) {
             return ChargeReceipt.failure("forge.error.insufficient_xp");
         }
-        if (moneyReq.isEnabled() && economyService.balance(player).compareTo(moneyRequired) < 0) {
+        if (moneyReq.isEnabled() && (!economyService.available() || economyService.balance(player).compareTo(moneyRequired) < 0)) {
             return ChargeReceipt.failure("forge.error.insufficient_money");
         }
         if (itemsReq.isEnabled()) {
             for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
-                int amountHave = countItems(player, itemReq.getMaterialCandidates());
+                int amountHave = countItemsExcluding(player, itemReq.getMaterialCandidates(), inputSlots);
                 if (amountHave < itemReq.getAmount()) {
                     return ChargeReceipt.failure("forge.error.insufficient_items");
                 }
@@ -129,9 +200,9 @@ public final class CostService {
 
         if (itemsReq.isEnabled()) {
             for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
-                int removed = removeRequiredItems(player, itemReq.getMaterialCandidates(), itemReq.getAmount(), removedItems);
+                int removed = removeRequiredItems(player, itemReq.getMaterialCandidates(), itemReq.getAmount(), inputSlots, removedItems);
                 if (removed < itemReq.getAmount()) {
-                    refundRemovedItems(player, removedItems);
+                    refundRemovedItemsWithOverflowHandling(player, removedItems);
                     refundMoney(player, moneyRequired);
                     refundXp(player, xpRequired);
                     return ChargeReceipt.failure("forge.error.insufficient_items");
@@ -143,7 +214,7 @@ public final class CostService {
     }
 
     private ChargeReceipt chargeAny(Player player, TierRequirements requirements,
-                                     List<ItemStack> inputItems, List<ChargeReceipt.RemovedItemStack> removedItems) {
+                                     Set<Integer> inputSlots, List<ChargeReceipt.RemovedItemStack> removedItems) {
         final TierRequirements.XpRequirement xpReq = requirements.getXp();
         final TierRequirements.MoneyRequirement moneyReq = requirements.getMoney();
         final TierRequirements.ItemsRequirement itemsReq = requirements.getItems();
@@ -162,7 +233,7 @@ public final class CostService {
             }
         }
 
-        if (moneyReq.isEnabled()) {
+        if (moneyReq.isEnabled() && economyService.available()) {
             final BigDecimal moneyRequired = moneyReq.getAmount().setScale(MONEY_SCALE, MONEY_ROUNDING);
             if (economyService.balance(player).compareTo(moneyRequired) >= 0) {
                 if (economyService.withdraw(player, moneyRequired)) {
@@ -173,13 +244,13 @@ public final class CostService {
 
         if (itemsReq.isEnabled()) {
             for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
-                int amountHave = countItems(player, itemReq.getMaterialCandidates());
+                int amountHave = countItemsExcluding(player, itemReq.getMaterialCandidates(), inputSlots);
                 if (amountHave < itemReq.getAmount()) {
                     return ChargeReceipt.failure("forge.error.insufficient_items");
                 }
             }
             for (TierRequirements.ItemRequirement itemReq : itemsReq.getItems()) {
-                removeRequiredItems(player, itemReq.getMaterialCandidates(), itemReq.getAmount(), removedItems);
+                removeRequiredItems(player, itemReq.getMaterialCandidates(), itemReq.getAmount(), inputSlots, removedItems);
             }
             return ChargeReceipt.success(0, BigDecimal.ZERO, new ArrayList<>(removedItems));
         }
@@ -200,7 +271,7 @@ public final class CostService {
         }
 
         if (!receipt.getRemovedItems().isEmpty()) {
-            refundRemovedItems(player, receipt.getRemovedItems());
+            refundRemovedItemsWithOverflowHandling(player, receipt.getRemovedItems());
         }
 
         if (receipt.getMoneyCharged().compareTo(BigDecimal.ZERO) > 0) {
@@ -223,47 +294,104 @@ public final class CostService {
         int total = 0;
         for (ItemStack item : player.getInventory().getContents()) {
             if (item != null && item.getType() != Material.AIR) {
-                String materialName = item.getType().name();
-                for (String candidate : materialCandidates) {
-                    if (materialName.equalsIgnoreCase(candidate)) {
-                        total += item.getAmount();
-                        break;
-                    }
+                if (matchesMaterial(item.getType(), materialCandidates)) {
+                    total += item.getAmount();
                 }
             }
         }
         return total;
     }
 
+    private int countItemsExcluding(Player player, List<String> materialCandidates, Set<Integer> excludeSlots) {
+        int total = 0;
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length; i++) {
+            if (excludeSlots.contains(i)) {
+                continue;
+            }
+            ItemStack item = contents[i];
+            if (item != null && item.getType() != Material.AIR) {
+                if (matchesMaterial(item.getType(), materialCandidates)) {
+                    total += item.getAmount();
+                }
+            }
+        }
+        return total;
+    }
+
+    private boolean matchesMaterial(Material type, List<String> materialCandidates) {
+        if (type == null || materialCandidates == null) {
+            return false;
+        }
+        String materialName = type.name();
+        for (String candidate : materialCandidates) {
+            java.util.Optional<Material> resolved = materialResolver.resolve(candidate);
+            if (resolved.isPresent() && resolved.get() == type) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private int removeRequiredItems(Player player, List<String> materialCandidates, int amountNeeded,
-                                    List<ChargeReceipt.RemovedItemStack> removedItems) {
+                                    Set<Integer> excludeSlots, List<ChargeReceipt.RemovedItemStack> removedItems) {
         int remaining = amountNeeded;
         ItemStack[] contents = player.getInventory().getContents();
         for (int i = 0; i < contents.length && remaining > 0; i++) {
+            if (excludeSlots.contains(i)) {
+                continue;
+            }
             ItemStack item = contents[i];
             if (item != null && item.getType() != Material.AIR) {
-                String materialName = item.getType().name();
-                for (String candidate : materialCandidates) {
-                    if (materialName.equalsIgnoreCase(candidate)) {
-                        int toRemove = Math.min(remaining, item.getAmount());
-                        removedItems.add(new ChargeReceipt.RemovedItemStack(i, item.clone()));
-                        item.setAmount(item.getAmount() - toRemove);
-                        remaining -= toRemove;
-                        break;
-                    }
+                if (matchesMaterial(item.getType(), materialCandidates)) {
+                    int toRemove = Math.min(remaining, item.getAmount());
+                    removedItems.add(new ChargeReceipt.RemovedItemStack(i, item.clone(), toRemove));
+                    item.setAmount(item.getAmount() - toRemove);
+                    remaining -= toRemove;
                 }
             }
         }
         return amountNeeded - remaining;
     }
 
-    private void refundRemovedItems(Player player, List<ChargeReceipt.RemovedItemStack> removedItems) {
+    private void refundRemovedItemsWithOverflowHandling(Player player, List<ChargeReceipt.RemovedItemStack> removedItems) {
+        List<ItemStack> overflow = new ArrayList<>();
         for (ChargeReceipt.RemovedItemStack removed : removedItems) {
             ItemStack clone = removed.getClonedStack();
-            if (clone != null) {
-                player.getInventory().setItem(removed.getSourceSlot(), clone);
+            if (clone == null) {
+                continue;
+            }
+            clone.setAmount(removed.getExactRemovedAmount());
+            int slot = removed.getSourceSlot();
+            ItemStack existing = player.getInventory().getItem(slot);
+            if (existing == null || existing.getType() == Material.AIR) {
+                player.getInventory().setItem(slot, clone);
+            } else {
+                overflow.add(clone);
             }
         }
+        if (!overflow.isEmpty()) {
+            for (ItemStack item : overflow) {
+                java.util.Map<Integer, ItemStack> result = player.getInventory().addItem(item);
+                if (!result.isEmpty()) {
+                    if (player.isOnline()) {
+                        for (ItemStack drop : result.values()) {
+                            player.getWorld().dropItemNaturally(player.getLocation(), drop);
+                        }
+                    } else {
+                        queuePendingDeliveryForOfflinePlayer(player, item);
+                    }
+                }
+            }
+        }
+    }
+
+    private void queuePendingDeliveryForOfflinePlayer(Player player, ItemStack item) {
+        if (deliveryService == null) {
+            return;
+        }
+        String deliveryId = "refund_" + player.getUniqueId() + "_" + System.nanoTime();
+        deliveryService.queuePendingDelivery(deliveryId, player.getUniqueId(), item, null);
     }
 
     private int deductXp(Player player, int levels) {

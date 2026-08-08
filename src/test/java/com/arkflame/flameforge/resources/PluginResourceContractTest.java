@@ -9,6 +9,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -133,6 +134,89 @@ class PluginResourceContractTest {
         assertTrue(softdepends.contains("Vault"), "Should soft-depend on Vault");
         assertTrue(softdepends.contains("FancyHolograms"), "Should soft-depend on FancyHolograms");
         assertTrue(softdepends.contains("DecentHolograms"), "Should soft-depend on DecentHolograms");
+
+        InputStream stationsStream = getClass().getClassLoader().getResourceAsStream("stations.yml");
+        assertNull(stationsStream, "classpath stations.yml should be absent");
+
+        InputStream profilesStream = getClass().getClassLoader().getResourceAsStream("station-profiles.yml");
+        assertNotNull(profilesStream, "classpath station-profiles.yml should be present");
+        try { profilesStream.close(); } catch (IOException ignored) {}
+
+        InputStream configStream = getClass().getClassLoader().getResourceAsStream("config.yml");
+        assertNotNull(configStream, "config.yml should be present on classpath");
+        org.bukkit.configuration.file.YamlConfiguration configYaml =
+            org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                new InputStreamReader(configStream, StandardCharsets.UTF_8));
+        try { configStream.close(); } catch (IOException ignored) {}
+        assertNull(configYaml.get("tier-migration"), "config.yml should have no tier-migration path");
+
+        String[] tierFiles = {"tier1.yml", "tier2.yml", "tier3.yml", "tier4.yml", "tier5.yml", "tier6.yml", "tier7.yml"};
+        for (String tierFile : tierFiles) {
+            InputStream tierStream = getClass().getClassLoader().getResourceAsStream("tiers/" + tierFile);
+            assertNotNull(tierStream, "tiers/" + tierFile + " should be bundled");
+            org.bukkit.configuration.file.YamlConfiguration tierYaml =
+                org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                    new InputStreamReader(tierStream, StandardCharsets.UTF_8));
+            try { tierStream.close(); } catch (IOException ignored) {}
+            assertEquals(2, tierYaml.getInt("schema-version"),
+                "bundled " + tierFile + " should have schema-version 2");
+        }
+    }
+
+    @Test
+    void packagedMenuAndPowerResourcesFollowContract() throws Exception {
+        InputStream menuStream = getClass().getClassLoader().getResourceAsStream("menus.yml");
+        assertNotNull(menuStream, "menus.yml should be present on classpath");
+        org.bukkit.configuration.file.YamlConfiguration menuYaml =
+            org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                new InputStreamReader(menuStream, StandardCharsets.UTF_8));
+        try { menuStream.close(); } catch (IOException ignored) {}
+
+        org.bukkit.configuration.ConfigurationSection defaultMenu = menuYaml.getConfigurationSection("default");
+        assertNotNull(defaultMenu, "default menu section should exist");
+
+        org.bukkit.configuration.ConfigurationSection slotsSection = defaultMenu.getConfigurationSection("slots");
+        assertNotNull(slotsSection, "slots section should exist");
+        Set<String> slotKeys = slotsSection.getKeys(false);
+        assertEquals(2, slotKeys.size(), "menu slots should contain exactly 2 interactive positions");
+        assertTrue(slotKeys.contains("input"), "slots should contain input");
+        assertTrue(slotKeys.contains("confirm"), "slots should contain confirm");
+
+        String[] tierFiles = {"tier1.yml", "tier2.yml", "tier3.yml", "tier4.yml", "tier5.yml", "tier6.yml", "tier7.yml"};
+        for (String tierFile : tierFiles) {
+            InputStream tierStream = getClass().getClassLoader().getResourceAsStream("tiers/" + tierFile);
+            assertNotNull(tierStream, "tiers/" + tierFile + " should be bundled");
+            org.bukkit.configuration.file.YamlConfiguration tierYaml =
+                org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                    new InputStreamReader(tierStream, StandardCharsets.UTF_8));
+            try { tierStream.close(); } catch (IOException ignored) {}
+
+            List<?> variants = tierYaml.getList("variants");
+            if (variants != null) {
+                for (Object variantObj : variants) {
+                    if (variantObj instanceof Map) {
+                        Map<?, ?> variant = (Map<?, ?>) variantObj;
+                        Object powersObj = variant.get("powers");
+                        if (powersObj instanceof List) {
+                            List<?> powers = (List<?>) powersObj;
+                            for (Object powerObj : powers) {
+                                if (powerObj instanceof Map) {
+                                    Map<?, ?> power = (Map<?, ?>) powerObj;
+                                    assertTrue(power.containsKey("id"), "power should have id key");
+                                    assertTrue(power.containsKey("type"), "power should have type key");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        String[] menuKeys = {"close", "prev", "next", "page", "prompt", "input-other", "confirm-secondary"};
+        for (String key : menuKeys) {
+            Object deprecated = menuYaml.get("default.items." + key);
+            assertNull(deprecated, "menu should not contain obsolete control: " + key);
+        }
     }
 
     @Test

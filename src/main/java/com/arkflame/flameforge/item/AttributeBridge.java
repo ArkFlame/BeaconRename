@@ -1,34 +1,46 @@
 package com.arkflame.flameforge.item;
 
 import com.arkflame.flameforge.model.AttributeSpec;
+import org.bukkit.Material;
+import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 public final class AttributeBridge {
     private static final AttributeBridge INSTANCE = new AttributeBridge();
     private static final UUID FALLBACK_UUID = UUID.fromString("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    private static final String MODIFIER_PREFIX = "flameforge:";
 
     private volatile Boolean modernAttributesAvailable;
     private volatile Boolean modernUnbreakableAvailable;
     private volatile Boolean modernCustomModelDataAvailable;
 
     private Method addAttributeModifierMethod;
-    private Method getAttributeMethod;
+    private Method getAttributeModifiersMethod;
+    private Method removeAttributeModifierMethod;
     private Method setUnbreakableMethod;
     private Method isUnbreakableMethod;
     private Method setCustomModelDataMethod;
     private Method hasCustomModelDataMethod;
     private Method getCustomModelDataMethod;
+    private Method attributeModifierGetNameMethod;
+    private Method attributeModifierGetUniqueIdMethod;
+    private Method attributeModifierGetAmountMethod;
+    private Method attributeModifierGetOperationMethod;
     private Class<?> attributeClass;
     private Class<?> attributeModifierClass;
     private Class<?> attributeOperationClass;
+    private Object addNumberOperation;
 
     private AttributeBridge() {
         initReflection();
@@ -40,12 +52,18 @@ public final class AttributeBridge {
             attributeModifierClass = Class.forName("org.bukkit.attribute.AttributeModifier");
             attributeOperationClass = Class.forName("org.bukkit.attribute.AttributeModifier$Operation");
             addAttributeModifierMethod = ItemMeta.class.getMethod("addAttributeModifier", attributeClass, attributeModifierClass);
-            getAttributeMethod = ItemMeta.class.getMethod("getAttribute", attributeClass);
+            getAttributeModifiersMethod = ItemMeta.class.getMethod("getAttributeModifiers", attributeClass);
+            removeAttributeModifierMethod = ItemMeta.class.getMethod("removeAttributeModifier", attributeClass, attributeModifierClass);
             setUnbreakableMethod = ItemMeta.class.getMethod("setUnbreakable", boolean.class);
             isUnbreakableMethod = ItemMeta.class.getMethod("isUnbreakable");
             setCustomModelDataMethod = ItemMeta.class.getMethod("setCustomModelData", Integer.class);
             hasCustomModelDataMethod = ItemMeta.class.getMethod("hasCustomModelData");
             getCustomModelDataMethod = ItemMeta.class.getMethod("getCustomModelData");
+            attributeModifierGetNameMethod = attributeModifierClass.getMethod("getName");
+            attributeModifierGetUniqueIdMethod = attributeModifierClass.getMethod("getUniqueId");
+            attributeModifierGetAmountMethod = attributeModifierClass.getMethod("getAmount");
+            attributeModifierGetOperationMethod = attributeModifierClass.getMethod("getOperation");
+            addNumberOperation = attributeOperationClass.getField("ADD_NUMBER").get(null);
             modernAttributesAvailable = true;
             modernUnbreakableAvailable = true;
             modernCustomModelDataAvailable = true;
@@ -127,19 +145,12 @@ public final class AttributeBridge {
         if (!Boolean.TRUE.equals(modernAttributesAvailable)) {
             return Optional.empty();
         }
-        final String opStr = spec.getOperation() != null ? spec.getOperation().toUpperCase() : "ADD";
-        final Object operation;
-        try {
-            final Method valueOfMethod = attributeOperationClass.getMethod("valueOf", String.class);
-            operation = valueOfMethod.invoke(null, opStr);
-        } catch (Exception e) {
-            return Optional.empty();
-        }
         final double value = spec.getMinValue();
         final UUID uuid = generateUuidForAttribute(spec.getAttribute());
+        final String name = MODIFIER_PREFIX + spec.getAttribute();
         try {
             return Optional.of(attributeModifierClass.getConstructor(UUID.class, String.class, double.class, attributeOperationClass)
-                    .newInstance(uuid, "flameforge", value, operation));
+                    .newInstance(uuid, name, value, addNumberOperation));
         } catch (Exception e) {
             return Optional.empty();
         }
@@ -166,15 +177,16 @@ public final class AttributeBridge {
             for (final Object attribute : attributeEnums) {
                 final Method nameMethod = attributeClass.getMethod("name");
                 final String attrName = (String) nameMethod.invoke(attribute);
-                final Object inst = getAttributeMethod.invoke(meta, attribute);
-                if (inst != null) {
-                    final Method getModifiersMethod = inst.getClass().getMethod("getModifiers");
-                    final Iterable<?> modifiers = (Iterable<?>) getModifiersMethod.invoke(inst);
-                    for (final Object mod : modifiers) {
-                        final Method getAmountMethod = attributeModifierClass.getMethod("getAmount");
-                        final Method getOpMethod = attributeModifierClass.getMethod("getOperation");
-                        final double amount = (double) getAmountMethod.invoke(mod);
-                        final Object op = getOpMethod.invoke(mod);
+                final Object modifiers = getAttributeModifiersMethod.invoke(meta, attribute);
+                if (modifiers != null) {
+                    final Iterable<?> modifierList = (Iterable<?>) modifiers;
+                    for (final Object mod : modifierList) {
+                        final String modName = (String) attributeModifierGetNameMethod.invoke(mod);
+                        if (!modName.startsWith(MODIFIER_PREFIX)) {
+                            continue;
+                        }
+                        final double amount = (double) attributeModifierGetAmountMethod.invoke(mod);
+                        final Object op = attributeModifierGetOperationMethod.invoke(mod);
                         specs.add(AttributeSpec.of(
                                 attrName,
                                 amount,
@@ -187,6 +199,46 @@ public final class AttributeBridge {
         } catch (Exception e) {
         }
         return specs;
+    }
+
+    public boolean isModernAttributesAvailable() {
+        return Boolean.TRUE.equals(modernAttributesAvailable);
+    }
+
+    public void removeFlameForgeAttributes(final ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return;
+        }
+        if (!Boolean.TRUE.equals(modernAttributesAvailable)) {
+            return;
+        }
+        final ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return;
+        }
+        try {
+            final Object[] attributeEnums = (Object[]) attributeClass.getMethod("values").invoke(null);
+            for (final Object attribute : attributeEnums) {
+                final Method nameMethod = attributeClass.getMethod("name");
+                final String attrName = (String) nameMethod.invoke(attribute);
+                final Object modifiers = getAttributeModifiersMethod.invoke(meta, attribute);
+                if (modifiers != null) {
+                    final List<Object> toRemove = new ArrayList<>();
+                    final Iterable<?> modifierList = (Iterable<?>) modifiers;
+                    for (final Object mod : modifierList) {
+                        final String modName = (String) attributeModifierGetNameMethod.invoke(mod);
+                        if (modName.startsWith(MODIFIER_PREFIX)) {
+                            toRemove.add(mod);
+                        }
+                    }
+                    for (final Object mod : toRemove) {
+                        removeAttributeModifierMethod.invoke(meta, attribute, mod);
+                    }
+                }
+            }
+            item.setItemMeta(meta);
+        } catch (Exception e) {
+        }
     }
 
     public Optional<ItemStack> setUnbreakable(final ItemStack item, final boolean unbreakable) {
@@ -234,9 +286,6 @@ public final class AttributeBridge {
             return Optional.empty();
         }
         try {
-            if (data == null) {
-                return Optional.of(clone);
-            }
             setCustomModelDataMethod.invoke(meta, data);
             clone.setItemMeta(meta);
             return Optional.of(clone);
