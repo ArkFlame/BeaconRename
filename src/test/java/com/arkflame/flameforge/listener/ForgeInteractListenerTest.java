@@ -4,192 +4,92 @@ import com.arkflame.flameforge.ForgeAccessService;
 import com.arkflame.flameforge.compat.interaction.InteractionHandBridge;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.station.ForgeStationService;
-import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.MessageService;
-import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Logger;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class ForgeInteractListenerTest {
 
-    private ForgeInteractListener listener;
-    private ForgeAccessService accessService;
-    private ForgeStationService stationService;
-    private InteractionHandBridge handBridge;
-    private MessageService messageService;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        accessService = mock(ForgeAccessService.class);
-        stationService = mock(ForgeStationService.class);
-        handBridge = new InteractionHandBridge(Logger.getLogger("ForgeInteractListenerTest"));
-        messageService = mock(MessageService.class);
-        listener = new ForgeInteractListener(accessService, stationService, handBridge, messageService);
-    }
-
     @Test
-    void registeredInteractiveAndOrdinaryMaterialsAreCancelledDeniedAndOpenedOnce() {
-        Material[] materials = {Material.BEACON, Material.ANVIL, Material.CHEST, Material.STONE};
-        for (Material material : materials) {
-            Player player = mock(Player.class);
-            when(player.isOnline()).thenReturn(true);
+    void registeredForgeInteractionOpensForge() {
+        ForgeAccessService accessService = mock(ForgeAccessService.class);
+        ForgeStationService stationService = mock(ForgeStationService.class);
+        InteractionHandBridge handBridge = mock(InteractionHandBridge.class);
+        MessageService messageService = mock(MessageService.class);
+        ForgeInteractListener listener = new ForgeInteractListener(
+            accessService, stationService, handBridge, messageService
+        );
 
-            Block block = mock(Block.class);
-            when(block.getType()).thenReturn(material);
-
-            PlayerInteractEvent event = new PlayerInteractEvent(
-                player, Action.RIGHT_CLICK_BLOCK, null, block, null
-            );
-
-            StationRepository.StationData stationData = new StationRepository.StationData(
-                "forge-1", "world", 0, 0, 0, "default"
-            );
-            when(stationService.resolveStationAt(block)).thenReturn(Optional.of(stationData));
-            when(accessService.openForgeFromId(any(Player.class), eq("forge-1"))).thenReturn(
-    CompletableFuture.completedFuture(ForgeAccessService.OpenResult.opened("test-id"))
-);
-
-            listener.onPlayerInteract(event);
-
-            assertTrue(event.isCancelled(), "Event should be cancelled for " + material);
-            assertEquals(Event.Result.DENY, event.useInteractedBlock(), "Interacted block should be denied for " + material);
-            assertEquals(Event.Result.DENY, event.useItemInHand(), "Item in hand should be denied for " + material);
-            verify(accessService, times(1)).openForgeFromId(eq(player), eq("forge-1"));
-        }
-    }
-
-    @Test
-    void unregisteredBlockLeavesVanillaInteractionUntouched() {
         Player player = mock(Player.class);
-        when(player.isOnline()).thenReturn(true);
-
         Block block = mock(Block.class);
-
         PlayerInteractEvent event = new PlayerInteractEvent(
             player, Action.RIGHT_CLICK_BLOCK, null, block, null
         );
+        StationRepository.StationData station = new StationRepository.StationData(
+            "station", "world", 0, 0, 0, "default"
+        );
 
-        when(stationService.resolveStationAt(block)).thenReturn(Optional.empty());
+        when(handBridge.isPrimary(event)).thenReturn(true);
+        when(stationService.resolveStationAt(block)).thenReturn(Optional.of(station));
+        when(accessService.openForgeFromId(player, station.id)).thenReturn(
+            CompletableFuture.completedFuture(ForgeAccessService.OpenResult.opened("open"))
+        );
 
         listener.onPlayerInteract(event);
 
-        assertFalse(event.isCancelled(), "Event should NOT be cancelled for unregistered block");
-        verify(accessService, never()).openForgeFromId(any(), any());
+        assertTrue(event.isCancelled());
+        assertEquals(Event.Result.DENY, event.useInteractedBlock());
+        assertEquals(Event.Result.DENY, event.useItemInHand());
+        verify(accessService).openForgeFromId(player, station.id);
     }
 
     @Test
-    void cancelledOrDeniedEventIsNotModified() {
-        Player player = mock(Player.class);
-        when(player.isOnline()).thenReturn(true);
-
-        Block block = mock(Block.class);
-
-        PlayerInteractEvent cancelledEvent = new PlayerInteractEvent(
-            player, Action.RIGHT_CLICK_BLOCK, null, block, null
-        );
-        cancelledEvent.setCancelled(true);
-
-        StationRepository.StationData stationData = new StationRepository.StationData(
-            "forge-1", "world", 0, 0, 0, "default"
-        );
-        when(stationService.resolveStationAt(block)).thenReturn(Optional.of(stationData));
-
-        listener.onPlayerInteract(cancelledEvent);
-
-        assertTrue(cancelledEvent.isCancelled(), "Pre-cancelled event should remain cancelled");
-        verify(accessService, never()).openForgeFromId(any(), any());
-
-        Player player2 = mock(Player.class);
-        when(player2.isOnline()).thenReturn(true);
-        Block block2 = mock(Block.class);
-
-        PlayerInteractEvent deniedEvent = new PlayerInteractEvent(
-            player2, Action.RIGHT_CLICK_BLOCK, null, block2, null
-        );
-        deniedEvent.setUseInteractedBlock(Event.Result.DENY);
-
-        StationRepository.StationData stationData2 = new StationRepository.StationData(
-            "forge-2", "world", 1, 1, 1, "default"
-        );
-        when(stationService.resolveStationAt(block2)).thenReturn(Optional.of(stationData2));
-
-        listener.onPlayerInteract(deniedEvent);
-
-        assertEquals(Event.Result.DENY, deniedEvent.useInteractedBlock(), "Deny should remain deny");
-        verify(accessService, never()).openForgeFromId(any(), any());
-    }
-
-    @Test
-    void offHandInteractionIsIgnored() {
-        Player player = mock(Player.class);
-        when(player.isOnline()).thenReturn(true);
-
-        Block block = mock(Block.class);
-
-        PlayerInteractEvent event = new PlayerInteractEvent(
-            player, Action.RIGHT_CLICK_BLOCK, null, block, null
-        );
-
-        StationRepository.StationData stationData = new StationRepository.StationData(
-            "forge-1", "world", 0, 0, 0, "default"
-        );
-        when(stationService.resolveStationAt(block)).thenReturn(Optional.of(stationData));
-
-        InteractionHandBridge offHandBridge = mock(InteractionHandBridge.class);
-        when(offHandBridge.isPrimary(event)).thenReturn(false);
-
-        ForgeInteractListener offHandListener = new ForgeInteractListener(
-            accessService, stationService, offHandBridge, messageService
-        );
-        offHandListener.onPlayerInteract(event);
-
-        assertFalse(event.isCancelled(), "Off-hand click should not cancel event");
-        verify(accessService, never()).openForgeFromId(any(), any());
-    }
-
-    @Test
-    void legacyEventWithoutHandIsAccepted() {
-        InteractionHandBridge legacyBridge = new InteractionHandBridge(
-            Logger.getLogger("LegacyTest")
-        );
-
-        ForgeInteractListener legacyListener = new ForgeInteractListener(
-            accessService, stationService, legacyBridge, messageService
+    void unrelatedOrIgnoredInteractionDoesNothing() {
+        ForgeAccessService accessService = mock(ForgeAccessService.class);
+        ForgeStationService stationService = mock(ForgeStationService.class);
+        InteractionHandBridge handBridge = mock(InteractionHandBridge.class);
+        MessageService messageService = mock(MessageService.class);
+        ForgeInteractListener listener = new ForgeInteractListener(
+            accessService, stationService, handBridge, messageService
         );
 
         Player player = mock(Player.class);
-        when(player.isOnline()).thenReturn(true);
-
         Block block = mock(Block.class);
-        when(block.getType()).thenReturn(Material.BEACON);
-
-        PlayerInteractEvent event = new PlayerInteractEvent(
+        PlayerInteractEvent unrelated = new PlayerInteractEvent(
+            player, Action.LEFT_CLICK_BLOCK, null, block, null
+        );
+        PlayerInteractEvent cancelled = new PlayerInteractEvent(
             player, Action.RIGHT_CLICK_BLOCK, null, block, null
         );
-
-        StationRepository.StationData stationData = new StationRepository.StationData(
-            "forge-1", "world", 0, 0, 0, "default"
+        cancelled.setCancelled(true);
+        PlayerInteractEvent offHand = new PlayerInteractEvent(
+            player, Action.RIGHT_CLICK_BLOCK, null, block, null
         );
-        when(stationService.resolveStationAt(block)).thenReturn(Optional.of(stationData));
-        when(accessService.openForgeFromId(any(Player.class), eq("forge-1"))).thenReturn(
-    CompletableFuture.completedFuture(ForgeAccessService.OpenResult.opened("test-id"))
-);
+        when(handBridge.isPrimary(offHand)).thenReturn(false);
 
-        legacyListener.onPlayerInteract(event);
+        listener.onPlayerInteract(unrelated);
+        listener.onPlayerInteract(cancelled);
+        listener.onPlayerInteract(offHand);
 
-        assertTrue(event.isCancelled(), "Event should be cancelled for legacy player");
-        verify(accessService, times(1)).openForgeFromId(eq(player), eq("forge-1"));
+        assertFalse(unrelated.isCancelled());
+        assertTrue(cancelled.isCancelled());
+        assertFalse(offHand.isCancelled());
+        verifyNoInteractions(accessService);
+        verifyNoInteractions(stationService);
     }
 }

@@ -66,6 +66,15 @@ item-groups:
       - leather_leggings
       - leather_boots
 
+item-display-names:
+  DIAMOND_SWORD: Diamond Sword
+  IRON_SWORD: Iron Sword
+  STONE_SWORD: Stone Sword
+  WOOD_SWORD: Wooden Sword
+  WOODEN_SWORD: Wooden Sword
+  GOLD_SWORD: Golden Sword
+  GOLDEN_SWORD: Golden Sword
+  NETHERITE_SWORD: Netherite Sword
 
 
 # Announcement settings

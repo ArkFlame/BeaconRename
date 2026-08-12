@@ -13,169 +13,81 @@ import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
-import java.math.BigDecimal;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class OutcomeExecutorTest {
-
+    private ItemMutationService mutation;
+    private ItemIdentityService identity;
     private OutcomeExecutor executor;
-    private ItemMutationService mutationService;
-    private ItemIdentityService identityService;
-    private AuditLogService auditLog;
-    private Map<String, Object> wardConfig;
+    private ForgePlan plan;
+    private TierDefinition tier;
+    private ItemStack input;
+    private Player player;
+    private UUID forgeId;
 
     @BeforeEach
     void setUp() {
-        mutationService = mock(ItemMutationService.class);
-        identityService = mock(ItemIdentityService.class);
-        auditLog = mock(AuditLogService.class);
-        wardConfig = new HashMap<>();
-        executor = new OutcomeExecutor(mutationService, identityService, auditLog, wardConfig);
+        mutation = mock(ItemMutationService.class);
+        identity = mock(ItemIdentityService.class);
+        executor = new OutcomeExecutor(mutation, identity, mock(AuditLogService.class), new HashMap<>());
+        tier = mock(TierDefinition.class);
+        input = mock(ItemStack.class);
+        when(input.hasItemMeta()).thenReturn(false);
+        player = mock(Player.class);
+        forgeId = UUID.randomUUID();
+        when(identity.readForgeIdentity(input)).thenReturn(new ItemIdentityService.ForgeIdentityRead(
+            ItemIdentityService.ForgeIdentityStatus.VALID, ItemIdentityCodec.Identity.empty()));
+        plan = mock(ForgePlan.class);
+        when(plan.getTargetTier()).thenReturn(tier);
     }
 
     @Test
-    void explicitSuccessConsumesSuppliedVariantAndDoesNotReroll() {
-        ForgePlan plan = mock(ForgePlan.class);
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.hasItemMeta()).thenReturn(true);
-        when(inputItem.getType()).thenReturn(org.bukkit.Material.DIAMOND_SWORD);
-        Player player = mock(Player.class);
-        UUID forgeId = UUID.randomUUID();
-        ForgeVariant selectedVariant = mock(ForgeVariant.class);
-        when(selectedVariant.getName()).thenReturn("TestVariant");
-        when(selectedVariant.getLore()).thenReturn(Collections.emptyList());
-        when(selectedVariant.getPowerIds()).thenReturn(Collections.emptyList());
-        when(selectedVariant.getAttributes()).thenReturn(Collections.emptyList());
-        when(selectedVariant.getEnchantments()).thenReturn(Collections.emptyList());
-
-        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty();
-        when(identityService.readForgeIdentity(inputItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.VALID,
-                identity
-            )
-        );
-
-        TierDefinition tierDef = mock(TierDefinition.class);
-        when(plan.getTargetTier()).thenReturn(tierDef);
-        when(plan.getTargetTierLevel()).thenReturn(2);
-
-        ItemStack mutatedItem = mock(ItemStack.class);
-        ItemMutationService.MutationResult mutationResult = ItemMutationService.MutationResult.success(mutatedItem);
-        when(mutationService.mutateSuccess(any(), eq(tierDef), eq(selectedVariant), any(), eq(forgeId)))
-            .thenReturn(mutationResult);
-
-        OutcomeExecutionResult result = executor.execute(plan, inputItem, player, forgeId,
-            ForgeOutcomeCategory.SUCCESS, selectedVariant);
-
-        assertTrue(result.isSuccess());
-        assertTrue(result.hasItemOutput());
-        assertNotNull(result.getItemOutput());
-        verify(mutationService).mutateSuccess(eq(inputItem), eq(tierDef), eq(selectedVariant), any(), eq(forgeId));
-    }
-
-    @Test
-    void explicitBreakUsesTierBreakPolicy() {
-        ForgePlan plan = mock(ForgePlan.class);
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.hasItemMeta()).thenReturn(true);
-        when(inputItem.getType()).thenReturn(org.bukkit.Material.DIAMOND_SWORD);
-        Player player = mock(Player.class);
-        UUID forgeId = UUID.randomUUID();
-
+    void explicitOutcomeCategoryDispatchesToMatchingMutation() {
+        ForgeVariant variant = new ForgeVariant("variant", "Variant", Collections.emptyList(), 1.0,
+            "DIAMOND_SWORD", Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+        ItemStack resultItem = mock(ItemStack.class);
+        when(mutation.mutateSuccess(any(), eq(tier), eq(variant), any(), eq(forgeId)))
+            .thenReturn(ItemMutationService.MutationResult.success(resultItem));
         BreakPolicy breakPolicy = BreakPolicy.defaultPolicy();
-        TierDefinition tierDef = mock(TierDefinition.class);
-        when(plan.getTargetTier()).thenReturn(tierDef);
-        when(plan.getTargetTierLevel()).thenReturn(2);
-        when(tierDef.getBreakPolicy()).thenReturn(breakPolicy);
+        when(tier.getBreakPolicy()).thenReturn(breakPolicy);
+        when(mutation.mutateBreak(any(), any(), any(), eq(forgeId)))
+            .thenReturn(ItemMutationService.MutationResult.success(resultItem));
+        CurseDefinition curse = mock(CurseDefinition.class);
+        when(tier.getCurseDefinition()).thenReturn(curse);
+        when(mutation.mutateCurse(any(), eq(curse), anyBoolean(), any(), eq(forgeId)))
+            .thenReturn(ItemMutationService.MutationResult.success(resultItem));
 
-        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty();
-        when(identityService.readForgeIdentity(inputItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.VALID,
-                identity
-            )
-        );
-
-        ItemStack brokenItem = mock(ItemStack.class);
-        ItemMutationService.MutationResult mutationResult = ItemMutationService.MutationResult.success(brokenItem);
-        when(mutationService.mutateBreak(any(), eq(breakPolicy), any(), eq(forgeId))).thenReturn(mutationResult);
-
-        OutcomeExecutionResult result = executor.execute(plan, inputItem, player, forgeId,
+        OutcomeExecutionResult success = executor.execute(plan, input, player, forgeId,
+            ForgeOutcomeCategory.SUCCESS, variant);
+        OutcomeExecutionResult broken = executor.execute(plan, input, player, forgeId,
             ForgeOutcomeCategory.BREAK, null);
-
-        assertTrue(result.isBreak());
-        verify(mutationService).mutateBreak(eq(inputItem), eq(breakPolicy), any(), eq(forgeId));
-    }
-
-    @Test
-    void explicitCurseUsesTierCurse() {
-        ForgePlan plan = mock(ForgePlan.class);
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.hasItemMeta()).thenReturn(true);
-        when(inputItem.getType()).thenReturn(org.bukkit.Material.DIAMOND_SWORD);
-        Player player = mock(Player.class);
-        UUID forgeId = UUID.randomUUID();
-
-        CurseDefinition curseDef = mock(CurseDefinition.class);
-        TierDefinition tierDef = mock(TierDefinition.class);
-        when(plan.getTargetTier()).thenReturn(tierDef);
-        when(plan.getTargetTierLevel()).thenReturn(2);
-        when(tierDef.getCurseDefinition()).thenReturn(curseDef);
-
-        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty();
-        when(identityService.readForgeIdentity(inputItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.VALID,
-                identity
-            )
-        );
-
-        ItemStack cursedItem = mock(ItemStack.class);
-        ItemMutationService.MutationResult mutationResult = ItemMutationService.MutationResult.success(cursedItem);
-        when(mutationService.mutateCurse(any(), eq(curseDef), anyBoolean(), any(), eq(forgeId))).thenReturn(mutationResult);
-
-        OutcomeExecutionResult result = executor.execute(plan, inputItem, player, forgeId,
+        OutcomeExecutionResult cursed = executor.execute(plan, input, player, forgeId,
             ForgeOutcomeCategory.CURSE, null);
 
-        assertTrue(result.isCurse());
-        verify(mutationService).mutateCurse(eq(inputItem), eq(curseDef), anyBoolean(), any(), eq(forgeId));
+        assertTrue(success.isSuccess());
+        assertTrue(broken.isBreak());
+        assertTrue(cursed.isCurse());
+        verify(mutation).mutateSuccess(eq(input), eq(tier), eq(variant), any(), eq(forgeId));
+        verify(mutation).mutateBreak(eq(input), eq(breakPolicy), any(), eq(forgeId));
+        verify(mutation).mutateCurse(eq(input), eq(curse), eq(false), any(), eq(forgeId));
     }
 
     @Test
-    void successWithNullVariantIsError() {
-        ForgePlan plan = mock(ForgePlan.class);
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.hasItemMeta()).thenReturn(true);
-        when(inputItem.getType()).thenReturn(org.bukkit.Material.DIAMOND_SWORD);
-        Player player = mock(Player.class);
-        UUID forgeId = UUID.randomUUID();
-
-        TierDefinition tierDef = mock(TierDefinition.class);
-        when(plan.getTargetTier()).thenReturn(tierDef);
-        when(plan.getTargetTierLevel()).thenReturn(2);
-
-        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty();
-        when(identityService.readForgeIdentity(inputItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.VALID,
-                identity
-            )
-        );
-
-        OutcomeExecutionResult result = executor.execute(plan, inputItem, player, forgeId,
+    void invalidSuccessWithoutVariantReturnsError() {
+        OutcomeExecutionResult result = executor.execute(plan, input, player, forgeId,
             ForgeOutcomeCategory.SUCCESS, null);
 
         assertFalse(result.isSuccess());
         assertNotNull(result.getError());
         assertTrue(result.getError().contains("null variant"));
+        verifyNoInteractions(mutation);
     }
 }

@@ -5,426 +5,254 @@ import com.arkflame.flameforge.chance.ThreadLocalRandomSource;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.forge.CostQuote;
-import com.arkflame.flameforge.forge.ForgeItemInspection;
 import com.arkflame.flameforge.forge.ForgeItemPolicy;
 import com.arkflame.flameforge.forge.ForgePlan;
 import com.arkflame.flameforge.forge.ForgePlanResult;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
-import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
 import com.arkflame.flameforge.model.TierRequirements;
-import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.TextRenderer;
-
-import java.util.logging.Logger;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ForgeMenuServiceTest {
-
     private ForgeMenuService menuService;
-    private ForgeMenuRegistry menuRegistry;
-    private ForgeMenuSettlementService menuSettlementService;
+    private ForgeMenuRegistry registry;
     private InventoryFactory inventoryFactory;
-    private MenuInputReturnService inputReturnService;
-    private ConfigService configService;
     private ForgeService forgeService;
     private ForgeVariantEligibility variantEligibility;
-    private OutcomeSelector outcomeSelector;
-    private ItemIdentityService identityService;
-    private LoreTemplateRenderer loreTemplateRenderer;
-    private ForgeItemPolicy itemPolicy;
-    private TextRenderer textRenderer;
-    private MenuItemFactory menuItemFactory;
+    private ConfigService configService;
+    private Inventory inventory;
+    private Map<Integer, ItemStack> visibleSlots;
     private Player player;
     private PlayerForgeState session;
-    private Inventory mockInventory;
-    private InventoryView mockView;
 
     @BeforeEach
     void setUp() {
         inventoryFactory = mock(InventoryFactory.class);
-        inputReturnService = mock(MenuInputReturnService.class);
+        registry = new ForgeMenuRegistry();
+        ConfigSnapshot snapshot = mock(ConfigSnapshot.class);
         configService = mock(ConfigService.class);
         forgeService = mock(ForgeService.class);
         variantEligibility = mock(ForgeVariantEligibility.class);
-        outcomeSelector = new OutcomeSelector(ThreadLocalRandomSource.getInstance());
-        identityService = mock(ItemIdentityService.class);
-        textRenderer = new TextRenderer();
-        menuItemFactory = mock(MenuItemFactory.class);
-        ItemStack mockBackgroundItem = mock(ItemStack.class);
-        when(mockBackgroundItem.getType()).thenReturn(Material.STONE);
-        when(mockBackgroundItem.clone()).thenReturn(mockBackgroundItem);
-        doReturn(mockBackgroundItem).when(menuItemFactory).background(anyList(), anyString());
-        doReturn(mockBackgroundItem).when(menuItemFactory).build(anyList(), anyString(), anyList(), any(), anyBoolean(), any());
+        when(configService.getCurrentSnapshot()).thenReturn(snapshot);
+        when(snapshot.getRootString(anyString(), anyString())).thenReturn("default");
+        when(snapshot.getMenuSettings(anyString())).thenReturn(menuConfig());
 
-        menuRegistry = new ForgeMenuRegistry();
-        menuSettlementService = new ForgeMenuSettlementService(inputReturnService);
-        loreTemplateRenderer = new LoreTemplateRenderer();
+        visibleSlots = new HashMap<>();
+        AtomicReference<ForgeInventoryHolder> holder = new AtomicReference<>();
+        inventory = mock(Inventory.class);
+        when(inventory.getSize()).thenReturn(MenuLayout.SIZE);
+        when(inventory.getHolder()).thenAnswer(invocation -> holder.get());
+        when(inventory.getItem(anyInt())).thenAnswer(invocation -> visibleSlots.get(invocation.getArgument(0)));
+        doAnswer(invocation -> {
+            int slot = invocation.getArgument(0);
+            ItemStack item = invocation.getArgument(1);
+            visibleSlots.put(slot, item);
+            return null;
+        }).when(inventory).setItem(anyInt(), any(ItemStack.class));
+        when(inventoryFactory.create(any(), eq(MenuLayout.SIZE), anyString())).thenAnswer(invocation -> {
+            holder.set(invocation.getArgument(0));
+            return inventory;
+        });
 
-        ForgeItemInspection inspection = mock(ForgeItemInspection.class);
-        ItemIdentityCodec.Identity emptyIdentity = ItemIdentityCodec.Identity.empty();
-        ForgeItemInspection.InspectionResult readyResult = new ForgeItemInspection.InspectionResult(
-            ForgeItemInspection.Status.READY, emptyIdentity);
-        when(inspection.inspect(any(), any(), any())).thenReturn(readyResult);
-        itemPolicy = new ForgeItemPolicy(inspection);
-
-        mockInventory = mock(Inventory.class);
-        when(mockInventory.getHolder()).thenReturn(mock(org.bukkit.inventory.InventoryHolder.class));
-        when(mockInventory.getSize()).thenReturn(54);
-        doNothing().when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
-
-        mockView = mock(InventoryView.class);
-        when(mockView.getTopInventory()).thenReturn(mockInventory);
-
+        InventoryView view = mock(InventoryView.class);
+        when(view.getTopInventory()).thenReturn(inventory);
         player = mock(Player.class);
-        UUID playerId = UUID.randomUUID();
-        when(player.getUniqueId()).thenReturn(playerId);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         when(player.isOnline()).thenReturn(true);
-        when(player.getOpenInventory()).thenReturn(mockView);
-        when(player.openInventory(any(Inventory.class))).thenReturn(null);
+        when(player.getOpenInventory()).thenReturn(view);
 
         session = mock(PlayerForgeState.class);
         when(session.getActiveStationId()).thenReturn("station");
         when(session.getActiveTierLevel()).thenReturn(1);
 
-        ConfigSnapshot snapshot = mock(ConfigSnapshot.class);
-        when(configService.getCurrentSnapshot()).thenReturn(snapshot);
-        when(snapshot.getRootString(anyString(), anyString())).thenReturn("Test Menu");
-        when(snapshot.getMenuSettings(anyString())).thenReturn(createMinimalMenuConfigWithConfirm());
-        when(snapshot.getTiers()).thenReturn(createTierList());
-
+        TextRenderer textRenderer = new TextRenderer();
+        MenuItemFactory menuItemFactory = mock(MenuItemFactory.class);
+        when(menuItemFactory.background(anyList(), anyString())).thenAnswer(invocation -> menuItem(Collections.emptyList()));
+        when(menuItemFactory.build(anyList(), anyString(), anyList(), any(), anyBoolean(), nullable(String.class)))
+                .thenAnswer(invocation -> menuItem(textRenderer.renderItemLore(
+                        invocation.getArgument(2), invocation.getArgument(3), invocation.getArgument(5))));
         menuService = new ForgeMenuService(
-            inventoryFactory, menuRegistry, menuSettlementService, configService,
-            forgeService, variantEligibility, outcomeSelector, identityService,
-            loreTemplateRenderer, itemPolicy, textRenderer, menuItemFactory,
-            Logger.getLogger("ForgeMenuServiceTest")
-        );
+                inventoryFactory, registry, mock(ForgeMenuSettlementService.class), configService,
+                forgeService, variantEligibility,
+                new OutcomeSelector(ThreadLocalRandomSource.getInstance()), mock(ItemIdentityService.class),
+                new LoreTemplateRenderer(), mock(ForgeItemPolicy.class), textRenderer, menuItemFactory,
+                Logger.getLogger("ForgeMenuServiceTest"));
+    }
+
+    private ItemStack menuItem(List<String> lore) {
+        ItemStack item = mock(ItemStack.class);
+        ItemMeta meta = mock(ItemMeta.class);
+        when(item.clone()).thenReturn(item);
+        when(item.getItemMeta()).thenReturn(meta);
+        when(meta.getLore()).thenReturn(new ArrayList<>(lore));
+        when(item.isSimilar(any(ItemStack.class))).thenReturn(true);
+        return item;
     }
 
     @Test
-    void noInputSlot22EmptySlot31RedstoneNoGlowCorrectCopy() {
-        Inventory mockInventory = mock(Inventory.class);
-        Map<Integer, ItemStack> storedItems = new HashMap<>();
-        when(mockInventory.getItem(anyInt())).thenAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            return storedItems.get(slot);
-        });
-        doAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            ItemStack item = invocation.getArgument(1);
-            storedItems.put(slot, item);
-            return null;
-        }).when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(mockInventory.getSize()).thenReturn(54);
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
+    void menuShowsNoInputBlockedAndReadyPlayerStates() {
+        ForgeMenuService.MenuResult opened = menuService.open(player, session);
+        assertTrue(opened.isOpened());
+        assertNull(inventory.getItem(MenuLayout.SLOT_INPUT));
+        assertNotNull(inventory.getItem(MenuLayout.SLOT_CONFIRM));
 
-        ForgeMenuService.MenuResult result = menuService.open(player, session);
+        ForgeMenuContext context = registry.get(player.getUniqueId()).get();
+        context.tryInsert(new ItemStack(Material.DIAMOND, 1));
+        ForgePlan blockedPlan = plan(new ItemStack(Material.DIAMOND, 1), false, Collections.emptyList());
+        when(forgeService.createPlan(eq(player), eq(session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(blockedPlan));
 
-        assertEquals(ForgeMenuService.MenuStatus.OPENED, result.getStatus());
-        verify(mockInventory, atLeastOnce()).setItem(eq(22), any());
-        verify(mockInventory, atLeastOnce()).setItem(eq(31), any());
+        ForgeMenuService.MenuResult blocked = menuService.rerender(player);
+        assertTrue(blocked.isOpened());
+        assertNotNull(inventory.getItem(MenuLayout.SLOT_INPUT));
+        assertNotNull(inventory.getItem(MenuLayout.SLOT_CONFIRM));
+
+        ForgePlan readyPlan = plan(new ItemStack(Material.DIAMOND, 1), true, Collections.emptyList());
+        when(forgeService.createPlan(eq(player), eq(session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(readyPlan));
+        ForgeMenuService.MenuResult ready = menuService.rerender(player);
+        assertTrue(ready.isOpened());
+        assertNotNull(inventory.getItem(MenuLayout.SLOT_INPUT));
+        assertNotNull(inventory.getItem(MenuLayout.SLOT_CONFIRM));
     }
 
     @Test
-    void tier0InputTierTransitionNoDuplicate() {
-        when(session.getActiveTierLevel()).thenReturn(0);
+    void confirmLoreRendersRequirementsChancesAndVariantsWithoutRawTokensOrFormatError() {
+        List<ForgeVariant> variants = Arrays.asList(
+                variant("Alpha Variant", 70.0), variant("Beta Variant", 30.0));
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, variants);
+        when(forgeService.createPlan(eq(player), eq(session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(plan));
+        when(variantEligibility.eligibleVariants(any(ItemStack.class), anyList())).thenReturn(variants);
 
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenAnswer(invocation -> {
-            ItemStack input = invocation.getArgument(2);
-            ForgePlan plan = mock(ForgePlan.class);
-            when(plan.getCurrentTierLevel()).thenReturn(0);
-            when(plan.getTargetTierLevel()).thenReturn(1);
-            when(plan.getRequirements()).thenReturn(createTierRequirements());
-            when(plan.getChances()).thenReturn(new TierChances(80.0, 15.0, 5.0));
-            when(plan.getCostQuote()).thenReturn(CostQuote.zero());
-            return ForgePlanResult.ready(plan);
-        });
+        ForgeMenuService.MenuResult opened = menuService.open(player, session);
+        ForgeMenuContext context = registry.get(player.getUniqueId()).get();
+        context.tryInsert(new ItemStack(Material.DIAMOND, 1));
+        ForgeMenuService.MenuResult rendered = menuService.rerender(player);
 
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-        ForgeMenuContext context = new ForgeMenuContext(UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        menuRegistry.replace(context);
-
-        Inventory mockInventory = mock(Inventory.class);
-        Map<Integer, ItemStack> storedItems = new HashMap<>();
-        when(mockInventory.getItem(anyInt())).thenAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            return storedItems.get(slot);
-        });
-        doAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            ItemStack item = invocation.getArgument(1);
-            storedItems.put(slot, item);
-            return null;
-        }).when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(mockInventory.getSize()).thenReturn(54);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(context.getMenuId(), player.getUniqueId(), "station");
-        doReturn(holder).when(mockInventory).getHolder();
-        when(mockView.getTopInventory()).thenReturn(mockInventory);
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
-
-        ForgeMenuService.MenuResult result = menuService.rerender(player);
-
-        assertEquals(ForgeMenuService.MenuStatus.OPENED, result.getStatus());
+        assertTrue(opened.isOpened());
+        assertTrue(rendered.isOpened());
+        List<String> lore = inventory.getItem(MenuLayout.SLOT_CONFIRM).getItemMeta().getLore();
+        assertNotNull(lore);
+        assertFalse(lore.isEmpty());
+        String renderedLore = String.join("\n", lore);
+        assertTrue(renderedLore.contains("Tier"));
+        assertTrue(renderedLore.contains("XP"));
+        assertTrue(renderedLore.contains("Money"));
+        assertTrue(renderedLore.contains("Success"));
+        assertTrue(renderedLore.contains("Alpha Variant"));
+        assertTrue(renderedLore.contains("Beta Variant"));
+        assertFalse(renderedLore.matches("(?s).*%[A-Za-z0-9_-]+%.*"));
+        assertFalse(renderedLore.contains("Message format error"));
     }
 
     @Test
-    void readyConfirmSlotIsEmeraldWithGlow() {
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenAnswer(invocation -> {
-            ForgePlan plan = mock(ForgePlan.class);
-            when(plan.getCurrentTierLevel()).thenReturn(1);
-            when(plan.getTargetTierLevel()).thenReturn(2);
-            when(plan.getRequirements()).thenReturn(createTierRequirements());
-            when(plan.getChances()).thenReturn(new TierChances(80.0, 15.0, 5.0));
-            when(plan.getCostQuote()).thenReturn(CostQuote.zero());
-            when(plan.isAffordable()).thenReturn(true);
-            return ForgePlanResult.ready(plan);
-        });
+    void rerenderPreservesTheCurrentInputAndActionSlots() {
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, Collections.emptyList());
+        when(forgeService.createPlan(eq(player), eq(session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(plan));
 
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-        ForgeMenuContext context = new ForgeMenuContext(UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        menuRegistry.replace(context);
+        menuService.open(player, session);
+        ForgeMenuContext context = registry.get(player.getUniqueId()).get();
+        context.tryInsert(new ItemStack(Material.DIAMOND, 3));
+        menuService.rerender(player);
 
-        Inventory mockInventory = mock(Inventory.class);
-        Map<Integer, ItemStack> storedItems = new HashMap<>();
-        when(mockInventory.getItem(anyInt())).thenAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            return storedItems.get(slot);
-        });
-        doAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            ItemStack item = invocation.getArgument(1);
-            storedItems.put(slot, item);
-            return null;
-        }).when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(mockInventory.getSize()).thenReturn(54);
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
+        ItemStack inputBefore = inventory.getItem(MenuLayout.SLOT_INPUT);
+        ItemStack actionBefore = inventory.getItem(MenuLayout.SLOT_CONFIRM);
+        menuService.rerender(player);
 
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(context.getMenuId(), player.getUniqueId(), "station");
-        doReturn(holder).when(mockInventory).getHolder();
-        when(mockView.getTopInventory()).thenReturn(mockInventory);
-
-        ForgeMenuService.MenuResult result = menuService.rerender(player);
-
-        assertEquals(ForgeMenuService.MenuStatus.OPENED, result.getStatus());
+        ItemStack inputAfter = inventory.getItem(MenuLayout.SLOT_INPUT);
+        ItemStack actionAfter = inventory.getItem(MenuLayout.SLOT_CONFIRM);
+        assertNotNull(inputBefore);
+        assertEquals(Material.DIAMOND, inputAfter.getType());
+        assertEquals(3, inputAfter.getAmount());
+        assertNotNull(actionBefore);
+        assertNotNull(actionAfter);
+        assertEquals(actionBefore.getItemMeta().getLore(), actionAfter.getItemMeta().getLore());
     }
 
-    @Test
-    void blockedQuoteSlot31RedstoneNoGlowExactDeficit() {
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenAnswer(invocation -> {
-            ForgePlan plan = mock(ForgePlan.class);
-            when(plan.getCurrentTierLevel()).thenReturn(1);
-            when(plan.getTargetTierLevel()).thenReturn(2);
-            when(plan.getRequirements()).thenReturn(createTierRequirements());
-            when(plan.getChances()).thenReturn(new TierChances(80.0, 15.0, 5.0));
-            CostQuote quote = CostQuote.of(createTierRequirements(), true, true, 30, 10,
-                    BigDecimal.valueOf(100), BigDecimal.valueOf(50),
-                    Collections.emptyList(), Collections.singletonList("menu.requirements-not-met"));
-            when(plan.getCostQuote()).thenReturn(quote);
-            when(plan.isAffordable()).thenReturn(false);
-            return ForgePlanResult.ready(plan);
-        });
-
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-        ForgeMenuContext context = new ForgeMenuContext(UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        menuRegistry.replace(context);
-
-        Inventory mockInventory = mock(Inventory.class);
-        Map<Integer, ItemStack> storedItems = new HashMap<>();
-        when(mockInventory.getItem(anyInt())).thenAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            return storedItems.get(slot);
-        });
-        doAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            ItemStack item = invocation.getArgument(1);
-            storedItems.put(slot, item);
-            return null;
-        }).when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(mockInventory.getSize()).thenReturn(54);
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(context.getMenuId(), player.getUniqueId(), "station");
-        doReturn(holder).when(mockInventory).getHolder();
-        when(mockView.getTopInventory()).thenReturn(mockInventory);
-
-        ForgeMenuService.MenuResult result = menuService.rerender(player);
-
-        assertEquals(ForgeMenuService.MenuStatus.OPENED, result.getStatus());
+    private ForgePlan plan(ItemStack input, boolean affordable, List<ForgeVariant> variants) {
+        TierRequirements requirements = new TierRequirements(
+                TierRequirements.Combine.ALL,
+                new TierRequirements.XpRequirement(true, 30),
+                new TierRequirements.MoneyRequirement(true, new BigDecimal("100.00")),
+                new TierRequirements.ItemsRequirement(true, Collections.singletonList(
+                        new TierRequirements.ItemRequirement(Collections.singletonList("GOLD_INGOT"), 2, "Gold"))));
+        TierDefinition targetTier = new TierDefinition("target", 2, true, null, null, 0L,
+                Collections.emptyList(), Collections.emptyList(), requirements,
+                new TierChances(80.0, 15.0, 5.0), null, null, null, variants);
+        CostQuote quote = CostQuote.of(requirements, affordable, true, 30, 40,
+                new BigDecimal("100.00"), new BigDecimal("250.00"),
+                Collections.singletonList(CostQuote.ItemRequirementQuote.available(
+                        Collections.singletonList("GOLD_INGOT"), 2, 4, "Gold")),
+                affordable ? Collections.emptyList() : Collections.singletonList("menu.requirements-not-met"));
+        return ForgePlan.createWithTier(input, 1, targetTier, requirements,
+                new TierChances(80.0, 15.0, 5.0), quote,
+                "station", null, null, null, 0, 0, 0);
     }
 
-    @Test
-    void variantsUseFullDisplayNamesSortedByActualProbability() {
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenAnswer(invocation -> {
-            ForgePlan plan = mock(ForgePlan.class);
-            when(plan.getCurrentTierLevel()).thenReturn(1);
-            when(plan.getTargetTierLevel()).thenReturn(2);
-            when(plan.getRequirements()).thenReturn(createTierRequirements());
-            when(plan.getChances()).thenReturn(new TierChances(80.0, 15.0, 5.0));
-
-            TierDefinition tier = mock(TierDefinition.class);
-            ForgeVariant variant1 = new ForgeVariant("v1", "Common Sword", Collections.emptyList(), 60.0, null,
-                    Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
-            ForgeVariant variant2 = new ForgeVariant("v2", "Rare Axe", Collections.emptyList(), 30.0, null,
-                    Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
-            ForgeVariant variant3 = new ForgeVariant("v3", "Legendary Bow", Collections.emptyList(), 10.0, null,
-                    Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
-            when(tier.getVariants()).thenReturn(Arrays.asList(variant1, variant2, variant3));
-            when(plan.getTargetTier()).thenReturn(tier);
-
-            CostQuote quote = CostQuote.zero();
-            when(plan.getCostQuote()).thenReturn(quote);
-            when(plan.isAffordable()).thenReturn(true);
-            return ForgePlanResult.ready(plan);
-        });
-
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-        ForgeMenuContext context = new ForgeMenuContext(UUID.randomUUID(), player.getUniqueId(), "station", session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        menuRegistry.replace(context);
-
-        Inventory mockInventory = mock(Inventory.class);
-        Map<Integer, ItemStack> storedItems = new HashMap<>();
-        when(mockInventory.getItem(anyInt())).thenAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            return storedItems.get(slot);
-        });
-        doAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            ItemStack item = invocation.getArgument(1);
-            storedItems.put(slot, item);
-            return null;
-        }).when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(mockInventory.getSize()).thenReturn(54);
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(context.getMenuId(), player.getUniqueId(), "station");
-        doReturn(holder).when(mockInventory).getHolder();
-        when(mockView.getTopInventory()).thenReturn(mockInventory);
-
-        ForgeMenuService.MenuResult result = menuService.rerender(player);
-
-        assertEquals(ForgeMenuService.MenuStatus.OPENED, result.getStatus());
+    private ForgeVariant variant(String name, double weight) {
+        return new ForgeVariant(name.toLowerCase().replace(' ', '_'), name,
+                Collections.emptyList(), weight, null, Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
-    @Test
-    void noPromptExposureStringsOrTokens() {
-        Inventory mockInventory = mock(Inventory.class);
-        Map<Integer, ItemStack> storedItems = new HashMap<>();
-        when(mockInventory.getItem(anyInt())).thenAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            return storedItems.get(slot);
-        });
-        doAnswer(invocation -> {
-            int slot = invocation.getArgument(0);
-            ItemStack item = invocation.getArgument(1);
-            storedItems.put(slot, item);
-            return null;
-        }).when(mockInventory).setItem(anyInt(), any(ItemStack.class));
-        when(mockInventory.getSize()).thenReturn(54);
-        when(inventoryFactory.create(any(), anyInt(), anyString())).thenReturn(mockInventory);
-
-        ForgeMenuService.MenuResult result = menuService.open(player, session);
-
-        assertEquals(ForgeMenuService.MenuStatus.OPENED, result.getStatus());
-    }
-
-    private Map<String, Object> createMinimalMenuConfigWithConfirm() {
-        Map<String, Object> menuConfig = new HashMap<>();
-        Map<String, Object> items = new HashMap<>();
+    private Map<String, Object> menuConfig() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("title", "<gold><bold>FlameForge</bold>");
+        config.put("background", map("materials", Collections.singletonList("STONE"), "name", " "));
 
         Map<String, Object> confirm = new HashMap<>();
-        confirm.put("name", "Confirm");
-
-        Map<String, Object> empty = new HashMap<>();
-        empty.put("name", "<gradient:#ef4444:#7f1d1d><bold>No Item Selected</bold></gradient>");
-        empty.put("materials", Collections.singletonList("REDSTONE_BLOCK"));
-        empty.put("glow", false);
-        confirm.put("empty", empty);
-
-        Map<String, Object> blocked = new HashMap<>();
-        blocked.put("name", "<gradient:#ef4444:#7f1d1d><bold>Forge Unavailable</bold></gradient>");
-        blocked.put("materials", Collections.singletonList("REDSTONE_BLOCK"));
-        blocked.put("glow", false);
-        blocked.put("lore", Collections.singletonList("%tier_line%"));
-        confirm.put("blocked", blocked);
-
-        Map<String, Object> ready = new HashMap<>();
-        ready.put("name", "<gradient:#22c55e:#a3e635><bold>Forge Item</bold></gradient>");
-        ready.put("materials", Collections.singletonList("EMERALD_BLOCK"));
-        ready.put("glow", true);
-        ready.put("lore", Collections.singletonList("%tier_line%"));
-        confirm.put("ready", ready);
-
-        items.put("confirm", confirm);
-        menuConfig.put("items", items);
-        return menuConfig;
+        confirm.put("empty", map("materials", Collections.singletonList("REDSTONE_BLOCK"), "glow", false,
+                "name", "<red>No Item Selected</red>", "lore", Collections.singletonList("<red>No item inserted.</red>")));
+        List<String> lore = Arrays.asList("%tier_line%", " ", "Requirements", "%requirements%", " ",
+                "Chances", "%chances%", " ", "Possible Variants", "%variants%");
+        confirm.put("blocked", map("materials", Collections.singletonList("REDSTONE_BLOCK"), "glow", false,
+                "name", "<red>Forge Unavailable</red>", "lore", lore));
+        confirm.put("ready", map("materials", Collections.singletonList("EMERALD_BLOCK"), "glow", true,
+                "name", "<green>Forge Item</green>", "lore", lore));
+        config.put("items", Collections.singletonMap("confirm", confirm));
+        config.put("dynamic-lines", map(
+                "tier", "<gray>Tier: <white>%current_tier% <dark_gray>to <white>%target_tier%",
+                "chance-success", "<green>Success <white>%success_chance%%",
+                "chance-break", "<red>Break <white>%break_chance%%",
+                "chance-curse", "<dark_purple>Curse <white>%curse_chance%%",
+                "variant-entry", "<gray>%variant_name% <white>%variant_chance%%"));
+        return config;
     }
 
-    private List<TierDefinition> createTierList() {
-        List<ForgeVariant> variants = Arrays.asList(
-            new ForgeVariant("v1", "Common", Collections.emptyList(), 60.0, null,
-                    Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()),
-            new ForgeVariant("v2", "Rare", Collections.emptyList(), 30.0, null,
-                    Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()),
-            new ForgeVariant("v3", "Legendary", Collections.emptyList(), 10.0, null,
-                    Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList())
-        );
-
-        TierDefinition tier1 = new TierDefinition(
-            "tier_1", 1, true, null,
-            new TierDefinition.TierDisplay("Tier 1", Collections.emptyList(), false, null),
-            0L, Collections.emptyList(), Collections.emptyList(),
-            createTierRequirements(), new TierChances(80.0, 15.0, 5.0),
-            null, null, null, variants
-        );
-
-        TierDefinition tier2 = new TierDefinition(
-            "tier_2", 2, true, null,
-            new TierDefinition.TierDisplay("Tier 2", Collections.emptyList(), false, null),
-            0L, Collections.emptyList(), Collections.emptyList(),
-            createTierRequirements(), new TierChances(75.0, 18.0, 7.0),
-            null, null, null, variants
-        );
-
-        return Arrays.asList(tier1, tier2);
-    }
-
-    private TierRequirements createTierRequirements() {
-        return new TierRequirements(
-            TierRequirements.Combine.ALL,
-            new TierRequirements.XpRequirement(true, 30),
-            new TierRequirements.MoneyRequirement(true, BigDecimal.valueOf(100)),
-            new TierRequirements.ItemsRequirement(false, Collections.emptyList())
-        );
+    private Map<String, Object> map(Object... values) {
+        Map<String, Object> result = new HashMap<>();
+        for (int i = 0; i < values.length; i += 2) {
+            result.put((String) values[i], values[i + 1]);
+        }
+        return result;
     }
 }

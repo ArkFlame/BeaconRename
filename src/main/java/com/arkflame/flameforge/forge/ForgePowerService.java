@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.forge;
 
+import com.arkflame.flameforge.compat.effect.ParticleBridge;
 import com.arkflame.flameforge.compat.effect.PotionEffectResolver;
 import com.arkflame.flameforge.compat.equipment.EquipmentBridge;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
@@ -25,6 +26,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class ForgePowerService {
@@ -34,6 +36,8 @@ public final class ForgePowerService {
 
     private final JavaPlugin plugin;
     private final SchedulerBridge schedulerBridge;
+    private final ParticleBridge particleBridge;
+    private final MultiStrikeService multiStrikeService;
     private final PotionEffectResolver potionEffectResolver;
     private final EquipmentBridge equipmentBridge;
     private final ItemIdentityService identityService;
@@ -62,7 +66,27 @@ public final class ForgePowerService {
                             EquipmentBridge equipmentBridge,
                             ItemIdentityService identityService) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             ParticleBridge.getInstance(), new MultiStrikeService(schedulerBridge, ParticleBridge.getInstance()),
              new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                             PotionEffectResolver potionEffectResolver,
+                             EquipmentBridge equipmentBridge,
+                             ItemIdentityService identityService,
+                             ParticleBridge particleBridge, MultiStrikeService multiStrikeService) {
+        this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             particleBridge, multiStrikeService, new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                             ParticleBridge particleBridge,
+                             PotionEffectResolver potionEffectResolver,
+                             EquipmentBridge equipmentBridge,
+                             ItemIdentityService identityService,
+                             MultiStrikeService multiStrikeService) {
+        this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             particleBridge, multiStrikeService, new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -71,6 +95,7 @@ public final class ForgePowerService {
                             ItemIdentityService identityService,
                             int maxCooldownEntries) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             ParticleBridge.getInstance(), new MultiStrikeService(schedulerBridge, ParticleBridge.getInstance()),
              new SystemTimeSource(), maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
@@ -78,10 +103,23 @@ public final class ForgePowerService {
                             PotionEffectResolver potionEffectResolver,
                             EquipmentBridge equipmentBridge,
                             ItemIdentityService identityService,
-                            TimeSource timeSource,
-                            int maxCooldownEntries) {
+                             TimeSource timeSource,
+                             int maxCooldownEntries) {
+        this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
+             ParticleBridge.getInstance(), new MultiStrikeService(schedulerBridge, ParticleBridge.getInstance()),
+             timeSource, maxCooldownEntries);
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                              PotionEffectResolver potionEffectResolver,
+                              EquipmentBridge equipmentBridge,
+                              ItemIdentityService identityService,
+                              ParticleBridge particleBridge, MultiStrikeService multiStrikeService,
+                              TimeSource timeSource, int maxCooldownEntries) {
         this.plugin = Objects.requireNonNull(plugin);
         this.schedulerBridge = Objects.requireNonNull(schedulerBridge);
+        this.particleBridge = Objects.requireNonNull(particleBridge);
+        this.multiStrikeService = Objects.requireNonNull(multiStrikeService);
         this.potionEffectResolver = Objects.requireNonNull(potionEffectResolver);
         this.equipmentBridge = Objects.requireNonNull(equipmentBridge);
         this.identityService = Objects.requireNonNull(identityService);
@@ -305,7 +343,12 @@ public final class ForgePowerService {
         }
         if (type != ForgePowerDefinition.PowerType.ON_HIT_POTION
             && type != ForgePowerDefinition.PowerType.ON_HIT_FIRE
-            && type != ForgePowerDefinition.PowerType.ON_HIT_HEAL) {
+            && type != ForgePowerDefinition.PowerType.ON_HIT_HEAL
+            && type != ForgePowerDefinition.PowerType.ON_HIT_AOE_FIRE
+            && type != ForgePowerDefinition.PowerType.ON_HIT_BLEED
+            && type != ForgePowerDefinition.PowerType.ON_HIT_EXPLOSIVE
+            && type != ForgePowerDefinition.PowerType.ON_HIT_CHAIN_POTION
+            && type != ForgePowerDefinition.PowerType.ON_HIT_CHAIN_DAMAGE) {
             return false;
         }
         if (!rollChance(power.getChance())) {
@@ -323,6 +366,21 @@ public final class ForgePowerService {
                 break;
             case ON_HIT_HEAL:
                 applyOnHitHeal(attacker, victim, power);
+                break;
+            case ON_HIT_AOE_FIRE:
+                applyAoeFire(attacker, victim, power);
+                break;
+            case ON_HIT_BLEED:
+                applyBleed(victim, power);
+                break;
+            case ON_HIT_EXPLOSIVE:
+                applyExplosive(attacker, victim, power);
+                break;
+            case ON_HIT_CHAIN_POTION:
+                applyChainPotion(attacker, victim, power);
+                break;
+            case ON_HIT_CHAIN_DAMAGE:
+                applyChainDamage(attacker, victim, power);
                 break;
             default:
                 break;
@@ -444,6 +502,93 @@ public final class ForgePowerService {
         double maxHealth = attacker.getMaxHealth();
         double newHealth = Math.min(attacker.getHealth() + heal, maxHealth);
         attacker.setHealth(newHealth);
+    }
+
+    private void applyAoeFire(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
+        final int fireTicks = power.getFireTicks();
+        if (fireTicks <= 0) {
+            return;
+        }
+        multiStrikeService.execute(attacker, victim, power, true, new MultiStrikeService.StrikeAction() {
+            @Override
+            public void apply(LivingEntity target) {
+                target.setFireTicks(fireTicks);
+            }
+        });
+    }
+
+    private void applyBleed(final LivingEntity victim, final ForgePowerDefinition power) {
+        scheduleBleedPulse(victim, power, power.getPulseCount());
+    }
+
+    private void scheduleBleedPulse(final LivingEntity victim, final ForgePowerDefinition power, final int remaining) {
+        if (remaining <= 0) {
+            return;
+        }
+        schedulerBridge.runEntityLater(victim, new Runnable() {
+            @Override
+            public void run() {
+                if (victim.isDead()) {
+                    return;
+                }
+                victim.damage(power.getDamageAmount().doubleValue());
+                scheduleBleedPulse(victim, power, remaining - 1);
+            }
+        }, () -> {}, power.getPulseIntervalTicks());
+    }
+
+    private void applyExplosive(final Player attacker, final LivingEntity victim,
+                                final ForgePowerDefinition power) {
+        final AtomicBoolean primary = new AtomicBoolean(true);
+        multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
+            @Override
+            public void apply(LivingEntity target) {
+                double multiplier = primary.getAndSet(false) ? 1.0
+                    : power.getSecondaryDamageMultiplier().doubleValue();
+                double damage = power.getDamageAmount().doubleValue() * multiplier;
+                if (damage > 0) {
+                    target.damage(damage);
+                }
+                if (power.getPrimaryKnockbackMultiplier().signum() > 0) {
+                    schedulerBridge.runEntityLater(target, new Runnable() {
+                        @Override
+                        public void run() {
+                            if (!target.isDead()) {
+                                target.setVelocity(new Vector(0,
+                                    power.getPrimaryKnockbackMultiplier().doubleValue(), 0));
+                            }
+                        }
+                    }, () -> {}, 1L);
+                }
+            }
+        });
+    }
+
+    private void applyChainPotion(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
+        Optional<PotionEffectType> effectType = potionEffectResolver.resolve(power.getEffectCandidates());
+        if (!effectType.isPresent()) {
+            return;
+        }
+        final PotionEffect effect = new PotionEffect(effectType.get(), power.getDurationTicks(),
+            power.getAmplifier(), false, false);
+        multiStrikeService.execute(attacker, victim, power, true, new MultiStrikeService.StrikeAction() {
+            @Override
+            public void apply(LivingEntity target) {
+                target.addPotionEffect(effect);
+            }
+        });
+    }
+
+    private void applyChainDamage(Player attacker, LivingEntity victim, final ForgePowerDefinition power) {
+        multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
+            @Override
+            public void apply(LivingEntity target) {
+                double damage = power.getDamageAmount().doubleValue();
+                if (damage > 0) {
+                    target.damage(damage);
+                }
+            }
+        });
     }
 
     public boolean activateDash(Player player, ForgePowerDefinition power, UUID forgeId) {

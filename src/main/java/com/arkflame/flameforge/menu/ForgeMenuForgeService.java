@@ -12,6 +12,7 @@ import org.bukkit.inventory.ItemStack;
 import java.util.Collections;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public final class ForgeMenuForgeService {
@@ -48,6 +49,7 @@ public final class ForgeMenuForgeService {
 
         ForgeMenuContext removedContext = null;
         ItemStack claimedItem = null;
+        ItemStack claimedSafetyCopy = null;
         boolean submitted = false;
 
         try {
@@ -107,6 +109,7 @@ public final class ForgeMenuForgeService {
                 return;
             }
             claimedItem = claimed.get();
+            claimedSafetyCopy = claimedItem.clone();
 
             player.closeInventory();
             submitted = true;
@@ -129,23 +132,13 @@ public final class ForgeMenuForgeService {
             });
 
         } catch (RuntimeException e) {
-            logger.warning("Unexpected pre-submission failure for player " + playerId + ", menu " + menuId + ": " + e.getMessage());
-            if (claimedItem != null && submitted) {
-                Optional<ForgeMenuContext> currentContext = registry.getCurrent(playerId, menuId);
-                if (currentContext.isPresent()) {
-                    boolean restored = currentContext.get().restoreClaimedInputForSettlement(claimedItem);
-                    if (restored) {
-                        settlementService.settleOnlineOrQueue(currentContext.get(), player);
-                    }
-                }
-                messageService.send(player, "menu.forge-start-failed");
-            } else if (removedContext != null) {
-                Optional<ForgeMenuContext> currentContext = registry.getCurrent(playerId, menuId);
-                if (currentContext.isPresent()) {
-                    settlementService.settleOnlineOrQueue(currentContext.get(), player);
-                } else {
+            logger.log(Level.SEVERE, "Unexpected forge submission failure for player " + playerId + ", menu " + menuId, e);
+            if (removedContext != null) {
+                boolean restored = removedContext.restoreClaimedInputForSettlement(claimedSafetyCopy);
+                if (restored) {
                     settlementService.settleOnlineOrQueue(removedContext, player);
                 }
+                messageService.send(player, "menu.forge-start-failed");
             }
         }
     }

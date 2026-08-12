@@ -33,6 +33,12 @@ chances:
 break:
   reset-tier: true
   target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>✦ Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -64,9 +70,8 @@ animation:
     radius: 1.20
   impact-particle:
     candidates:
-      - BLOCK
-      - BLOCK_CRACK
-      - TILE_BREAK
+      - CRIT
+      - FLAME
     material-candidates:
       - ANVIL
   success:
@@ -107,6 +112,7 @@ variants:
       - "<gray>Tier VII forged variant"
       - "<dark_gray>● <dark_purple>30% Wither II strike"
       - "<dark_gray>● <white>60 tick cooldown"
+      - "<dark_gray>● <red>22% chance to cause bleeding"
     enchantments: []
     attributes: []
     powers:
@@ -118,6 +124,16 @@ variants:
           - WITHER
         duration-ticks: 80
         amplifier: 1
+      - id: void_bleed
+        type: ON_HIT_BLEED
+        cooldown-ticks: 60
+        chance: "0.22"
+        damage-amount: "1"
+        pulse-count: 4
+        pulse-interval-ticks: 12
+        particle-candidates:
+          - HEART
+          - SMOKE
   annihilator:
     weight: "40.0"
     applicable-groups:
@@ -127,6 +143,7 @@ variants:
       - "<gray>Tier VII forged variant"
       - "<dark_gray>● <red>+6 raw attack damage"
       - "<dark_gray>● <yellow>Every 3rd hit delivers crushing knockback"
+      - "<dark_gray>● <yellow>Electric <white>chain damage"
     enchantments: []
     attributes:
       - id: annihilator_damage
@@ -140,6 +157,18 @@ variants:
         chance: "1.0"
         horizontal-strength: "1.75"
         vertical-strength: "0.45"
+      - id: annihilator_electric
+        type: ON_HIT_CHAIN_DAMAGE
+        cooldown-ticks: 80
+        chance: "0.30"
+        damage-amount: "2"
+        radius: "6"
+        max-targets: 5
+        chain-delay-ticks: 2
+        trail-points: 14
+        particle-candidates:
+          - CRIT
+          - SPELL_INSTANT
   eternal:
     weight: "30.0"
     applicable-groups:
@@ -149,6 +178,7 @@ variants:
       - "<gray>Tier VII forged variant"
       - "<dark_gray>● <light_purple>Regeneration II while equipped"
       - "<dark_gray>● <blue>18% damage reduction"
+      - "<dark_gray>● <green>15% chance to recover health on hit"
     enchantments:
       - candidates:
           - DURABILITY
@@ -172,3 +202,8 @@ variants:
           - MAIN_HAND
           - OFF_HAND
           - ARMOR
+      - id: eternal_recovery
+        type: ON_HIT_HEAL
+        cooldown-ticks: 80
+        chance: "0.15"
+        heal-amount: "1.5"

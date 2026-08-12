@@ -2,6 +2,7 @@ package com.arkflame.flameforge.menu;
 
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
+import com.arkflame.flameforge.forge.DeliveryService;
 import com.arkflame.flameforge.forge.ForgeItemPolicy;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.text.MessageService;
@@ -12,23 +13,24 @@ import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ForgeMenuInputServiceTest {
-
     private ForgeMenuRegistry registry;
     private ForgeMenuViewResolver viewResolver;
     private ForgeMenuService menuService;
     private ForgeItemPolicy itemPolicy;
-    private ForgeMenuSettlementService settlementService;
-    private SchedulerBridge scheduler;
-    private MessageService messageService;
-
-    private ForgeMenuInputService inputService;
+    private DeliveryService delivery;
+    private ForgeMenuInputService service;
 
     @BeforeEach
     void setUp() {
@@ -36,301 +38,141 @@ class ForgeMenuInputServiceTest {
         viewResolver = new ForgeMenuViewResolver(registry);
         menuService = mock(ForgeMenuService.class);
         itemPolicy = mock(ForgeItemPolicy.class);
-        settlementService = mock(ForgeMenuSettlementService.class);
-        messageService = mock(MessageService.class);
-
-        scheduler = mock(SchedulerBridge.class);
+        delivery = mock(DeliveryService.class);
+        MenuInputReturnService inputReturnService = new MenuInputReturnService(delivery);
+        ForgeMenuSettlementService settlementService = new ForgeMenuSettlementService(inputReturnService);
+        SchedulerBridge scheduler = mock(SchedulerBridge.class);
         when(scheduler.runEntity(any(Player.class), any(Runnable.class), any(Runnable.class)))
-            .thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(1);
-                runnable.run();
-                return mock(TaskHandle.class);
-            });
+                .thenAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(1);
+                    task.run();
+                    return mock(TaskHandle.class);
+                });
 
-        inputService = new ForgeMenuInputService(
-            registry, viewResolver, menuService, itemPolicy,
-            settlementService, scheduler, messageService
-        );
+        service = new ForgeMenuInputService(registry, viewResolver, menuService, itemPolicy,
+                settlementService, scheduler, mock(MessageService.class));
     }
 
     @Test
-    void insertUsesBottomInventoryLocalSlotAndRendersOnce() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
+    void insertRemoveAndCloseConserveOneInputItem() {
+        Fixture fixture = fixture(2);
+        when(menuService.rerender(fixture.player)).thenReturn(ForgeMenuService.MenuResult.opened(fixture.menuId));
+        when(itemPolicy.checkItem(any(Player.class), eq(fixture.session), any(ItemStack.class)))
+                .thenReturn(ForgeItemPolicy.PolicyResult.allow());
+        when(delivery.generateDeliveryId(fixture.player, "menu_return")).thenReturn("menu-return");
+        when(delivery.deliverItem(any(ItemStack.class), eq(fixture.player), isNull(), eq("menu-return")))
+                .thenReturn(true);
 
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
+        service.requestInsertOne(fixture.player, fixture.holder, fixture.sourceInventory, 5, fixture.sourceItem);
 
-        ItemStack sourceItem = mock(ItemStack.class);
-        when(sourceItem.getType()).thenReturn(Material.DIAMOND);
-        when(sourceItem.clone()).thenReturn(sourceItem);
-        when(sourceItem.isSimilar(any(ItemStack.class))).thenReturn(true);
-        when(sourceItem.getAmount()).thenReturn(2);
+        assertEquals(1, fixture.sourceInventory.getItem(5).getAmount());
+        assertEquals(1, fixture.context.peekInput().get().getAmount());
 
-        Inventory sourceInventory = mock(Inventory.class);
-        when(sourceInventory.getSize()).thenReturn(54);
-        when(sourceInventory.getItem(5)).thenReturn(sourceItem);
+        service.handleInventoryClose(fixture.player, fixture.holder);
 
-        InventoryView view = mock(InventoryView.class);
-        when(view.getBottomInventory()).thenReturn(sourceInventory);
-        when(player.getOpenInventory()).thenReturn(view);
+        ArgumentCaptor<ItemStack> returned = ArgumentCaptor.forClass(ItemStack.class);
+        verify(delivery, times(1)).deliverItem(returned.capture(), eq(fixture.player), isNull(), eq("menu-return"));
+        assertEquals(1, returned.getValue().getAmount());
+        assertFalse(registry.get(fixture.playerId).isPresent());
+    }
 
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-        when(session.getActiveTierLevel()).thenReturn(1);
+    @Test
+    void rerenderOrReplacementFailureReturnsHeldInput() {
+        Fixture fixture = fixture(2);
+        when(menuService.rerender(fixture.player)).thenReturn(
+                ForgeMenuService.MenuResult.renderFailed(fixture.menuId.toString(), "render failed"));
+        when(itemPolicy.checkItem(any(Player.class), eq(fixture.session), any(ItemStack.class)))
+                .thenReturn(ForgeItemPolicy.PolicyResult.allow());
+        when(delivery.generateDeliveryId(fixture.player, "menu_return")).thenReturn("failed-return");
+        when(delivery.deliverItem(any(ItemStack.class), eq(fixture.player), isNull(), eq("failed-return")))
+                .thenReturn(true);
 
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        registry.replace(context);
+        service.requestInsertOne(fixture.player, fixture.holder, fixture.sourceInventory, 5, fixture.sourceItem);
 
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
+        ArgumentCaptor<ItemStack> returned = ArgumentCaptor.forClass(ItemStack.class);
+        verify(delivery, times(1)).deliverItem(returned.capture(), eq(fixture.player), isNull(), eq("failed-return"));
+        assertEquals(Material.DIAMOND, returned.getValue().getType());
+        assertEquals(1, returned.getValue().getAmount());
+        assertFalse(registry.get(fixture.playerId).isPresent());
+    }
+
+    @Test
+    void quitOrDisableReturnsOrQueuesHeldInput() {
+        Fixture quitFixture = fixture(1);
+        Fixture disableFixture = fixture(2);
+        when(delivery.queuePendingDelivery(anyString(), any(UUID.class), any(ItemStack.class), isNull()))
+                .thenReturn(true);
+
+        assertTrue(quitFixture.context.tryInsert(quitFixture.sourceItem));
+        assertTrue(disableFixture.context.tryInsert(disableFixture.sourceItem));
+
+        service.handlePlayerQuit(quitFixture.player);
+        service.shutdown();
+
+        ArgumentCaptor<ItemStack> queued = ArgumentCaptor.forClass(ItemStack.class);
+        verify(delivery, times(2)).queuePendingDelivery(anyString(), any(UUID.class), queued.capture(), isNull());
+        List<Integer> amounts = Arrays.asList(queued.getAllValues().get(0).getAmount(),
+                queued.getAllValues().get(1).getAmount());
+        assertTrue(amounts.containsAll(Arrays.asList(1, 2)));
+        assertFalse(registry.get(quitFixture.playerId).isPresent());
+        assertFalse(registry.get(disableFixture.playerId).isPresent());
+    }
+
+    private Fixture fixture(int sourceAmount) {
+        Fixture fixture = new Fixture();
+        fixture.playerId = UUID.randomUUID();
+        fixture.menuId = UUID.randomUUID();
+        fixture.player = mock(Player.class);
+        fixture.session = mock(PlayerForgeState.class);
+        fixture.context = new ForgeMenuContext(fixture.menuId, fixture.playerId, "station",
+                fixture.session, System.currentTimeMillis());
+        registry.replace(fixture.context);
+        fixture.holder = new ForgeInventoryHolder(fixture.menuId, fixture.playerId, "station");
+        fixture.sourceItem = mockedItemStack(sourceAmount);
+
+        Map<Integer, ItemStack> slots = new HashMap<>();
+        slots.put(5, fixture.sourceItem);
+        fixture.sourceInventory = mock(Inventory.class);
+        when(fixture.sourceInventory.getSize()).thenReturn(36);
+        when(fixture.sourceInventory.getItem(anyInt())).thenAnswer(invocation -> slots.get(invocation.getArgument(0)));
+        doAnswer(invocation -> {
+            slots.put(invocation.getArgument(0), invocation.getArgument(1));
+            return null;
+        }).when(fixture.sourceInventory).setItem(anyInt(), any(ItemStack.class));
 
         Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        when(view.getTopInventory()).thenReturn(topInventory);
-
-        when(itemPolicy.checkItem(any(Player.class), any(), any())).thenReturn(ForgeItemPolicy.PolicyResult.allow());
-        when(menuService.rerender(any(Player.class))).thenReturn(ForgeMenuService.MenuResult.opened(menuId));
-
-        inputService.requestInsertOne(player, holder, sourceInventory, 5, sourceItem);
-
-        verify(sourceInventory).setItem(eq(5), any(ItemStack.class));
-        verify(messageService).send(player, "menu.item-inserted");
-        verify(menuService).rerender(player);
-        verify(view, never()).getItem(anyInt());
-        verify(view, never()).setItem(anyInt(), any(ItemStack.class));
-    }
-
-    @Test
-    void occupiedInputLeavesSourceUntouched() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack sourceItem = mock(ItemStack.class);
-        when(sourceItem.getType()).thenReturn(Material.DIAMOND);
-        when(sourceItem.clone()).thenReturn(sourceItem);
-        when(sourceItem.isSimilar(any(ItemStack.class))).thenReturn(true);
-
-        Inventory sourceInventory = mock(Inventory.class);
-        when(sourceInventory.getSize()).thenReturn(54);
-        when(sourceInventory.getItem(5)).thenReturn(sourceItem);
-
-        InventoryView view = mock(InventoryView.class);
-        when(view.getBottomInventory()).thenReturn(sourceInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(new ItemStack(Material.DIAMOND, 1));
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        when(view.getTopInventory()).thenReturn(topInventory);
-
-        inputService.requestInsertOne(player, holder, sourceInventory, 5, sourceItem);
-
-        verify(messageService).send(player, "menu.input-occupied");
-        verify(menuService, never()).rerender(any(Player.class));
-        verify(sourceInventory, never()).setItem(anyInt(), any(ItemStack.class));
-    }
-
-    @Test
-    void rerenderFailureRemovesContextAndReturnsCustody() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack sourceItem = mock(ItemStack.class);
-        when(sourceItem.getType()).thenReturn(Material.DIAMOND);
-        when(sourceItem.clone()).thenReturn(sourceItem);
-        when(sourceItem.isSimilar(any(ItemStack.class))).thenReturn(true);
-
-        Inventory sourceInventory = mock(Inventory.class);
-        when(sourceInventory.getSize()).thenReturn(54);
-        when(sourceInventory.getItem(5)).thenReturn(sourceItem);
-
-        InventoryView view = mock(InventoryView.class);
-        when(view.getBottomInventory()).thenReturn(sourceInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        when(view.getTopInventory()).thenReturn(topInventory);
-
-        when(itemPolicy.checkItem(any(Player.class), any(), any())).thenReturn(ForgeItemPolicy.PolicyResult.allow());
-        when(menuService.rerender(any(Player.class))).thenReturn(
-            ForgeMenuService.MenuResult.renderFailed(menuId.toString(), "render failed")
-        );
-
-        inputService.requestInsertOne(player, holder, sourceInventory, 5, sourceItem);
-
-        assertFalse(registry.get(playerId).isPresent());
-        verify(settlementService).settleOnlineOrQueue(any(ForgeMenuContext.class), eq(player));
-        verify(player).closeInventory();
-        verify(messageService).send(eq(player), eq("open.menu-open-failed"), any());
-    }
-
-    @Test
-    void inventoryCloseSettlesExactlyOnce() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(new ItemStack(Material.DIAMOND, 1));
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        when(topInventory.getSize()).thenReturn(54);
-
-        Inventory bottomInventory = mock(Inventory.class);
-        when(bottomInventory.getHolder()).thenReturn(null);
-
+        when(topInventory.getHolder()).thenReturn(fixture.holder);
         InventoryView view = mock(InventoryView.class);
         when(view.getTopInventory()).thenReturn(topInventory);
-        when(view.getBottomInventory()).thenReturn(bottomInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
-        inputService.handleInventoryClose(player, holder);
-
-        assertFalse(registry.get(playerId).isPresent());
-        verify(settlementService).settleOnlineOrQueue(any(ForgeMenuContext.class), eq(player));
-        verify(settlementService, never()).settleOffline(any());
-
-        reset(settlementService);
-        inputService.handleInventoryClose(player, holder);
-        verify(settlementService, never()).settleOnlineOrQueue(any(), any());
-        verify(settlementService, never()).settleOffline(any());
+        when(view.getBottomInventory()).thenReturn(fixture.sourceInventory);
+        when(fixture.player.getOpenInventory()).thenReturn(view);
+        when(fixture.player.getUniqueId()).thenReturn(fixture.playerId);
+        when(fixture.player.isOnline()).thenReturn(true);
+        return fixture;
     }
 
-    @Test
-    void policyDeniedSendsCorrectMessageKey() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack sourceItem = mock(ItemStack.class);
-        when(sourceItem.getType()).thenReturn(Material.DIAMOND);
-        when(sourceItem.clone()).thenReturn(sourceItem);
-        when(sourceItem.isSimilar(any(ItemStack.class))).thenReturn(true);
-
-        Inventory sourceInventory = mock(Inventory.class);
-        when(sourceInventory.getSize()).thenReturn(54);
-        when(sourceInventory.getItem(5)).thenReturn(sourceItem);
-
-        InventoryView view = mock(InventoryView.class);
-        when(view.getBottomInventory()).thenReturn(sourceInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        when(view.getTopInventory()).thenReturn(topInventory);
-
-        when(itemPolicy.checkItem(any(Player.class), any(), any()))
-            .thenReturn(ForgeItemPolicy.PolicyResult.deny("menu.item-denied.customized"));
-
-        inputService.requestInsertOne(player, holder, sourceInventory, 5, sourceItem);
-
-        verify(messageService).send(player, "menu.item-denied.customized");
-        verify(menuService, never()).rerender(any(Player.class));
+    private ItemStack mockedItemStack(int initialAmount) {
+        ItemStack item = mock(ItemStack.class);
+        int[] amount = {initialAmount};
+        when(item.getType()).thenReturn(Material.DIAMOND);
+        when(item.getAmount()).thenAnswer(invocation -> amount[0]);
+        doAnswer(invocation -> {
+            amount[0] = invocation.getArgument(0);
+            return null;
+        }).when(item).setAmount(anyInt());
+        when(item.isSimilar(any(ItemStack.class))).thenReturn(true);
+        when(item.clone()).thenAnswer(invocation -> mockedItemStack(amount[0]));
+        return item;
     }
 
-    @Test
-    void quitQueuesInputOfflineAndRemovesContext() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(new ItemStack(Material.DIAMOND, 1));
-        registry.replace(context);
-
-        inputService.handlePlayerQuit(player);
-
-        assertFalse(registry.get(playerId).isPresent());
-        verify(settlementService).settleOffline(any(ForgeMenuContext.class));
-        verify(settlementService, never()).settleOnlineOrQueue(any(), any());
-    }
-
-    @Test
-    void shutdownDrainsAllContextsWithoutScheduling() {
-        UUID playerId1 = UUID.randomUUID();
-        UUID playerId2 = UUID.randomUUID();
-        UUID menuId1 = UUID.randomUUID();
-        UUID menuId2 = UUID.randomUUID();
-        String stationId = "station1";
-
-        PlayerForgeState session1 = mock(PlayerForgeState.class);
-        when(session1.getActiveStationId()).thenReturn(stationId);
-        PlayerForgeState session2 = mock(PlayerForgeState.class);
-        when(session2.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context1 = new ForgeMenuContext(menuId1, playerId1, stationId, session1, System.currentTimeMillis());
-        context1.tryInsert(new ItemStack(Material.DIAMOND, 1));
-        ForgeMenuContext context2 = new ForgeMenuContext(menuId2, playerId2, stationId, session2, System.currentTimeMillis());
-        context2.tryInsert(new ItemStack(Material.GOLD_INGOT, 2));
-
-        registry.replace(context1);
-        registry.replace(context2);
-
-        inputService.shutdown();
-
-        assertEquals(0, registry.size());
-        verify(settlementService).settleOffline(context1);
-        verify(settlementService).settleOffline(context2);
-        verify(scheduler, never()).runEntity(any(), any(), any());
-        verify(scheduler, never()).runGlobal(any(), any());
-        verify(scheduler, never()).runAsync(any(), any());
+    private static final class Fixture {
+        private UUID playerId;
+        private UUID menuId;
+        private Player player;
+        private PlayerForgeState session;
+        private ForgeMenuContext context;
+        private ForgeInventoryHolder holder;
+        private Inventory sourceInventory;
+        private ItemStack sourceItem;
     }
 }

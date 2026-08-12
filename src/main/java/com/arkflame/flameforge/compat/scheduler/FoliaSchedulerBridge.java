@@ -169,6 +169,9 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
         }
+        if (delay == 0) {
+            return runGlobal(plugin, task);
+        }
         return executeOnScheduler(globalScheduler, globalRunDelayedMethod, plugin, wrappedTask(task), delay);
     }
 
@@ -200,6 +203,9 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         }
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
+        }
+        if (delay == 0) {
+            return runEntity(entity, runnable, retireCallback);
         }
         Object scheduler = getEntityScheduler(entity);
         return executeOnScheduler(scheduler, entityRunDelayedMethod, plugin,
@@ -240,6 +246,9 @@ public class FoliaSchedulerBridge implements SchedulerBridge {
         }
         if (delay < 0) {
             throw new IllegalArgumentException("Delay cannot be negative");
+        }
+        if (delay == 0) {
+            return runRegion(location, task);
         }
         return executeOnScheduler(regionScheduler, regionRunDelayedMethod, plugin, location, wrappedTask(task), delay);
     }

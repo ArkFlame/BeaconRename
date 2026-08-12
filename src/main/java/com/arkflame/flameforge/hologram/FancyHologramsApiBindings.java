@@ -15,16 +15,17 @@ class FancyHologramsApiBindings {
     private final String unavailReason;
 
     final Class<?> fancyHologramsPluginClass;
-    final Class<?> fancyHologramsClass;
     final Class<?> hologramManagerClass;
     final Class<?> hologramDataClass;
     final Class<?> textHologramDataClass;
     final Class<?> hologramClass;
 
     final Method getPluginMethod;
+    final Method getHologramManagerMethod;
+    final Method getHologramMethod;
     final Method createMethod;
     final Method addHologramMethod;
-    final Method removeHologramStringMethod;
+    final Method removeHologramMethod;
     final Method isLoadedMethod;
 
     final Constructor<?> textHologramDataCtor;
@@ -34,54 +35,61 @@ class FancyHologramsApiBindings {
 
     final Color transparentColor;
 
+    static Method resolveGetHologramMethod(Class<?> managerClass) throws NoSuchMethodException {
+        return managerClass.getMethod("getHologram", String.class);
+    }
+
+    static Method resolveRemoveHologramMethod(Class<?> managerClass, Class<?> hologramClass) throws NoSuchMethodException {
+        return managerClass.getMethod("removeHologram", hologramClass);
+    }
+
     FancyHologramsApiBindings(Plugin providerPlugin, Logger logger) {
         ClassLoader classLoader = providerPlugin.getClass().getClassLoader();
 
+        StringBuilder reason = new StringBuilder();
+        boolean isAvailable = false;
+
         Class<?> fpClass = null;
-        Class<?> fhClass = null;
         Class<?> hmClass = null;
         Class<?> hdClass = null;
         Class<?> thdClass = null;
         Class<?> hClass = null;
 
-        Method getPlugin = null;
-        Method create = null;
-        Method addHologram = null;
-        Method removeHologramString = null;
-        Method isLoaded = null;
+        Method getPluginM = null;
+        Method getHologramManagerM = null;
+        Method getHologramM = null;
+        Method createM = null;
+        Method addHologramM = null;
+        Method removeHologramM = null;
+        Method isLoadedM = null;
 
         Constructor<?> thdCtor = null;
-        Method setText = null;
-        Method setBackground = null;
-        Method setPersistent = null;
+        Method setTextM = null;
+        Method setBackgroundM = null;
+        Method setPersistentM = null;
 
-        Color transparent = null;
-
-        StringBuilder unavailableReason = new StringBuilder();
+        Color transparentC = null;
 
         try {
             fpClass = Class.forName("de.oliver.fancyholograms.api.FancyHologramsPlugin", false, classLoader);
         } catch (ClassNotFoundException e) {
-            try {
-                fhClass = Class.forName("de.oliver.fancyholograms.FancyHolograms", false, classLoader);
-            } catch (ClassNotFoundException e2) {
-                unavailableReason.append("FancyHologramsPlugin and FancyHolograms classes not found");
-            }
+            reason.append("FancyHologramsPlugin class not found");
         }
 
-        if (fpClass == null && fhClass == null) {
+        if (fpClass == null) {
             this.available = false;
-            this.unavailReason = unavailableReason.toString();
+            this.unavailReason = reason.toString();
             this.fancyHologramsPluginClass = null;
-            this.fancyHologramsClass = null;
             this.hologramManagerClass = null;
             this.hologramDataClass = null;
             this.textHologramDataClass = null;
             this.hologramClass = null;
             this.getPluginMethod = null;
+            this.getHologramManagerMethod = null;
+            this.getHologramMethod = null;
             this.createMethod = null;
             this.addHologramMethod = null;
-            this.removeHologramStringMethod = null;
+            this.removeHologramMethod = null;
             this.isLoadedMethod = null;
             this.textHologramDataCtor = null;
             this.textHologramDataSetText = null;
@@ -90,9 +98,6 @@ class FancyHologramsApiBindings {
             this.transparentColor = null;
             return;
         }
-
-        this.fancyHologramsPluginClass = fpClass;
-        this.fancyHologramsClass = fhClass;
 
         try {
             hmClass = Class.forName("de.oliver.fancyholograms.api.HologramManager", false, classLoader);
@@ -100,17 +105,20 @@ class FancyHologramsApiBindings {
             thdClass = Class.forName("de.oliver.fancyholograms.api.data.TextHologramData", false, classLoader);
             hClass = Class.forName("de.oliver.fancyholograms.api.hologram.Hologram", false, classLoader);
         } catch (ClassNotFoundException e) {
-            unavailableReason.append("; required API classes not found: ").append(e.getMessage());
+            reason.append("; required API classes not found: ").append(e.getMessage());
             this.available = false;
-            this.unavailReason = unavailableReason.toString();
+            this.unavailReason = reason.toString();
+            this.fancyHologramsPluginClass = fpClass;
             this.hologramManagerClass = null;
             this.hologramDataClass = null;
             this.textHologramDataClass = null;
             this.hologramClass = null;
             this.getPluginMethod = null;
+            this.getHologramManagerMethod = null;
+            this.getHologramMethod = null;
             this.createMethod = null;
             this.addHologramMethod = null;
-            this.removeHologramStringMethod = null;
+            this.removeHologramMethod = null;
             this.isLoadedMethod = null;
             this.textHologramDataCtor = null;
             this.textHologramDataSetText = null;
@@ -120,48 +128,48 @@ class FancyHologramsApiBindings {
             return;
         }
 
-        this.hologramManagerClass = hmClass;
-        this.hologramDataClass = hdClass;
-        this.textHologramDataClass = thdClass;
-        this.hologramClass = hClass;
-
         try {
-            if (fpClass != null) {
-                getPlugin = fpClass.getMethod("get");
-            } else if (fhClass != null) {
-                getPlugin = fhClass.getMethod("get");
-            }
-
-            create = hmClass.getMethod("create", hdClass);
-            addHologram = hmClass.getMethod("addHologram", hClass);
-            removeHologramString = resolveRemoveHologramByNameMethod(hmClass);
-            isLoaded = hmClass.getMethod("isLoaded");
+            getPluginM = fpClass.getMethod("get");
+            getHologramManagerM = fpClass.getMethod("getHologramManager");
+            getHologramM = resolveGetHologramMethod(hmClass);
+            createM = hmClass.getMethod("create", hdClass);
+            addHologramM = hmClass.getMethod("addHologram", hClass);
+            removeHologramM = resolveRemoveHologramMethod(hmClass, hClass);
+            isLoadedM = hmClass.getMethod("isLoaded");
 
             thdCtor = thdClass.getConstructor(String.class, Location.class);
-            setText = thdClass.getMethod("setText", List.class);
-            setBackground = thdClass.getMethod("setBackground", Color.class);
-            setPersistent = hdClass.getMethod("setPersistent", boolean.class);
+            setTextM = thdClass.getMethod("setText", List.class);
+            setBackgroundM = thdClass.getMethod("setBackground", Color.class);
+            setPersistentM = hdClass.getMethod("setPersistent", boolean.class);
 
             Field transparentField = hClass.getField("TRANSPARENT");
             if (Color.class.isAssignableFrom(transparentField.getType())) {
-                transparent = (Color) transparentField.get(null);
+                transparentC = (Color) transparentField.get(null);
             } else {
-                unavailableReason.append("; TRANSPARENT field type incompatible");
+                reason.append("; TRANSPARENT field type incompatible");
             }
         } catch (NoSuchMethodException | NoSuchFieldException | IllegalAccessException e) {
-            unavailableReason.append("; method/field resolution failed: ").append(e.getMessage());
+            reason.append("; method/field resolution failed: ").append(e.getMessage());
         } catch (ClassCastException e) {
-            unavailableReason.append("; TRANSPARENT field type incompatible");
-        } catch (RuntimeException e) {
-            unavailableReason.append("; runtime error: ").append(e.getClass().getName()).append(": ").append(e.getMessage());
+            reason.append("; TRANSPARENT field type incompatible");
         } catch (LinkageError e) {
-            unavailableReason.append("; linkage error: ").append(e.getClass().getName()).append(": ").append(e.getMessage());
+            reason.append("; linkage error: ").append(e.getClass().getName()).append(": ").append(e.getMessage());
+        }
+
+        if (reason.length() > 0) {
             this.available = false;
-            this.unavailReason = unavailableReason.toString();
+            this.unavailReason = reason.toString();
+            this.fancyHologramsPluginClass = fpClass;
+            this.hologramManagerClass = hmClass;
+            this.hologramDataClass = hdClass;
+            this.textHologramDataClass = thdClass;
+            this.hologramClass = hClass;
             this.getPluginMethod = null;
+            this.getHologramManagerMethod = null;
+            this.getHologramMethod = null;
             this.createMethod = null;
             this.addHologramMethod = null;
-            this.removeHologramStringMethod = null;
+            this.removeHologramMethod = null;
             this.isLoadedMethod = null;
             this.textHologramDataCtor = null;
             this.textHologramDataSetText = null;
@@ -171,58 +179,104 @@ class FancyHologramsApiBindings {
             return;
         }
 
-        this.getPluginMethod = getPlugin;
-        this.createMethod = create;
-        this.addHologramMethod = addHologram;
-        this.removeHologramStringMethod = removeHologramString;
-        this.isLoadedMethod = isLoaded;
-        this.textHologramDataCtor = thdCtor;
-        this.textHologramDataSetText = setText;
-        this.textHologramDataSetBackground = setBackground;
-        this.hologramDataSetPersistent = setPersistent;
-        this.transparentColor = transparent;
-
-        Object manager = null;
+        Object manager;
         try {
-            Object pluginOrHolograms = getPlugin.invoke(null);
-            if (fpClass != null) {
-                Method getHologramManager = fpClass.getMethod("getHologramManager");
-                manager = getHologramManager.invoke(pluginOrHolograms);
-            } else if (fhClass != null) {
-                Method getHologramManager = fhClass.getMethod("getHologramManager");
-                manager = getHologramManager.invoke(pluginOrHolograms);
-            }
+            Object plugin = getPluginM.invoke(null);
+            manager = getHologramManagerM.invoke(plugin);
         } catch (Exception e) {
-            unavailableReason.append("; could not get HologramManager: ").append(e.getMessage());
+            reason.append("; could not get HologramManager: ").append(e.getMessage());
             this.available = false;
-            this.unavailReason = unavailableReason.toString();
+            this.unavailReason = reason.toString();
+            this.fancyHologramsPluginClass = fpClass;
+            this.hologramManagerClass = hmClass;
+            this.hologramDataClass = hdClass;
+            this.textHologramDataClass = thdClass;
+            this.hologramClass = hClass;
+            this.getPluginMethod = getPluginM;
+            this.getHologramManagerMethod = getHologramManagerM;
+            this.getHologramMethod = getHologramM;
+            this.createMethod = createM;
+            this.addHologramMethod = addHologramM;
+            this.removeHologramMethod = removeHologramM;
+            this.isLoadedMethod = isLoadedM;
+            this.textHologramDataCtor = thdCtor;
+            this.textHologramDataSetText = setTextM;
+            this.textHologramDataSetBackground = setBackgroundM;
+            this.hologramDataSetPersistent = setPersistentM;
+            this.transparentColor = transparentC;
             return;
         }
 
         boolean loaded;
         try {
-            loaded = (boolean) isLoadedMethod.invoke(manager);
+            loaded = (boolean) isLoadedM.invoke(manager);
         } catch (Exception e) {
-            unavailableReason.append("; could not check manager loaded status: ").append(e.getMessage());
+            reason.append("; could not check manager loaded status: ").append(e.getMessage());
             this.available = false;
-            this.unavailReason = unavailableReason.toString();
+            this.unavailReason = reason.toString();
+            this.fancyHologramsPluginClass = fpClass;
+            this.hologramManagerClass = hmClass;
+            this.hologramDataClass = hdClass;
+            this.textHologramDataClass = thdClass;
+            this.hologramClass = hClass;
+            this.getPluginMethod = getPluginM;
+            this.getHologramManagerMethod = getHologramManagerM;
+            this.getHologramMethod = getHologramM;
+            this.createMethod = createM;
+            this.addHologramMethod = addHologramM;
+            this.removeHologramMethod = removeHologramM;
+            this.isLoadedMethod = isLoadedM;
+            this.textHologramDataCtor = thdCtor;
+            this.textHologramDataSetText = setTextM;
+            this.textHologramDataSetBackground = setBackgroundM;
+            this.hologramDataSetPersistent = setPersistentM;
+            this.transparentColor = transparentC;
             return;
         }
 
         if (!loaded) {
-            unavailableReason.append("; HologramManager is not loaded");
+            reason.append("; HologramManager is not loaded");
             this.available = false;
-            this.unavailReason = unavailableReason.toString();
+            this.unavailReason = reason.toString();
+            this.fancyHologramsPluginClass = fpClass;
+            this.hologramManagerClass = hmClass;
+            this.hologramDataClass = hdClass;
+            this.textHologramDataClass = thdClass;
+            this.hologramClass = hClass;
+            this.getPluginMethod = getPluginM;
+            this.getHologramManagerMethod = getHologramManagerM;
+            this.getHologramMethod = getHologramM;
+            this.createMethod = createM;
+            this.addHologramMethod = addHologramM;
+            this.removeHologramMethod = removeHologramM;
+            this.isLoadedMethod = isLoadedM;
+            this.textHologramDataCtor = thdCtor;
+            this.textHologramDataSetText = setTextM;
+            this.textHologramDataSetBackground = setBackgroundM;
+            this.hologramDataSetPersistent = setPersistentM;
+            this.transparentColor = transparentC;
             return;
         }
 
         this.available = true;
         this.unavailReason = null;
-    }
-
-    static Method resolveRemoveHologramByNameMethod(Class<?> managerClass)
-            throws NoSuchMethodException {
-        return managerClass.getMethod("removeHologram", String.class);
+        this.fancyHologramsPluginClass = fpClass;
+        this.hologramManagerClass = hmClass;
+        this.hologramDataClass = hdClass;
+        this.textHologramDataClass = thdClass;
+        this.hologramClass = hClass;
+        this.getPluginMethod = getPluginM;
+        this.getHologramManagerMethod = getHologramManagerM;
+        this.getHologramMethod = getHologramM;
+        this.createMethod = createM;
+        this.addHologramMethod = addHologramM;
+        this.removeHologramMethod = removeHologramM;
+        this.isLoadedMethod = isLoadedM;
+        this.textHologramDataCtor = thdCtor;
+        this.textHologramDataSetText = setTextM;
+        this.textHologramDataSetBackground = setBackgroundM;
+        this.hologramDataSetPersistent = setPersistentM;
+        this.transparentColor = transparentC;
     }
 
     boolean isAvailable() {

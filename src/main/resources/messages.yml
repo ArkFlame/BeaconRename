@@ -260,6 +260,9 @@ forge:
   ward-converted:
     title: "<aqua><bold>WARD PROTECTED"
     subtitle: "<white>Your item was protected by a ward"
+  confirm:
+    complete: "<green>Forge completed."
+    failed: "<red>Forging failed: <white>%reason%"
 
 # Cooldown messages
 cooldown:

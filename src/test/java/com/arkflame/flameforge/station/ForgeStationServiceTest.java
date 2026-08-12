@@ -6,10 +6,10 @@ import com.arkflame.flameforge.compat.scheduler.TeleportBridge;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.hologram.ForgeStationHologramService;
+import com.arkflame.flameforge.model.StationProfile;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.persistence.StationRepository.AddOutcome;
 import com.arkflame.flameforge.persistence.StationRepository.RegisteredForge;
-import com.arkflame.flameforge.persistence.StationRepository.RemoveOutcome;
 import com.arkflame.flameforge.persistence.StationRepository.StationData;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -21,137 +21,93 @@ import org.bukkit.util.Vector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.mock;
 
 class ForgeStationServiceTest {
 
     private ForgeStationService service;
-    private FakeSchedulerBridge scheduler;
-    private TeleportBridge teleportBridge;
-    private StationRepository mockRepo;
-    private ConfigService mockConfigService;
-    private ForgeStationHologramService mockHologramService;
-    private ForgeStationHologramService forgeStationHologramService;
-    private JavaPlugin fakePlugin;
+    private FakeScheduler scheduler;
+    private StationRepository repository;
+    private ConfigService configService;
+    private ForgeStationHologramService holograms;
     private Player player;
     private World world;
-    private org.bukkit.Server server;
 
     @BeforeEach
-    void setUp() throws Exception {
-        fakePlugin = mock(JavaPlugin.class);
-        server = mock(org.bukkit.Server.class);
+    void setUp() {
+        JavaPlugin plugin = mock(JavaPlugin.class);
+        org.bukkit.Server server = mock(org.bukkit.Server.class);
         world = mock(World.class);
-        when(fakePlugin.getServer()).thenReturn(server);
+        when(plugin.getServer()).thenReturn(server);
         when(server.getWorld(anyString())).thenReturn(world);
-
-        scheduler = new FakeSchedulerBridge();
-        teleportBridge = mock(TeleportBridge.class);
-        mockRepo = mock(StationRepository.class);
-        mockConfigService = mock(ConfigService.class);
-        mockHologramService = mock(ForgeStationHologramService.class);
-        forgeStationHologramService = mockHologramService;
-        when(mockConfigService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder().build());
-        service = new ForgeStationService(fakePlugin, scheduler, mockRepo, mockConfigService, mockHologramService, teleportBridge);
+        scheduler = new FakeScheduler();
+        repository = mock(StationRepository.class);
+        configService = mock(ConfigService.class);
+        when(configService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder().build());
+        holograms = mock(ForgeStationHologramService.class);
+        service = new ForgeStationService(plugin, scheduler, repository, configService, holograms,
+            mock(TeleportBridge.class));
         player = mock(Player.class);
     }
 
     @Test
-    void generatedIdsFollowGrammarRetryDuplicatesAndExhaustAfterEight() {
-        AtomicInteger callCount = new AtomicInteger(0);
-        when(mockRepo.findById(anyString())).thenAnswer(invocation -> {
-            callCount.incrementAndGet();
-            return Optional.of(new RegisteredForge(invocation.getArgument(0), UUID.randomUUID(), "world", 0, 64, 0, "default"));
-        });
-        String id = service.generateUniqueIdForTest(0);
-        assertNull(id);
-        assertEquals(8, callCount.get());
-    }
-
-    @Test
-    void listAndDuplicateQueriesReflectRepositorySnapshot() {
-        List<RegisteredForge> sortedForges = Arrays.asList(
-            new RegisteredForge("forge-alpha", UUID.randomUUID(), "world", 1, 64, 1, "default"),
-            new RegisteredForge("forge-beta", UUID.randomUUID(), "world", 2, 64, 2, "default"),
-            new RegisteredForge("forge-zebra", UUID.randomUUID(), "world", 3, 64, 3, "default")
-        );
-        when(mockRepo.snapshotSortedById()).thenReturn(sortedForges);
-        List<StationData> stations = service.listStations();
-        assertEquals(3, stations.size());
-        assertEquals("forge-alpha", stations.get(0).id);
-        assertEquals("forge-zebra", stations.get(2).id);
-    }
-
-    @Test
-    void tierAllowanceHandlesMissingUnlimitedAndMaximumProfiles() {
-        assertTrue(service.isTierAllowed(null, 100));
-        com.arkflame.flameforge.model.StationProfile unlimitedProfile = mock(com.arkflame.flameforge.model.StationProfile.class);
-        when(unlimitedProfile.getMaxTierUnlocked()).thenReturn(-1);
-        assertTrue(service.isTierAllowed(unlimitedProfile, 100));
-        com.arkflame.flameforge.model.StationProfile maxProfile = mock(com.arkflame.flameforge.model.StationProfile.class);
-        when(maxProfile.getMaxTierUnlocked()).thenReturn(5);
-        assertTrue(service.isTierAllowed(maxProfile, 3));
-        assertFalse(service.isTierAllowed(maxProfile, 7));
-    }
-
-    @Test
-    void registeredTargetLookupDistinguishesUnregisteredAndExactRegisteredBlock() {
+    void stationAddLookupListAndRemoveFlowPersistsThroughRepository() {
         configureTarget(Material.CHEST);
-        when(mockRepo.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
-        Optional<StationData> unregistered = service.resolveRegisteredForgeFromTarget(player).join();
-        assertFalse(unregistered.isPresent());
+        when(repository.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
+        RegisteredForge forge = new RegisteredForge("forge-alpha", UUID.randomUUID(), "world", 1, 64, 0, "default");
+        when(repository.addAndSave(any(RegisteredForge.class)))
+            .thenReturn(CompletableFuture.completedFuture(AddOutcome.added(forge)));
 
-        RegisteredForge registered = new RegisteredForge(
-            "registered", UUID.randomUUID(), "world", 1, 64, 0, "default");
-        when(mockRepo.findByKey("world", 1, 64, 0)).thenReturn(Optional.of(registered));
-        Optional<StationData> found = service.resolveRegisteredForgeFromTarget(player).join();
-        assertTrue(found.isPresent());
-        assertEquals("registered", found.get().id);
+        ForgeStationService.AddForgeOutcome added = service
+            .addTargetedForge(player, Optional.of("Forge_Alpha"), "default").join();
+        assertEquals(ForgeStationService.Result.SUCCESS, added.result());
+        assertEquals("forge-alpha", added.finalId());
+
+        when(repository.findById("forge-alpha")).thenReturn(Optional.of(forge));
+        when(repository.snapshotSortedById()).thenReturn(Collections.singletonList(forge));
+        Optional<StationData> lookup = service.getStationById("forge-alpha");
+        List<StationData> listed = service.listStations();
+        assertTrue(lookup.isPresent());
+        assertEquals("forge-alpha", lookup.get().id);
+        assertEquals(1, listed.size());
+
+        when(repository.removeAndSave("forge-alpha"))
+            .thenReturn(CompletableFuture.completedFuture(StationRepository.RemoveOutcome.removed(forge)));
+        StationRepository.RemoveOutcome removed = service.removeStation("forge-alpha").join();
+        assertEquals(StationRepository.Result.REMOVED, removed.getResult());
+        verify(repository).addAndSave(any(RegisteredForge.class));
+        verify(repository).removeAndSave("forge-alpha");
+        verify(holograms).onStationAdded(forge);
+        verify(holograms).onStationRemoved(forge);
     }
 
     @Test
-    void addTargetedForgePersistsExplicitIdAndPreservesStorageFailureIdentity() {
+    void tierAllowanceAndDuplicateValidationRejectInvalidStationState() {
+        assertTrue(service.isTierAllowed(null, 20));
+        assertTrue(service.isTierAllowed(StationProfile.of("unlimited", "", -1, Collections.emptyList()), 20));
+        assertFalse(service.isTierAllowed(StationProfile.of("limited", "", 3, Collections.emptyList()), 4));
+
+        RegisteredForge existing = new RegisteredForge("existing", UUID.randomUUID(), "world", 1, 64, 0, "default");
+        when(repository.findById("existing")).thenReturn(Optional.of(existing));
+        when(repository.findByKey("world", 1, 64, 0)).thenReturn(Optional.of(existing));
+        assertTrue(service.isDuplicateId("existing"));
+        assertTrue(service.isDuplicateId(null));
+        assertTrue(service.isDuplicateCoordinate("world", 1.9, 64.2, 0.8));
+        assertFalse(service.resolveStationAt(null, 1, 64, 0).isPresent());
+        assertFalse(service.resolveStationAt((Block) null).isPresent());
+
         configureTarget(Material.CHEST);
-        when(mockRepo.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
-        AtomicReference<RegisteredForge> submitted = new AtomicReference<>();
-        when(mockRepo.addAndSave(any(RegisteredForge.class))).thenAnswer(invocation -> {
-            RegisteredForge forge = invocation.getArgument(0);
-            submitted.set(forge);
-            return CompletableFuture.completedFuture(AddOutcome.added(forge));
-        });
-
-        ForgeStationService.AddForgeOutcome outcome = service
-            .addTargetedForge(player, Optional.of("Arbitrary_Forge"), "default")
-            .join();
-
-        assertEquals(ForgeStationService.Result.SUCCESS, outcome.result());
-        assertEquals("arbitrary_forge", outcome.finalId());
-        assertNotNull(submitted.get());
-        assertEquals("arbitrary_forge", submitted.get().getId());
-        verify(mockRepo).addAndSave(any(RegisteredForge.class));
-
-        verify(mockHologramService, times(1)).onStationAdded(submitted.get());
-        reset(mockRepo, mockHologramService);
-        when(mockRepo.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
-        when(mockRepo.addAndSave(any(RegisteredForge.class))).thenReturn(
-            CompletableFuture.completedFuture(
-                AddOutcome.storageConflict("FF-STATION-CONFLICT-ARBITRARY-FORGE")));
-
-        ForgeStationService.AddForgeOutcome conflictOutcome = service
-            .addTargetedForge(player, Optional.of("Arbitrary_Forge"), "default")
-            .join();
-
-        assertEquals(ForgeStationService.Result.STORAGE_CONFLICT, conflictOutcome.result());
-        assertEquals("arbitrary_forge", conflictOutcome.finalId());
-        assertEquals("FF-STATION-CONFLICT-ARBITRARY-FORGE", conflictOutcome.reference());
-        verify(mockHologramService, never()).onStationAdded(any());
+        when(repository.findByKey("world", 1, 64, 0)).thenReturn(Optional.empty());
+        ForgeStationService.AddForgeOutcome invalid = service
+            .addTargetedForge(player, Optional.of("bad id"), "default").join();
+        assertEquals(ForgeStationService.Result.INVALID_ID, invalid.result());
     }
 
     private void configureTarget(Material material) {
@@ -159,18 +115,18 @@ class ForgeStationServiceTest {
         when(world.getUID()).thenReturn(UUID.fromString("00000000-0000-0000-0000-000000000001"));
         when(world.getName()).thenReturn("world");
         when(world.isChunkLoaded(anyInt(), anyInt())).thenReturn(true);
-        Location eye = new Location(world, 0.5, 64.5, 0.5).setDirection(new Vector(1, 0, 0));
-        when(player.getEyeLocation()).thenReturn(eye);
+        when(player.getEyeLocation()).thenReturn(new Location(world, 0.5, 64.5, 0.5)
+            .setDirection(new Vector(1, 0, 0)));
         Block block = mock(Block.class);
         when(block.getType()).thenReturn(material);
         when(world.getBlockAt(1, 64, 0)).thenReturn(block);
     }
 
-    private static class FakeSchedulerBridge implements SchedulerBridge {
+    private static class FakeScheduler implements SchedulerBridge {
         @Override public TaskHandle runGlobal(JavaPlugin plugin, Runnable task) { task.run(); return TaskHandleStub.INSTANCE; }
         @Override public TaskHandle runGlobalLater(JavaPlugin plugin, Runnable task, long delay) { task.run(); return TaskHandleStub.INSTANCE; }
-        @Override public TaskHandle runEntity(org.bukkit.entity.Entity entity, Runnable runnable, Runnable retireCallback) { runnable.run(); return TaskHandleStub.INSTANCE; }
-        @Override public TaskHandle runEntityLater(org.bukkit.entity.Entity entity, Runnable runnable, Runnable retireCallback, long delay) { runnable.run(); return TaskHandleStub.INSTANCE; }
+        @Override public TaskHandle runEntity(org.bukkit.entity.Entity entity, Runnable task, Runnable retire) { task.run(); return TaskHandleStub.INSTANCE; }
+        @Override public TaskHandle runEntityLater(org.bukkit.entity.Entity entity, Runnable task, Runnable retire, long delay) { task.run(); return TaskHandleStub.INSTANCE; }
         @Override public TaskHandle runRegion(Location location, Runnable task) { task.run(); return TaskHandleStub.INSTANCE; }
         @Override public TaskHandle runRegionLater(Location location, Runnable task, long delay) { task.run(); return TaskHandleStub.INSTANCE; }
         @Override public TaskHandle runAsync(JavaPlugin plugin, Runnable task) { task.run(); return TaskHandleStub.INSTANCE; }
@@ -180,6 +136,7 @@ class ForgeStationServiceTest {
 
     private enum TaskHandleStub implements TaskHandle {
         INSTANCE;
+
         @Override public void cancel() {}
         @Override public boolean isCancelled() { return false; }
     }

@@ -1,11 +1,11 @@
 package com.arkflame.flameforge.hologram;
 
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
+import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.persistence.StationRepository.RegisteredForge;
-import com.arkflame.flameforge.station.StationIdPolicy;
 import com.arkflame.flameforge.text.TextRenderer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -14,12 +14,16 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class ForgeStationHologramService {
 
@@ -28,13 +32,13 @@ public final class ForgeStationHologramService {
     private final StationRepository stationRepository;
     private final ConfigService configService;
     private final TextRenderer textRenderer;
+    private final Logger logger;
     private volatile HologramProvider provider;
     private volatile HologramSettings settings;
     private HologramProviderSelector selector;
-    private final ConcurrentHashMap<String, String> hologramIdByForgeId = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> hologramIds = new ConcurrentHashMap<>();
     private final AtomicBoolean startupReconciled = new AtomicBoolean(false);
     private final ConcurrentHashMap<String, AtomicBoolean> forgeHydrated = new ConcurrentHashMap<>();
-    private volatile boolean providerUnavailableSeen = false;
 
     public ForgeStationHologramService(JavaPlugin plugin, SchedulerBridge scheduler,
                                        StationRepository stationRepository,
@@ -46,6 +50,7 @@ public final class ForgeStationHologramService {
         this.stationRepository = Objects.requireNonNull(stationRepository);
         this.configService = Objects.requireNonNull(configService);
         this.textRenderer = Objects.requireNonNull(textRenderer);
+        this.logger = plugin.getLogger();
         this.selector = Objects.requireNonNull(selector);
         this.provider = Objects.requireNonNull(provider);
         this.settings = Objects.requireNonNull(settings);
@@ -60,170 +65,201 @@ public final class ForgeStationHologramService {
         this.stationRepository = Objects.requireNonNull(stationRepository);
         this.configService = Objects.requireNonNull(configService);
         this.textRenderer = Objects.requireNonNull(textRenderer);
+        this.logger = plugin.getLogger();
         this.selector = null;
         this.provider = Objects.requireNonNull(provider);
         this.settings = Objects.requireNonNull(settings);
     }
 
+    private boolean ensureProviderAvailable(String trigger) {
+        HologramProvider current = provider;
+        if (current.isAvailable()) {
+            return true;
+        }
+
+        logger.info("Hologram provider unavailable for " + trigger + ": " + current.getUnavailableReason());
+
+        if (selector == null) {
+            return false;
+        }
+
+        HologramProvider reselected = selector.select(settings);
+        provider = reselected;
+
+        if (!reselected.isAvailable()) {
+            logger.info("Reselected provider still unavailable for " + trigger + ": " + reselected.getUnavailableReason());
+            return false;
+        }
+
+        logger.info("Selected hologram provider: " + reselected.getClass().getSimpleName());
+        return true;
+    }
+
+    private World resolveWorld(RegisteredForge forge) {
+        if (forge.getWorldUuid() != null) {
+            World world = Bukkit.getWorld(forge.getWorldUuid());
+            if (world != null) {
+                return world;
+            }
+        }
+        if (forge.getWorldName() != null) {
+            return Bukkit.getWorld(forge.getWorldName());
+        }
+        return null;
+    }
+
+    private Location buildLocation(World world, RegisteredForge forge, HologramSettings targetSettings) {
+        return new Location(world, forge.getX() + 0.5, forge.getY() + targetSettings.getOffsetY(), forge.getZ() + 0.5);
+    }
+
     public void reconcileStartup() {
+        if (startupReconciled.get()) {
+            return;
+        }
+
+        if (!settings.isEnabled()) {
+            if (startupReconciled.compareAndSet(false, true)) {
+                logger.info("Hologram support is disabled");
+            }
+            return;
+        }
+
+        if (!ensureProviderAvailable("startup")) {
+            return;
+        }
+
         if (!startupReconciled.compareAndSet(false, true)) {
             return;
         }
-        if (!settings.isEnabled()) {
-            plugin.getLogger().info("[Hologram] disabled explicitly by config");
-            return;
-        }
-        if (!provider.isAvailable()) {
-            String unavailableReason = provider.getUnavailableReason();
-            plugin.getLogger().info("[Hologram] enabled but provider unavailable: " + unavailableReason);
-            if (selector != null) {
-                providerUnavailableSeen = true;
-                HologramProvider reselected = selector.select(settings);
-                if (reselected.isAvailable()) {
-                    this.provider = reselected;
-                    providerUnavailableSeen = false;
-                    plugin.getLogger().info("[Hologram] provider reselected: " + reselected.getName() + " v" + reselected.getVersion());
-                }
-            }
-            if (!provider.isAvailable()) {
-                return;
-            }
-        }
 
-        List<RegisteredForge> forges = stationRepository.snapshotSortedById();
-        for (RegisteredForge forge : forges) {
-            String hologramId = deriveHologramId(forge.getId());
-            hologramIdByForgeId.put(forge.getId(), hologramId);
-            scheduleAtForge(forge, provider, settings, location -> upsertHologram(hologramId, location, forge));
+        List<RegisteredForge> stations = stationRepository.snapshotSortedById();
+        for (RegisteredForge forge : stations) {
+            String hologramId = forge.getId() + "_hologram";
+            hologramIds.put(forge.getId(), hologramId);
+            forgeHydrated.put(forge.getId(), new AtomicBoolean(true));
+            scheduleAtForge(forge, provider, settings, location -> {
+                upsertHologram(hologramId, location, forge);
+            });
         }
     }
 
     public void onStationAdded(RegisteredForge forge) {
-        String hologramId = deriveHologramId(forge.getId());
-        hologramIdByForgeId.put(forge.getId(), hologramId);
+        stationAdd(forge);
+    }
+
+    public void stationAdd(RegisteredForge forge) {
+        if (!settings.isEnabled()) {
+            return;
+        }
+
+        String hologramId = forge.getId() + "_hologram";
+        hologramIds.put(forge.getId(), hologramId);
+        forgeHydrated.put(forge.getId(), new AtomicBoolean(true));
+
+        if (!ensureProviderAvailable("station-add")) {
+            return;
+        }
+
+        scheduleAtForge(forge, provider, settings, location -> {
+            upsertHologram(hologramId, location, forge);
+        });
+    }
+
+    public void onStationRemoved(RegisteredForge forge) {
+        stationRemove(forge);
+    }
+
+    public void stationRemove(RegisteredForge forge) {
+        String hologramId = hologramIds.remove(forge.getId());
+        forgeHydrated.remove(forge.getId());
+
+        if (hologramId == null) {
+            return;
+        }
+
+        if (provider == null || !provider.isAvailable()) {
+            return;
+        }
+
+        scheduleAtForge(forge, provider, settings, location -> {
+            provider.remove(hologramId);
+        });
+    }
+
+    public void update(RegisteredForge forge) {
+        String hologramId = hologramIds.get(forge.getId());
+        if (hologramId == null) {
+            return;
+        }
 
         if (!settings.isEnabled()) {
             return;
         }
 
-        ensureProviderAvailableAndHydrate(forge, hologramId);
-    }
-
-    public void onStationRemoved(RegisteredForge forge) {
-        String forgeId = forge.getId();
-        String hologramId = hologramIdByForgeId.remove(forgeId);
-        if (hologramId == null) {
+        if (!ensureProviderAvailable("update")) {
             return;
         }
-        forgeHydrated.remove(forgeId);
-        provider.remove(hologramId);
-    }
 
-    private void ensureProviderAvailableAndHydrate(RegisteredForge forge, String hologramId) {
-        if (!provider.isAvailable()) {
-            if (!providerUnavailableSeen && selector != null) {
-                providerUnavailableSeen = true;
-                plugin.getLogger().info("[Hologram] provider unavailable on station add, attempting reselect: " + provider.getUnavailableReason());
-                HologramProvider reselected = selector.select(settings);
-                if (reselected.isAvailable()) {
-                    this.provider = reselected;
-                    providerUnavailableSeen = false;
-                    plugin.getLogger().info("[Hologram] provider reselected: " + reselected.getName() + " v" + reselected.getVersion());
-                }
-            }
-        }
-
-        if (provider.isAvailable()) {
-            AtomicBoolean hydratedFlag = forgeHydrated.computeIfAbsent(forge.getId(), k -> new AtomicBoolean(false));
-            if (hydratedFlag.compareAndSet(false, true)) {
-                scheduleAtForge(forge, provider, settings, location -> upsertHologram(hologramId, location, forge));
-            }
-        }
-    }
-
-    private void scheduleAtForge(RegisteredForge forge, HologramProvider targetProvider,
-                                  HologramSettings targetSettings, Consumer<Location> regionOperation) {
-        scheduler.runGlobal(plugin, () -> {
-            World world = null;
-            if (forge.getWorldUuid() != null) {
-                world = Bukkit.getWorld(forge.getWorldUuid());
-            }
-            if (world == null && forge.getWorldName() != null) {
-                world = Bukkit.getWorld(forge.getWorldName());
-            }
-            if (world == null) {
-                plugin.getLogger().warning("[Hologram] World not found for forge " + forge.getId() + ": world null");
-                forgeHydrated.remove(forge.getId());
-                return;
-            }
-            Location centered = new Location(world, forge.getX() + 0.5,
-                forge.getY() + targetSettings.getOffsetY(), forge.getZ() + 0.5);
-            try {
-                regionOperation.accept(centered.clone());
-            } catch (Exception e) {
-                plugin.getLogger().warning("[Hologram] Failed to upsert hologram for forge " + forge.getId() + ": " + e.getMessage());
-                forgeHydrated.remove(forge.getId());
-            }
+        final String finalHologramId = hologramId;
+        scheduleAtForge(forge, provider, settings, location -> {
+            upsertHologram(finalHologramId, location, forge);
         });
     }
 
-    public void updateHologram(String forgeId, Location forgeLocation, List<String> lines) {
-        String hologramId = hologramIdByForgeId.get(forgeId);
-        if (hologramId != null && forgeLocation != null) {
-            if (!provider.isAvailable()) {
-                if (!providerUnavailableSeen && selector != null) {
-                    providerUnavailableSeen = true;
-                    plugin.getLogger().info("[Hologram] provider unavailable on update, attempting reselect: " + provider.getUnavailableReason());
-                    HologramProvider reselected = selector.select(settings);
-                    if (reselected.isAvailable()) {
-                        this.provider = reselected;
-                        providerUnavailableSeen = false;
-                        plugin.getLogger().info("[Hologram] provider reselected: " + reselected.getName() + " v" + reselected.getVersion());
-                    }
+    private void scheduleAtForge(RegisteredForge forge, HologramProvider targetProvider,
+                                  HologramSettings targetSettings, Consumer<Location> operation) {
+        scheduler.runGlobal(plugin, () -> {
+            World w = resolveWorld(forge);
+            if (w == null) {
+                return;
+            }
+            Location centered = buildLocation(w, forge, targetSettings);
+            scheduler.runRegion(centered, () -> {
+                try {
+                    operation.accept(centered);
+                } catch (Exception e) {
+                    plugin.getLogger().log(Level.WARNING, "[Hologram] Failed operation for forge " + forge.getId(), e);
+                    forgeHydrated.remove(forge.getId());
                 }
-            }
-            if (provider.isAvailable()) {
-                List<String> renderedLines = renderLines(lines);
-                scheduler.runRegion(forgeLocation, () -> {
-                    ForgeHologram hologram = new ForgeHologram(
-                        hologramId, forgeLocation, renderedLines, renderedLines, settings.isTransparentBackground());
-                    provider.upsert(hologram);
-                });
-            }
-        }
+            });
+        });
     }
 
-    public void reload() {
-        Map<String, String> oldMapping = new ConcurrentHashMap<>(hologramIdByForgeId);
-        hologramIdByForgeId.clear();
-        HologramProvider oldProvider = provider;
-        forgeHydrated.clear();
-        providerUnavailableSeen = false;
-
-        for (Map.Entry<String, String> entry : oldMapping.entrySet()) {
-            String hologramId = entry.getValue();
-            oldProvider.remove(hologramId);
+    public void reload(HologramSettings newSettings) {
+        for (String hologramId : new HashSet<>(hologramIds.values())) {
+            if (provider != null && provider.isAvailable()) {
+                try {
+                    provider.remove(hologramId);
+                } catch (Exception e) {
+                }
+            }
         }
+        hologramIds.clear();
+        forgeHydrated.clear();
 
-        ConfigSnapshot snapshot = configService.getCurrentSnapshot();
-        HologramSettings newSettings = HologramSettings.fromSnapshot(snapshot);
-        HologramProvider newProvider = selector.select(newSettings);
-
-        this.settings = newSettings;
-        this.provider = newProvider;
+        settings = newSettings;
+        provider = selector.select(settings);
         startupReconciled.set(false);
+
         reconcileStartup();
     }
 
-    public void disableCleanup() {
-        Map<String, String> oldMapping = new ConcurrentHashMap<>(hologramIdByForgeId);
-        hologramIdByForgeId.clear();
-        forgeHydrated.clear();
+    public void reload() {
+        reload(settings);
+    }
 
-        for (Map.Entry<String, String> entry : oldMapping.entrySet()) {
-            String hologramId = entry.getValue();
-            provider.remove(hologramId);
+    public void disableCleanup() {
+        for (String hologramId : new HashSet<>(hologramIds.values())) {
+            if (provider != null && provider.isAvailable()) {
+                try {
+                    provider.remove(hologramId);
+                } catch (Exception e) {
+                    logger.warning("Failed to remove hologram during cleanup: " + e.getMessage());
+                }
+            }
         }
+        hologramIds.clear();
+        forgeHydrated.clear();
     }
 
     private void upsertHologram(String hologramId, Location location, RegisteredForge forge) {
@@ -246,10 +282,6 @@ public final class ForgeStationHologramService {
         return placeholders;
     }
 
-    private String deriveHologramId(String forgeId) {
-        return "flameforge_" + StationIdPolicy.normalize(forgeId);
-    }
-
     private List<String> renderLinesFromTemplates(List<String> templates, Map<String, String> placeholders, boolean miniMessage) {
         if (templates == null || templates.isEmpty()) {
             return Collections.emptyList();
@@ -265,17 +297,6 @@ public final class ForgeStationHologramService {
         return rendered;
     }
 
-    private List<String> renderLines(List<String> lines) {
-        if (lines == null || lines.isEmpty()) {
-            return Collections.emptyList();
-        }
-        List<String> rendered = new java.util.ArrayList<>(lines.size());
-        for (String line : lines) {
-            rendered.add(textRenderer.renderToLegacy(line));
-        }
-        return rendered;
-    }
-
     public String getProviderStatus() {
         if (!settings.isEnabled()) {
             return "disabled (config)";
@@ -283,6 +304,6 @@ public final class ForgeStationHologramService {
         if (!provider.isAvailable()) {
             return "unavailable (" + provider.getUnavailableReason() + ")";
         }
-        return provider.getName() + " " + provider.getVersion();
+        return provider.getClass().getSimpleName();
     }
 }

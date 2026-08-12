@@ -1,19 +1,18 @@
 package com.arkflame.flameforge.forge;
 
 import com.arkflame.flameforge.chance.OutcomeSelector;
-import com.arkflame.flameforge.chance.RandomSource;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
-import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.ConfigSnapshot;
+import com.arkflame.flameforge.effect.AnimationHandle;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
-import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
+import com.arkflame.flameforge.model.TierRequirements;
 import com.arkflame.flameforge.persistence.AuditLogService;
 import com.arkflame.flameforge.persistence.PendingDeliveryRepository;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
@@ -22,323 +21,230 @@ import com.arkflame.flameforge.session.ForgeSessionService;
 import com.arkflame.flameforge.station.ForgeStationService;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class ForgeServiceTest {
-    private ForgeService forgeService;
-    private ControlledScheduler scheduler;
-    private ForgeStationService stationService;
-    private PlayerStateRepository playerStateRepository;
-    private ItemIdentityService identityService;
-    private org.bukkit.entity.Player player;
+    @Test
+    void successfulForgeCompletesTransactionAndDeliversResult() {
+        Fixture f = fixture();
+        ItemStack resultItem = new ItemStack(Material.DIAMOND_SWORD);
+        when(f.outcome.execute(any(), any(), eq(f.player), any(), eq(ForgeOutcomeCategory.SUCCESS), eq(f.variant)))
+            .thenReturn(OutcomeExecutionResult.successWithItem("forge_execution", Collections.singleton("forge_execution"), resultItem));
+        when(f.delivery.generateDeliveryId(f.player, "SUCCESS")).thenReturn("result-delivery");
+        when(f.delivery.deliverItem(same(resultItem), eq(f.player), any(), eq("result-delivery"))).thenReturn(true);
 
-    @BeforeEach
-    void setUp() {
-        scheduler = new ControlledScheduler();
-        stationService = mock(ForgeStationService.class);
-        ConfigService configService = mock(ConfigService.class);
-        ConfigSnapshot configSnapshot = mock(ConfigSnapshot.class);
-        when(configService.getCurrentSnapshot()).thenReturn(configSnapshot);
+        AtomicInteger callbacks = new AtomicInteger();
+        ForgeResolution[] resolution = new ForgeResolution[1];
+        f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
+            value -> { callbacks.incrementAndGet(); resolution[0] = value; });
 
-        player = mock(org.bukkit.entity.Player.class);
-        UUID playerId = UUID.randomUUID();
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        playerStateRepository = mock(PlayerStateRepository.class);
-        when(playerStateRepository.getOrLoad(playerId))
-            .thenReturn(new PlayerStateRepository.PlayerState(playerId, 0, 0L));
-
-        identityService = mock(ItemIdentityService.class);
-        when(identityService.readForgeIdentity(any())).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.NONE,
-                ItemIdentityCodec.Identity.empty()
-            )
-        );
-
-        OutcomeSelector outcomeSelector = mock(OutcomeSelector.class);
-        ForgeVariantEligibility variantEligibility = mock(ForgeVariantEligibility.class);
-
-        forgeService = new ForgeService(
-            mock(JavaPlugin.class), scheduler, configService, mock(ForgeSessionService.class),
-            stationService, mock(CostService.class), mock(ForgeAnimationService.class),
-            mock(OutcomeExecutor.class), mock(DeliveryService.class), playerStateRepository,
-            mock(PendingDeliveryRepository.class), mock(AuditLogService.class),
-            outcomeSelector, variantEligibility, identityService
-        );
+        assertNotNull(resolution[0]);
+        assertTrue(resolution[0].isSuccess());
+        assertTrue(f.session.isClosed());
+        assertEquals(1, callbacks.get());
+        verify(f.cost).charge(eq(f.player), eq(f.tier.getCost()), anyList());
+        verify(f.delivery).deliverItem(same(resultItem), eq(f.player), any(), eq("result-delivery"));
     }
 
     @Test
-    void createPlanReturnsNullForNullParameters() {
-        ForgePlanResult result = forgeService.createPlan(null, null, null);
-        assertNull(result.plan);
+    void preTransactionFailureReturnsCustodyWithoutChargeLoss() {
+        Fixture f = fixture();
+        when(f.cost.charge(any(), any(), any())).thenReturn(ChargeReceipt.failure("insufficient"));
+        when(f.delivery.deliverItem(any(), eq(f.player), any(), isNull())).thenReturn(true);
+        ForgeResolution[] resolution = new ForgeResolution[1];
+
+        f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
+            value -> resolution[0] = value);
+
+        assertNotNull(resolution[0]);
+        assertFalse(resolution[0].isSuccess());
+        assertTrue(resolution[0].isPreRollFailure());
+        verify(f.cost, never()).refund(any(), any());
+        verify(f.delivery, times(1)).deliverItem(any(), eq(f.player), any(), isNull());
     }
 
     @Test
-    void createPlanReturnsNullWhenNoTierAvailable() {
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveTierLevel()).thenReturn(0);
-        org.bukkit.inventory.ItemStack input = mock(org.bukkit.inventory.ItemStack.class);
+    void animationFailureRollsBackChargeAndCustody() {
+        Fixture f = fixture();
+        ChargeReceipt receipt = ChargeReceipt.success(3, new BigDecimal("4.00"), Collections.emptyList());
+        when(f.cost.charge(any(), any(), any())).thenReturn(receipt);
+        when(f.animation.playAnimation(anyString(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(mock(AnimationHandle.class));
+        when(f.delivery.deliverItem(any(), eq(f.player), any(), isNull())).thenReturn(true);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Consumer<String>> failure = ArgumentCaptor.forClass(Consumer.class);
+        ForgeResolution[] resolution = new ForgeResolution[1];
 
-        ForgePlanResult result = forgeService.createPlan(player, session, input);
-        assertNull(result.plan);
+        f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
+            value -> resolution[0] = value);
+        verify(f.animation).playAnimation(anyString(), any(), any(), any(), any(), any(), failure.capture());
+        failure.getValue().accept("animation-failed");
+
+        assertNotNull(resolution[0]);
+        assertFalse(resolution[0].isSuccess());
+        verify(f.cost, times(1)).refund(eq(f.player), eq(receipt));
+        verify(f.delivery, times(1)).deliverItem(any(), eq(f.player), any(), isNull());
     }
 
     @Test
-    void freshNoneIdentityTargetsTier1() {
-        ConfigService configService = mock(ConfigService.class);
-        ConfigSnapshot configSnapshot = mock(ConfigSnapshot.class);
-        when(configService.getCurrentSnapshot()).thenReturn(configSnapshot);
+    void outcomeOrDeliveryFailureRollsBackDeterministically() {
+        Fixture outcomeFailure = fixture();
+        when(outcomeFailure.outcome.execute(any(), any(), any(), any(), any(), any()))
+            .thenReturn(OutcomeExecutionResult.error("forge_execution", "mutation failed"));
+        when(outcomeFailure.delivery.deliverItem(any(), eq(outcomeFailure.player), any(), isNull())).thenReturn(true);
+        ForgeResolution[] firstResolution = new ForgeResolution[1];
+        outcomeFailure.service.confirmAndExecute(outcomeFailure.player,
+            PlayerForgeState.of(outcomeFailure.playerId.toString()), outcomeFailure.input, outcomeFailure.plan,
+            value -> firstResolution[0] = value);
+        assertNotNull(firstResolution[0]);
+        assertFalse(firstResolution[0].isSuccess());
+        verify(outcomeFailure.cost, times(1)).refund(any(), any());
+        verify(outcomeFailure.delivery, times(1)).deliverItem(any(), eq(outcomeFailure.player), any(), isNull());
 
-        TierDefinition tier1 = createTier("tier1", 1);
-        TierDefinition tier2 = createTier("tier2", 2);
-        when(configSnapshot.getTiers()).thenReturn(Arrays.asList(tier1, tier2));
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveTierLevel()).thenReturn(99);
-
-        ItemStack realItem = mock(ItemStack.class);
-        when(realItem.hasItemMeta()).thenReturn(false);
-        when(realItem.getType()).thenReturn(Material.DIAMOND_SWORD);
-
-        ItemIdentityService identityServiceMock = mock(ItemIdentityService.class);
-        when(identityServiceMock.readForgeIdentity(realItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.NONE,
-                ItemIdentityCodec.Identity.empty()
-            )
-        );
-
-        OutcomeSelector outcomeSelector = mock(OutcomeSelector.class);
-        ForgeVariantEligibility variantEligibility = mock(ForgeVariantEligibility.class);
-
-        ForgeService service = new ForgeService(
-            mock(JavaPlugin.class), scheduler, configService, mock(ForgeSessionService.class),
-            stationService, mock(CostService.class), mock(ForgeAnimationService.class),
-            mock(OutcomeExecutor.class), mock(DeliveryService.class), playerStateRepository,
-            mock(PendingDeliveryRepository.class), mock(AuditLogService.class),
-            outcomeSelector, variantEligibility, identityServiceMock
-        );
-
-        ForgePlanResult result = service.createPlan(player, session, realItem);
-        assertNotNull(result.plan);
-        assertEquals(1, result.plan.getTargetTier().getLevel());
+        Fixture deliveryFailure = fixture();
+        ItemStack resultItem = new ItemStack(Material.DIAMOND_SWORD);
+        when(deliveryFailure.outcome.execute(any(), any(), any(), any(), any(), any()))
+            .thenReturn(OutcomeExecutionResult.successWithItem("forge_execution",
+                Collections.singleton("forge_execution"), resultItem));
+        when(deliveryFailure.delivery.generateDeliveryId(any(), eq("SUCCESS"))).thenReturn("output-delivery");
+        when(deliveryFailure.delivery.deliverItem(same(resultItem), eq(deliveryFailure.player), any(), eq("output-delivery")))
+            .thenReturn(false);
+        when(deliveryFailure.delivery.deliverItem(any(), eq(deliveryFailure.player), any(), isNull())).thenReturn(true);
+        ForgeResolution[] secondResolution = new ForgeResolution[1];
+        deliveryFailure.service.confirmAndExecute(deliveryFailure.player,
+            PlayerForgeState.of(deliveryFailure.playerId.toString()), deliveryFailure.input, deliveryFailure.plan,
+            value -> secondResolution[0] = value);
+        assertNotNull(secondResolution[0]);
+        assertFalse(secondResolution[0].isSuccess());
+        verify(deliveryFailure.cost, times(1)).refund(any(), any());
+        verify(deliveryFailure.delivery).deliverItem(same(resultItem), eq(deliveryFailure.player), any(), eq("output-delivery"));
+        verify(deliveryFailure.delivery, times(1)).deliverItem(any(), eq(deliveryFailure.player), any(), isNull());
     }
 
     @Test
-    void currentTierNTargetsExactNPlus1() {
-        ConfigService configService = mock(ConfigService.class);
-        ConfigSnapshot configSnapshot = mock(ConfigSnapshot.class);
-        when(configService.getCurrentSnapshot()).thenReturn(configSnapshot);
+    void duplicateOrTerminalCompletionDoesNotSettleTwice() {
+        Fixture f = fixture();
+        ItemStack resultItem = new ItemStack(Material.DIAMOND_SWORD);
+        when(f.outcome.execute(any(), any(), any(), any(), any(), any()))
+            .thenReturn(OutcomeExecutionResult.successWithItem("forge_execution",
+                Collections.singleton("forge_execution"), resultItem));
+        when(f.delivery.generateDeliveryId(any(), eq("SUCCESS"))).thenReturn("once");
+        when(f.delivery.deliverItem(same(resultItem), eq(f.player), any(), eq("once"))).thenReturn(true);
+        when(f.animation.playAnimation(anyString(), any(), any(), any(), any(), any(), any()))
+            .thenReturn(mock(AnimationHandle.class));
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Consumer<String>> completion = ArgumentCaptor.forClass(Consumer.class);
+        AtomicInteger callbacks = new AtomicInteger();
 
-        TierDefinition tier1 = createTier("tier1", 1);
-        TierDefinition tier2 = createTier("tier2", 2);
-        TierDefinition tier3 = createTier("tier3", 3);
-        when(configSnapshot.getTiers()).thenReturn(Arrays.asList(tier1, tier2, tier3));
+        f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
+            value -> callbacks.incrementAndGet());
+        verify(f.animation).playAnimation(anyString(), any(), any(), any(), any(), completion.capture(), any());
+        completion.getValue().accept("complete");
+        completion.getValue().accept("complete-again");
 
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveTierLevel()).thenReturn(1);
-
-        ItemStack realItem = mock(ItemStack.class);
-        when(realItem.hasItemMeta()).thenReturn(true);
-
-        ItemIdentityCodec.Identity existingIdentity = ItemIdentityCodec.Identity.empty()
-            .withCurrentTier(1)
-            .withHighestTier(1)
-            .withLastTierId("tier1")
-            .withLastVariantId("variant1");
-
-        ItemIdentityService identityServiceMock = mock(ItemIdentityService.class);
-        when(identityServiceMock.readForgeIdentity(realItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.VALID,
-                existingIdentity
-            )
-        );
-
-        OutcomeSelector outcomeSelector = mock(OutcomeSelector.class);
-        ForgeVariantEligibility variantEligibility = mock(ForgeVariantEligibility.class);
-
-        ForgeService service = new ForgeService(
-            mock(JavaPlugin.class), scheduler, configService, mock(ForgeSessionService.class),
-            stationService, mock(CostService.class), mock(ForgeAnimationService.class),
-            mock(OutcomeExecutor.class), mock(DeliveryService.class), playerStateRepository,
-            mock(PendingDeliveryRepository.class), mock(AuditLogService.class),
-            outcomeSelector, variantEligibility, identityServiceMock
-        );
-
-        ForgePlanResult result = service.createPlan(player, session, realItem);
-        assertNotNull(result.plan);
-        assertEquals(2, result.plan.getTargetTier().getLevel());
+        assertTrue(f.session.isClosed());
+        assertEquals(1, callbacks.get());
+        verify(f.cost, times(1)).charge(any(), any(), any());
+        verify(f.delivery, times(1)).deliverItem(same(resultItem), eq(f.player), any(), eq("once"));
+        verify(f.cost, never()).refund(any(), any());
     }
 
-    @Test
-    void successFiltersVariantsBeforeSharedSelection() {
-        ForgeVariantEligibility variantEligibility = mock(ForgeVariantEligibility.class);
-        OutcomeSelector outcomeSelector = mock(OutcomeSelector.class);
-        CostService costService = mock(CostService.class);
-        OutcomeExecutor outcomeExecutor = mock(OutcomeExecutor.class);
-
-        ForgeVariant selectedVariant = mock(ForgeVariant.class);
-        when(variantEligibility.eligibleVariants(any(), any())).thenReturn(Collections.singletonList(selectedVariant));
-        when(outcomeSelector.selectVariant(any())).thenReturn(selectedVariant);
-        when(outcomeSelector.rollCategory(any())).thenReturn(ForgeOutcomeCategory.SUCCESS);
-
-        ChargeReceipt chargeReceipt = mock(ChargeReceipt.class);
-        when(chargeReceipt.isSuccess()).thenReturn(true);
-        when(costService.charge(any(), any(), any())).thenReturn(chargeReceipt);
-
-        ItemStack realItem = mock(ItemStack.class);
-        when(realItem.hasItemMeta()).thenReturn(true);
-
-        verify(variantEligibility, never()).eligibleVariants(any(), any());
-        verify(outcomeSelector, never()).selectVariant(any());
-        verify(costService, never()).charge(any(), any(), any());
+    private static Fixture fixture() {
+        Fixture f = new Fixture();
+        f.playerId = UUID.randomUUID();
+        f.plugin = mock(JavaPlugin.class);
+        when(f.plugin.getLogger()).thenReturn(Logger.getLogger(ForgeServiceTest.class.getName()));
+        f.scheduler = mock(SchedulerBridge.class);
+        f.player = mock(Player.class);
+        when(f.player.getUniqueId()).thenReturn(f.playerId);
+        when(f.player.isOnline()).thenReturn(true);
+        when(f.player.getName()).thenReturn("forge-player");
+        when(f.player.getLocation()).thenReturn(mock(Location.class));
+        f.config = mock(ConfigService.class);
+        when(f.config.getCurrentSnapshot()).thenReturn(mock(ConfigSnapshot.class));
+        f.session = new ForgeSession(f.playerId.toString());
+        f.sessions = mock(ForgeSessionService.class);
+        when(f.sessions.openSession(f.playerId.toString())).thenReturn(f.session);
+        f.station = mock(ForgeStationService.class);
+        f.cost = mock(CostService.class);
+        when(f.cost.charge(any(), any(), any())).thenReturn(ChargeReceipt.success(0, BigDecimal.ZERO, Collections.emptyList()));
+        f.animation = mock(ForgeAnimationService.class);
+        f.outcome = mock(OutcomeExecutor.class);
+        f.delivery = mock(DeliveryService.class);
+        f.playerStates = mock(PlayerStateRepository.class);
+        f.audit = mock(AuditLogService.class);
+        f.selector = mock(OutcomeSelector.class);
+        f.eligibility = mock(ForgeVariantEligibility.class);
+        f.identity = mock(ItemIdentityService.class);
+        f.input = new ItemStack(Material.DIAMOND_SWORD);
+        f.variant = variant();
+        f.tier = tier(f.variant);
+        f.quote = mock(CostQuote.class);
+        when(f.quote.isAffordable()).thenReturn(true);
+        f.plan = ForgePlan.createWithTier(f.input, 0, f.tier, f.tier.getCost(), f.tier.getChances(),
+            f.quote, null, null, null, null, 0, 0, 0);
+        when(f.eligibility.eligibleVariants(any(), any())).thenReturn(Collections.singletonList(f.variant));
+        when(f.selector.selectVariant(anyList())).thenReturn(f.variant);
+        when(f.selector.rollCategory(any())).thenReturn(ForgeOutcomeCategory.SUCCESS);
+        f.service = new ForgeService(f.plugin, f.scheduler, f.config, f.sessions, f.station, f.cost,
+            f.animation, f.outcome, f.delivery, f.playerStates, mock(PendingDeliveryRepository.class),
+            f.audit, f.selector, f.eligibility, f.identity);
+        return f;
     }
 
-    @Test
-    void transactionCategoryAndVariantForwardedUnchangedToExecutor() {
-        ConfigService configService = mock(ConfigService.class);
-        ConfigSnapshot configSnapshot = mock(ConfigSnapshot.class);
-        when(configService.getCurrentSnapshot()).thenReturn(configSnapshot);
-
-        TierDefinition tier1 = createTier("tier1", 1);
-        when(configSnapshot.getTiers()).thenReturn(Collections.singletonList(tier1));
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveTierLevel()).thenReturn(0);
-
-        ItemStack realItem = mock(ItemStack.class);
-        when(realItem.hasItemMeta()).thenReturn(true);
-        when(realItem.getType()).thenReturn(Material.DIAMOND_SWORD);
-
-        ItemIdentityCodec.Identity existingIdentity = ItemIdentityCodec.Identity.empty();
-
-        ItemIdentityService identityServiceMock = mock(ItemIdentityService.class);
-        when(identityServiceMock.readForgeIdentity(realItem)).thenReturn(
-            new ItemIdentityService.ForgeIdentityRead(
-                ItemIdentityService.ForgeIdentityStatus.VALID,
-                existingIdentity
-            )
-        );
-
-        ForgeVariantEligibility variantEligibility = mock(ForgeVariantEligibility.class);
-
-        ForgeVariant selectedVariant = mock(ForgeVariant.class);
-        when(variantEligibility.eligibleVariants(any(), any())).thenReturn(Collections.singletonList(selectedVariant));
-
-        OutcomeSelector outcomeSelector = mock(OutcomeSelector.class);
-        when(outcomeSelector.selectVariant(any())).thenReturn(selectedVariant);
-
-        JavaPlugin plugin = mock(JavaPlugin.class);
-        ForgeService service = new ForgeService(
-            plugin, scheduler, configService, mock(ForgeSessionService.class),
-            stationService, mock(CostService.class), mock(ForgeAnimationService.class),
-            mock(OutcomeExecutor.class), mock(DeliveryService.class), playerStateRepository,
-            mock(PendingDeliveryRepository.class), mock(AuditLogService.class),
-            outcomeSelector, variantEligibility, identityServiceMock
-        );
-
-        ForgePlanResult result = service.createPlan(player, session, realItem);
-        assertNotNull(result.plan);
+    private static ForgeVariant variant() {
+        return new ForgeVariant("variant", "Variant", Collections.emptyList(), 1.0, "DIAMOND_SWORD",
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
-    private TierDefinition createTier(String id, int level) {
-        return new TierDefinition(
-            id, level, true, "", null, 0L, Collections.emptyList(), Collections.emptyList(),
-            new com.arkflame.flameforge.model.TierRequirements(
-                com.arkflame.flameforge.model.TierRequirements.Combine.ALL,
-                new com.arkflame.flameforge.model.TierRequirements.XpRequirement(false, 0),
-                new com.arkflame.flameforge.model.TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
-                new com.arkflame.flameforge.model.TierRequirements.ItemsRequirement(false, Collections.emptyList())),
-            new TierChances(BigDecimal.valueOf(100), BigDecimal.ZERO, BigDecimal.ZERO),
-            null, null, null, Collections.emptyList()
-        );
+    private static TierDefinition tier(ForgeVariant variant) {
+        TierRequirements requirements = new TierRequirements(TierRequirements.Combine.ALL,
+            new TierRequirements.XpRequirement(false, 0),
+            new TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
+            new TierRequirements.ItemsRequirement(false, Collections.emptyList()));
+        return new TierDefinition("tier1", 1, true, "", null, 0L, Collections.emptyList(),
+            Collections.emptyList(), requirements, new TierChances(BigDecimal.valueOf(100), BigDecimal.ZERO, BigDecimal.ZERO),
+            null, null, null, Collections.singletonList(variant));
     }
 
-    private static final class ControlledScheduler implements SchedulerBridge {
-        private static final TaskHandle HANDLE = new TaskHandle() {
-            @Override
-            public void cancel() {
-            }
-
-            @Override
-            public boolean isCancelled() {
-                return false;
-            }
-        };
-
-        private final List<Runnable> globalTasks = new ArrayList<>();
-
-        @Override
-        public TaskHandle runGlobal(JavaPlugin plugin, Runnable task) {
-            globalTasks.add(task);
-            return HANDLE;
-        }
-
-        void runNextGlobalTask() {
-            if (globalTasks.isEmpty()) return;
-            globalTasks.remove(0).run();
-        }
-
-        int globalTaskCount() {
-            return globalTasks.size();
-        }
-
-        @Override
-        public TaskHandle runGlobalLater(JavaPlugin plugin, Runnable task, long delay) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runEntity(Entity entity, Runnable runnable, Runnable retireCallback) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runEntityLater(Entity entity, Runnable runnable, Runnable retireCallback, long delay) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runRegion(Location location, Runnable task) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runRegionLater(Location location, Runnable task, long delay) {
-            return HANDLE;
-        }
-
-        @Override
-        public TaskHandle runAsync(JavaPlugin plugin, Runnable task) {
-            return HANDLE;
-        }
-
-        @Override
-        public void cancelAll(JavaPlugin plugin) {
-        }
-
-        @Override
-        public boolean isFolia() {
-            return false;
-        }
+    private static final class Fixture {
+        private JavaPlugin plugin;
+        private SchedulerBridge scheduler;
+        private ConfigService config;
+        private ForgeSessionService sessions;
+        private ForgeStationService station;
+        private CostService cost;
+        private ForgeAnimationService animation;
+        private OutcomeExecutor outcome;
+        private DeliveryService delivery;
+        private PlayerStateRepository playerStates;
+        private AuditLogService audit;
+        private OutcomeSelector selector;
+        private ForgeVariantEligibility eligibility;
+        private ItemIdentityService identity;
+        private ForgeService service;
+        private ForgeSession session;
+        private Player player;
+        private UUID playerId;
+        private ItemStack input;
+        private ForgeVariant variant;
+        private TierDefinition tier;
+        private CostQuote quote;
+        private ForgePlan plan;
     }
 }

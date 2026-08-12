@@ -241,14 +241,7 @@ public final class ForgePowerListener implements Listener {
         List<String> activePowerIds = identity.getActivePowerIds();
         List<ForgePowerDefinition> powers = getPowersForForge(lastTierId, lastVariantId, activePowerIds);
         for (ForgePowerDefinition power : powers) {
-            ForgePowerDefinition.PowerType type = power.getPowerType();
-            if (type == ForgePowerDefinition.PowerType.ON_HIT_POTION
-                || type == ForgePowerDefinition.PowerType.ON_HIT_FIRE
-                || type == ForgePowerDefinition.PowerType.ON_HIT_HEAL
-                || type == ForgePowerDefinition.PowerType.EVERY_N_HIT_LIGHTNING
-                || type == ForgePowerDefinition.PowerType.EVERY_N_HIT_KNOCKBACK) {
-                powerService.triggerOnHitPower(attacker, victim, power, forgeId);
-            }
+            powerService.triggerOnHitPower(attacker, victim, power, forgeId);
         }
     }
 

@@ -33,6 +33,12 @@ chances:
 break:
   reset-tier: true
   target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>✦ Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -64,9 +70,8 @@ animation:
     radius: 1.20
   impact-particle:
     candidates:
-      - BLOCK
-      - BLOCK_CRACK
-      - TILE_BREAK
+      - CRIT
+      - FLAME
     material-candidates:
       - ANVIL
   success:
@@ -105,7 +110,7 @@ variants:
     display-name: "<gradient:#facc15:#b91c1c><bold>Infernal %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier V forged variant"
-      - "<dark_gray>● <gold>25% infernal strike"
+      - "<dark_gray>● <gold>20% infernal area-fire strike"
       - "<dark_gray>● <red>+1 raw attack damage"
       - "<dark_gray>● <yellow>Every 5th hit calls lightning"
     enchantments: []
@@ -115,10 +120,13 @@ variants:
         value: "1.0"
     powers:
       - id: infernal_hit
-        type: ON_HIT_FIRE
-        cooldown-ticks: 40
-        chance: "0.25"
-        fire-ticks: 100
+        type: ON_HIT_AOE_FIRE
+        cooldown-ticks: 60
+        chance: "0.20"
+        fire-ticks: 60
+        radius: "3.5"
+        particle-candidates:
+          - FLAME
       - id: storm_every_five
         type: EVERY_N_HIT_LIGHTNING
         hit-interval: 5
@@ -133,12 +141,29 @@ variants:
       - "<gray>Tier V forged variant"
       - "<dark_gray>● <blue>12% damage reduction"
       - "<dark_gray>● <white>Active while equipped"
+      - "<dark_gray>● <blue>12% chance to recover health on hit"
+      - "<dark_gray>● <white>Resistance while held in main hand"
     enchantments: []
     attributes:
       - id: aegis_guard
         type: DAMAGE_REDUCTION_PERCENT
         value: "0.12"
-    powers: []
+    powers:
+      - id: aegis_recovery
+        type: ON_HIT_HEAL
+        cooldown-ticks: 80
+        chance: "0.12"
+        heal-amount: "1.0"
+      - id: aegis_resistance
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - DAMAGE_RESISTANCE
+          - RESISTANCE
+        duration-ticks: 40
+        amplifier: 0
+        activation-slots:
+          - MAINHAND
   vital:
     weight: "30.0"
     applicable-groups:
@@ -148,6 +173,7 @@ variants:
       - "<gray>Tier V forged variant"
       - "<dark_gray>● <green>Regeneration while equipped"
       - "<dark_gray>● <white>Original material retained"
+      - "<dark_gray>● <green>Shift + right click to heal 3 health"
     enchantments: []
     attributes: []
     powers:
@@ -162,3 +188,9 @@ variants:
           - MAIN_HAND
           - OFF_HAND
           - ARMOR
+      - id: vital_burst
+        type: SHIFT_RIGHT_CLICK_HEAL
+        cooldown-ticks: 200
+        heal-amount: "3"
+        activation-slots:
+          - MAINHAND

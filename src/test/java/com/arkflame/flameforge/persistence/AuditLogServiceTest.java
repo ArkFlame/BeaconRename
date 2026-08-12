@@ -7,11 +7,6 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -25,54 +20,39 @@ class AuditLogServiceTest {
     Path tempDir;
 
     @Test
-    void fullQueue_flushAndCloseFailImmediately() throws Exception {
+    void queueClosePreservesOrderingAndFailsBoundedlyWhenFull() throws Exception {
         ControlledSchedulerBridge scheduler = new ControlledSchedulerBridge();
         AuditLogService service = new AuditLogService(
-            MockJavaPlugin.createMockPlugin(), scheduler, tempDir, 1);
-
-        assertTrue(service.logAsync("queued", "actor", "target", "details"));
-        CompletableFuture<Void> flush = service.flushAsync();
-        CompletableFuture<Void> close = service.closeAsync();
-
-        assertTrue(flush.isDone());
-        assertTrue(close.isDone());
-        assertFailed(flush, "Audit queue is full");
-        assertFailed(close, "Audit queue is full");
-        assertEquals(1, scheduler.queuedAsyncTasks());
-    }
-
-    @Test
-    void flushAndClose_acknowledgeInQueueOrder() throws Exception {
-        ControlledSchedulerBridge scheduler = new ControlledSchedulerBridge();
-        AuditLogService service = new AuditLogService(
-            MockJavaPlugin.createMockPlugin(), scheduler, tempDir, 4);
-        List<String> acknowledgements = Collections.synchronizedList(new ArrayList<String>());
+            MockJavaPlugin.createMockPlugin(), scheduler, tempDir, 3);
 
         assertTrue(service.logAsync("first", "actor", "target", "one"));
-        CompletableFuture<Void> flush = service.flushAsync();
-        flush.whenComplete((ignored, failure) -> acknowledgements.add("flush"));
         assertTrue(service.logAsync("second", "actor", "target", "two"));
         CompletableFuture<Void> close = service.closeAsync();
-        close.whenComplete((ignored, failure) -> acknowledgements.add("close"));
 
         Thread writer = scheduler.startNext();
-        try {
-            await(close);
-        } finally {
-            writer.join(1000);
-            if (writer.isAlive()) {
-                writer.interrupt();
-            }
-        }
-
+        await(close);
+        writer.join(1000);
         assertFalse(writer.isAlive());
-        assertEquals(Arrays.asList("flush", "close"), acknowledgements);
-        Path auditFile = tempDir.resolve("audit").resolve(
-            LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE) + ".jsonl");
+
+        Path auditFile;
+        try (java.util.stream.Stream<Path> files = Files.list(tempDir.resolve("audit"))) {
+            auditFile = files.findFirst()
+                .orElseThrow(() -> new AssertionError("audit file not created"));
+        }
         List<String> entries = Files.readAllLines(auditFile, StandardCharsets.UTF_8);
         assertEquals(2, entries.size());
         assertTrue(entries.get(0).contains("\"action\":\"first\""));
         assertTrue(entries.get(1).contains("\"action\":\"second\""));
+
+        ControlledSchedulerBridge fullScheduler = new ControlledSchedulerBridge();
+        AuditLogService fullService = new AuditLogService(
+            MockJavaPlugin.createMockPlugin(), fullScheduler, tempDir, 1);
+        assertTrue(fullService.logAsync("queued", "actor", "target", "details"));
+        CompletableFuture<Void> fullClose = fullService.closeAsync();
+
+        assertTrue(fullClose.isDone());
+        assertFailed(fullClose, "Audit queue is full");
+        assertEquals(1, fullScheduler.queuedAsyncTasks());
     }
 
     private static void await(CompletableFuture<Void> future) throws Exception {

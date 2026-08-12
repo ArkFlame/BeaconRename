@@ -307,7 +307,7 @@ public final class ForgeMenuService {
         if (materials.isEmpty()) {
             materials = Collections.singletonList("REDSTONE_BLOCK");
         }
-        return menuItemFactory.build(materials, name, lore, null, glow, null);
+        return menuItemFactory.build(materials, name, lore, args, glow, "menu.confirm.blocked");
     }
 
     private ItemStack createReadyConfirmSlot(Map<String, Object> confirmConfig, Player player,
@@ -326,7 +326,7 @@ public final class ForgeMenuService {
         if (materials.isEmpty()) {
             materials = Collections.singletonList("EMERALD_BLOCK");
         }
-        return menuItemFactory.build(materials, name, lore, null, glow, null);
+        return menuItemFactory.build(materials, name, lore, args, glow, "menu.confirm.ready");
     }
 
     private MessageArguments buildDynamicArgs(Player player, ForgeMenuContext context,
@@ -334,8 +334,8 @@ public final class ForgeMenuService {
                                               Map<String, Object> menuConfig) {
         MessageArguments args = MessageArguments.create();
 
-        String tierLine = buildTierLine(context, plan, menuConfig);
-        args.string("tier_line", tierLine);
+        Component tierComponent = buildTierComponent(context, plan, menuConfig);
+        args.component("tier_line", tierComponent);
 
         List<String> requirements = buildRequirementLines(plan);
         args.lines("requirements", requirements);
@@ -350,7 +350,7 @@ public final class ForgeMenuService {
         return args;
     }
 
-    String buildTierLine(ForgeMenuContext context, ForgePlan plan, Map<String, Object> menuConfig) {
+    Component buildTierComponent(ForgeMenuContext context, ForgePlan plan, Map<String, Object> menuConfig) {
         int currentTier = 0;
         int targetTier = 0;
 
@@ -366,8 +366,7 @@ public final class ForgeMenuService {
                 .string("current_tier", String.valueOf(currentTier))
                 .string("target_tier", String.valueOf(targetTier));
 
-        Component component = textRenderer.renderComponent(tierTemplate, args, "menu.tier");
-        return textRenderer.toLegacy(component);
+        return textRenderer.renderComponent(tierTemplate, args, "menu.tier");
     }
 
     List<String> buildRequirementLines(ForgePlan plan) {
@@ -456,9 +455,9 @@ public final class ForgeMenuService {
         Component breakComp = textRenderer.renderComponent(breakTemplate, args, "menu.chance-break");
         Component curseComp = textRenderer.renderComponent(curseTemplate, args, "menu.chance-curse");
 
-        lines.add(textRenderer.toLegacy(successComp));
-        lines.add(textRenderer.toLegacy(breakComp));
-        lines.add(textRenderer.toLegacy(curseComp));
+        lines.add(textRenderer.renderToMiniMessage(successTemplate, args.getStringValues(), "menu.chance-success"));
+        lines.add(textRenderer.renderToMiniMessage(breakTemplate, args.getStringValues(), "menu.chance-break"));
+        lines.add(textRenderer.renderToMiniMessage(curseTemplate, args.getStringValues(), "menu.chance-curse"));
 
         return lines;
     }
@@ -519,8 +518,7 @@ public final class ForgeMenuService {
                     .string("variant_name", variantName)
                     .string("variant_chance", formatPercent(vwp.actualPct));
 
-            Component component = textRenderer.renderComponent(variantTemplate, args, "menu.variant");
-            lines.add(textRenderer.toLegacy(component));
+            lines.add(textRenderer.renderToMiniMessage(variantTemplate, args.getStringValues(), "menu.variant"));
         }
 
         return lines;

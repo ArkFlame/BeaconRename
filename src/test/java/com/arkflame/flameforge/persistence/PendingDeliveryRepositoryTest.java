@@ -19,7 +19,7 @@ class PendingDeliveryRepositoryTest {
     Path tempDir;
 
     @Test
-    void saveAsync_serializesWritesAndExposesCurrentWrite() throws Exception {
+    void saveAsyncSerializesPendingDeliveryWrites() throws Exception {
         ControlledSchedulerBridge scheduler = new ControlledSchedulerBridge();
         PendingDeliveryRepository repository = new PendingDeliveryRepository(
             MockJavaPlugin.createMockPlugin(), scheduler, tempDir);

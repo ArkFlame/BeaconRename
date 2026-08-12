@@ -21,33 +21,41 @@ class PlayerStateRepositoryAtomicTest {
     Path tempDir;
 
     @Test
-    void loadAsyncReturnsBeforeQueuedExecutorRuns() throws Exception {
-        UUID uuid = UUID.randomUUID();
+    void asyncLoadPublishesAtomicallyAndSkipsMalformedEntries() throws Exception {
+        UUID existingUuid = UUID.randomUUID();
+        UUID loadedUuid = UUID.randomUUID();
         Path folder = Files.createDirectories(tempDir.resolve("player-data"));
-        Files.write(folder.resolve(uuid + ".yml"),
+        Files.write(folder.resolve(loadedUuid + ".yml"),
             java.util.Arrays.asList("tier: 4", "pityCooldown: 12"), StandardCharsets.UTF_8);
+        Files.write(folder.resolve("malformed.yml"),
+            java.util.Arrays.asList("tier: not-a-number"), StandardCharsets.UTF_8);
         ControlledSchedulerBridge scheduler = new ControlledSchedulerBridge();
         PlayerStateRepository repository = new PlayerStateRepository(
             MockJavaPlugin.createMockPlugin(), scheduler, tempDir);
+        repository.getOrLoad(existingUuid);
 
         CompletableFuture<Void> load = repository.loadAllAsync();
 
         assertFalse(load.isDone());
         assertEquals(1, scheduler.queuedAsyncTasks());
-        assertEquals(new PlayerState(uuid, 0, 0L), repository.getSnapshot(uuid));
+        assertEquals(new PlayerState(existingUuid, 0, 0L), repository.getSnapshot(existingUuid));
+        assertEquals(new PlayerState(loadedUuid, 0, 0L), repository.getSnapshot(loadedUuid));
 
         scheduler.runNext();
         await(load);
-        assertEquals(new PlayerState(uuid, 4, 12L), repository.getSnapshot(uuid));
+        assertEquals(new PlayerState(loadedUuid, 4, 12L), repository.getSnapshot(loadedUuid));
+        assertEquals(new PlayerState(existingUuid, 0, 0L), repository.getSnapshot(existingUuid));
     }
 
     @Test
-    void topLevelScanFailureCompletesExceptionallyWithoutPublishingPartialState() throws Exception {
+    void fatalLoadFailureDoesNotPublishPartialState() throws Exception {
+        UUID existingUuid = UUID.randomUUID();
         Files.write(tempDir.resolve("player-data"),
             java.util.Arrays.asList("not-a-directory"), StandardCharsets.UTF_8);
         ControlledSchedulerBridge scheduler = new ControlledSchedulerBridge();
         PlayerStateRepository repository = new PlayerStateRepository(
             MockJavaPlugin.createMockPlugin(), scheduler, tempDir);
+        repository.getOrLoad(existingUuid);
 
         CompletableFuture<Void> load = repository.loadAllAsync();
         scheduler.runNext();
@@ -55,25 +63,7 @@ class PlayerStateRepositoryAtomicTest {
         ExecutionException failure = assertThrows(ExecutionException.class, () ->
             load.get(1, TimeUnit.SECONDS));
         assertTrue(failure.getCause() instanceof IllegalStateException);
-    }
-
-    @Test
-    void malformedPlayerFileIsSkippedWhileValidFilesPublishAtomically() throws Exception {
-        UUID uuid = UUID.randomUUID();
-        Path folder = Files.createDirectories(tempDir.resolve("player-data"));
-        Files.write(folder.resolve(uuid + ".yml"),
-            java.util.Arrays.asList("tier: 7", "pityCooldown: 99"), StandardCharsets.UTF_8);
-        Files.write(folder.resolve("malformed.yml"),
-            java.util.Arrays.asList("tier: not-a-number"), StandardCharsets.UTF_8);
-        ControlledSchedulerBridge scheduler = new ControlledSchedulerBridge();
-        PlayerStateRepository repository = new PlayerStateRepository(
-            MockJavaPlugin.createMockPlugin(), scheduler, tempDir);
-
-        CompletableFuture<Void> load = repository.loadAllAsync();
-        scheduler.runNext();
-        await(load);
-
-        assertEquals(new PlayerState(uuid, 7, 99L), repository.getSnapshot(uuid));
+        assertEquals(new PlayerState(existingUuid, 0, 0L), repository.getSnapshot(existingUuid));
     }
 
     private static void await(CompletableFuture<Void> future) throws Exception {

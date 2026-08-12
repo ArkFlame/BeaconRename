@@ -24,6 +24,7 @@ import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.config.ValidationIssue;
 import com.arkflame.flameforge.config.ValidationReport;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
+import com.arkflame.flameforge.effect.ForgeItemVisualService;
 import com.arkflame.flameforge.forge.ChargeReceipt;
 import com.arkflame.flameforge.forge.CostQuote;
 import com.arkflame.flameforge.forge.CostService;
@@ -31,6 +32,7 @@ import com.arkflame.flameforge.forge.DeliveryService;
 import com.arkflame.flameforge.forge.ForgeItemInspection;
 import com.arkflame.flameforge.forge.ForgeItemPolicy;
 import com.arkflame.flameforge.forge.ForgePowerService;
+import com.arkflame.flameforge.forge.MultiStrikeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.OutcomeExecutor;
@@ -170,6 +172,7 @@ public final class FlameForgePlugin extends JavaPlugin {
     private PotionEffectResolver potionEffectResolver;
     private EquipmentBridge equipmentBridge;
     private ForgePowerService forgePowerService;
+    private MultiStrikeService multiStrikeService;
     private MenuInputReturnService menuInputReturnService;
 
     private FlameForgeCommand command;
@@ -343,7 +346,9 @@ public final class FlameForgePlugin extends JavaPlugin {
         economyService = economyFactory.create();
 
         ParticleBridge particleBridge = ParticleBridge.getInstance();
+        multiStrikeService = new MultiStrikeService(schedulerBridge, particleBridge);
         SoundResolver soundResolver = SoundResolver.getInstance();
+        ForgeItemVisualService forgeItemVisualService = new ForgeItemVisualService(this);
         Map<String, Object> emptyMap = new HashMap<>();
         deliveryService = new DeliveryService(
             this,
@@ -361,7 +366,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         teleportBridge = new TeleportBridge(this, schedulerBridge, runtimePlatform);
         forgeStationService = new ForgeStationService(this, schedulerBridge, stationRepository, configService, textRenderer, teleportBridge);
         forgeAnimationService = new ForgeAnimationService(
-            this, schedulerBridge, particleBridge, soundResolver, textBridge, textRenderer
+            this, schedulerBridge, particleBridge, soundResolver, textBridge, textRenderer, forgeItemVisualService
         );
         forgeSessionService = new ForgeSessionService();
 
@@ -370,7 +375,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         ItemFactory.setTextRenderer(textRenderer);
         forgeVariantEligibility = new ForgeVariantEligibility(itemIdentityService);
         AttributeBridge attributeBridge = AttributeBridge.getInstance();
-        itemMutationService = new ItemMutationService(itemIdentityService, attributeBridge, new EnchantmentResolver(), textRenderer);
+        itemMutationService = new ItemMutationService(itemIdentityService, attributeBridge, new EnchantmentResolver(), textRenderer, configService);
         ForgeItemInspection forgeItemInspection = new ForgeItemInspection(itemIdentityCodec, itemIdentityService, attributeBridge, tierRepository, forgeVariantEligibility);
         forgeItemPolicy = new ForgeItemPolicy(forgeItemInspection);
         potionEffectResolver = new PotionEffectResolver();
@@ -378,9 +383,11 @@ public final class FlameForgePlugin extends JavaPlugin {
         forgePowerService = new ForgePowerService(
             this,
             schedulerBridge,
+            particleBridge,
             potionEffectResolver,
             equipmentBridge,
-            itemIdentityService
+            itemIdentityService,
+            multiStrikeService
         );
         menuInputReturnService = new MenuInputReturnService(deliveryService);
 
@@ -695,6 +702,9 @@ public final class FlameForgePlugin extends JavaPlugin {
         }
         if (forgeService != null) {
             forgeService.onDisable();
+        }
+        if (forgeAnimationService != null) {
+            forgeAnimationService.shutdown();
         }
         if (forgeSessionService != null) {
             forgeSessionService.shutdown();

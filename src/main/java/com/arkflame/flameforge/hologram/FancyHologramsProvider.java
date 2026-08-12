@@ -5,10 +5,12 @@ import org.bukkit.Color;
 import org.bukkit.Location;
 import org.bukkit.plugin.Plugin;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 class FancyHologramsProvider implements HologramProvider {
@@ -50,13 +52,20 @@ class FancyHologramsProvider implements HologramProvider {
             return;
         }
         try {
-            Object manager = getHologramManager();
+            Object manager = getManager();
             if (manager == null) {
                 return;
             }
 
             String id = hologram.getId();
-            bindings.removeHologramStringMethod.invoke(manager, id);
+            Optional<Object> existing = findHologram(manager, id);
+            if (existing.isPresent()) {
+                try {
+                    bindings.removeHologramMethod.invoke(manager, existing.get());
+                } catch (IllegalAccessException | InvocationTargetException e) {
+                    throw new IllegalStateException("Failed to remove hologram " + id, e);
+                }
+            }
 
             Location clonedLocation = hologram.getLocation().clone();
 
@@ -84,31 +93,44 @@ class FancyHologramsProvider implements HologramProvider {
             return;
         }
         try {
-            Object manager = getHologramManager();
+            Object manager = getManager();
             if (manager == null) {
                 return;
             }
 
-            bindings.removeHologramStringMethod.invoke(manager, hologramId);
+            findHologram(manager, hologramId).ifPresent(h -> {
+                try {
+                    bindings.removeHologramMethod.invoke(manager, h);
+                } catch (Exception e) {
+                    throw new IllegalStateException("Failed to remove hologram " + hologramId, e);
+                }
+            });
         } catch (Exception e) {
             logFailureOnce(hologramId, "remove", e);
         }
     }
 
-    private Object getHologramManager() throws Exception {
-        Object pluginOrHolograms = bindings.getPluginMethod.invoke(null);
-        if (bindings.fancyHologramsPluginClass != null) {
-            Method getHologramManager = bindings.fancyHologramsPluginClass.getMethod("getHologramManager");
-            return getHologramManager.invoke(pluginOrHolograms);
-        } else {
-            Method getHologramManager = bindings.fancyHologramsClass.getMethod("getHologramManager");
-            return getHologramManager.invoke(pluginOrHolograms);
+    private Object getManager() throws Exception {
+        Object plugin = bindings.getPluginMethod.invoke(null);
+        return bindings.getHologramManagerMethod.invoke(plugin);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Optional<Object> findHologram(Object manager, String id) {
+        try {
+            Object result = bindings.getHologramMethod.invoke(manager, id);
+            if (result instanceof Optional) {
+                return (Optional<Object>) result;
+            }
+            return Optional.ofNullable(result);
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            throw new IllegalStateException("Failed to get hologram " + id, e);
         }
     }
 
     Object resolveManager() {
         try {
-            return getHologramManager();
+            return getManager();
         } catch (Exception e) {
             return null;
         }
@@ -117,7 +139,7 @@ class FancyHologramsProvider implements HologramProvider {
     private void logFailureOnce(String id, String operation, Throwable t) {
         String key = "FancyHolograms:" + operation + ":" + t.getClass().getName() + ":" + t.getMessage();
         if (loggedFailureKeys.add(key)) {
-            logger.warning("FancyHolograms " + operation + " failed for " + id + ": " + t.getMessage());
+            logger.log(Level.WARNING, "FancyHolograms " + operation + " failed for " + id, t);
         }
     }
 }

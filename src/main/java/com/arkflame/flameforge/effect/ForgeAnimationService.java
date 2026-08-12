@@ -12,6 +12,7 @@ import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
@@ -20,10 +21,19 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.logging.Level;
 
 public final class ForgeAnimationService {
     private static final int MAX_TRACKED_TRANSACTIONS = 1000;
+    private static final double FORGING_CENTER_Y = 2.00;
+    private static final double ITEM_ORBIT_RADIUS = 0.18;
+    private static final double ITEM_BOB_HEIGHT = 0.08;
+    private static final double SPIRAL_RADIUS = 0.42;
+    private static final double SPIRAL_HALF_HEIGHT = 0.45;
+    private static final int SPIRAL_SAMPLES_PER_STRAND = 6;
+    private static final int ITEM_TRAIL_POINTS = 4;
     private static final String STEP_TYPE_PARTICLE = "particle";
     private static final String STEP_TYPE_SOUND = "sound";
     private static final String STEP_TYPE_TEXT = "text";
@@ -38,33 +48,43 @@ public final class ForgeAnimationService {
     private final SoundResolver sounds;
     private final TextBridge text;
     private final TextRenderer textRenderer;
+    private final ForgeItemVisualService itemVisuals;
 
     private final Map<String, AnimationHandle> handles = new ConcurrentHashMap<>();
     private final Map<String, TaskHandle> scheduledTasks = new ConcurrentHashMap<>();
 
     public ForgeAnimationService(JavaPlugin plugin, SchedulerBridge scheduler,
                                  ParticleBridge particles, SoundResolver sounds, TextBridge text,
-                                 TextRenderer textRenderer) {
+                                 TextRenderer textRenderer, ForgeItemVisualService itemVisuals) {
         this.plugin = plugin;
         this.scheduler = scheduler;
         this.particles = particles;
         this.sounds = sounds;
         this.text = text;
         this.textRenderer = textRenderer;
+        this.itemVisuals = itemVisuals;
     }
 
     public AnimationHandle playAnimation(String transactionId, Player owner, Location stationLocation,
-                                        ForgeAnimationProfile profile,
+                                        ItemStack visualItem, ForgeAnimationProfile profile,
                                         Consumer<String> completionCallback,
                                         Consumer<String> failureCallback) {
         if (transactionId == null || owner == null || profile == null) {
             throw new IllegalArgumentException("transactionId, owner, and profile must not be null");
         }
+        if (visualItem == null) {
+            throw new IllegalArgumentException("visualItem must not be null");
+        }
+
+        ItemStack visualItemClone = visualItem.clone();
 
         AnimationHandle handle = new AnimationHandle(transactionId);
         AnimationHandle existing = handles.put(transactionId, handle);
         if (existing != null) {
             existing.cancel();
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
         }
 
         boundEviction();
@@ -74,6 +94,9 @@ public final class ForgeAnimationService {
         if (durationTicks <= 0 || intervalTicks <= 0) {
             handle.fail();
             handles.remove(transactionId);
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
             safeInvokeCallback(failureCallback, transactionId);
             return handle;
         }
@@ -82,6 +105,9 @@ public final class ForgeAnimationService {
         if (tickSequence.isEmpty()) {
             handle.fail();
             handles.remove(transactionId);
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
             safeInvokeCallback(failureCallback, transactionId);
             return handle;
         }
@@ -91,7 +117,7 @@ public final class ForgeAnimationService {
 
         for (int tick : tickSequence) {
             final int tickSnapshot = tick;
-            TaskHandle taskHandle = scheduleTick(tickSnapshot, owner, stationLocation, profile, handle, transactionId);
+            TaskHandle taskHandle = scheduleTick(tickSnapshot, owner, stationLocation, visualItemClone, profile, handle, transactionId);
             if (taskHandle == null) {
                 admissionFailed = true;
                 break;
@@ -112,6 +138,9 @@ public final class ForgeAnimationService {
                 }
                 return false;
             });
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
             safeInvokeCallback(failureCallback, transactionId);
             return handle;
         }
@@ -132,6 +161,9 @@ public final class ForgeAnimationService {
             }
             handle.fail();
             handles.remove(transactionId);
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
             safeInvokeCallback(failureCallback, transactionId);
             return handle;
         }
@@ -153,11 +185,10 @@ public final class ForgeAnimationService {
     }
 
     private TaskHandle scheduleTick(int tick, Player owner, Location stationLocation,
-                                    ForgeAnimationProfile profile, AnimationHandle handle,
-                                    String transactionId) {
+                                    ItemStack visualItemClone, ForgeAnimationProfile profile,
+                                    AnimationHandle handle, String transactionId) {
         ForgeAnimationProfile.ChargeSound chargeSound = profile.getChargeSound();
         ForgeAnimationProfile.ChargeParticle chargeParticle = profile.getChargeParticle();
-        ForgeAnimationProfile.ImpactParticle impactParticle = profile.getImpactParticle();
 
         int durationTicks = profile.getDurationTicks();
         int intervalTicks = profile.getIntervalTicks();
@@ -166,32 +197,30 @@ public final class ForgeAnimationService {
         int totalSteps = tickSequence.size();
         float progress = totalSteps > 1 ? (float) stepIndex / (totalSteps - 1) : 0f;
 
-        if (chargeParticle != null && tick < durationTicks) {
-            TaskHandle task = scheduler.runRegionLater(stationLocation, () -> {
-                if (!handle.isTerminal()) {
-                    executeChargeParticleStep(owner, stationLocation, chargeParticle, progress);
-                }
-            }, tick);
-            if (task == null) return null;
-            scheduledTasks.put(transactionId + "_particle_" + tick, task);
-        }
-
-        if (impactParticle != null && tick == durationTicks) {
-            TaskHandle task = scheduler.runRegionLater(stationLocation, () -> {
-                if (!handle.isTerminal()) {
-                    executeImpactParticleStep(owner, stationLocation, impactParticle);
-                }
-            }, tick);
-            if (task == null) return null;
-            scheduledTasks.put(transactionId + "_impact_" + tick, task);
-        }
+        TaskHandle visualTask = scheduler.runEntityLater(owner, () -> {
+            if (handle.isTerminal()) {
+                return;
+            }
+            Location itemLoc = computeForgingItemLocation(stationLocation, progress);
+            executeForgingParticleStep(owner, stationLocation, chargeParticle, progress, itemLoc);
+            if (tick == durationTicks) {
+                executeFinalBurst(owner, stationLocation);
+            }
+            executeFakeItemStep(owner, itemLoc, visualItemClone, tick, transactionId);
+        }, () -> {
+            scheduledTasks.remove(transactionId + "_visual_" + tick);
+        }, tick);
+        if (visualTask == null) return null;
+        scheduledTasks.put(transactionId + "_visual_" + tick, visualTask);
 
         if (chargeSound != null) {
             float interpolatedPitch = interpolatePitch(chargeSound, progress);
-            TaskHandle task = scheduler.runRegionLater(stationLocation, () -> {
+            TaskHandle task = scheduler.runEntityLater(owner, () -> {
                 if (!handle.isTerminal()) {
                     executeChargeSoundStep(owner, chargeSound, interpolatedPitch);
                 }
+            }, () -> {
+                scheduledTasks.remove(transactionId + "_sound_" + tick);
             }, tick);
             if (task == null) return null;
             scheduledTasks.put(transactionId + "_sound_" + tick, task);
@@ -206,32 +235,101 @@ public final class ForgeAnimationService {
         return startPitch + (endPitch - startPitch) * progress;
     }
 
-    private void executeChargeParticleStep(Player owner, Location stationLocation,
+    private void executeForgingParticleStep(Player owner, Location stationLocation,
                                            ForgeAnimationProfile.ChargeParticle chargeParticle,
-                                           float progress) {
-        List<String> candidates = chargeParticle.getCandidates();
-        if (candidates == null || candidates.isEmpty()) {
-            particles.sendToPlayer(owner, "flame", stationLocation, 0.1f, 0.5f, 0.1f, 0.01f, 5);
-            return;
+                                           float progress, Location itemLoc) {
+        String particleKey;
+        if (chargeParticle != null && chargeParticle.getCandidates() != null && !chargeParticle.getCandidates().isEmpty()) {
+            particleKey = chargeParticle.getCandidates().get(0);
+        } else {
+            particleKey = "flame";
         }
-        String particleKey = candidates.get(0);
-        float radius = chargeParticle.getRadius().floatValue();
-        int count = chargeParticle.getCount();
-        float yOffset = progress * radius;
-        Location particleLoc = stationLocation.clone().add(0, yOffset, 0);
-        particles.sendToPlayer(owner, particleKey, particleLoc, 0.1f, 0.1f, 0.1f, 0.01f, count);
+        for (Location spiralPoint : computeSpiralPoints(stationLocation, progress)) {
+            sendParticleSafe(owner, particleKey, spiralPoint, 2);
+        }
+        for (Location trailPoint : computeTrailPoints(stationLocation, progress)) {
+            sendParticleSafe(owner, particleKey, trailPoint, 1);
+        }
+        for (Location connectorPoint : computeConnectorPoints(stationLocation, itemLoc)) {
+            sendParticleSafe(owner, particleKey, connectorPoint, 1);
+        }
     }
 
-    private void executeImpactParticleStep(Player owner, Location stationLocation,
-                                            ForgeAnimationProfile.ImpactParticle impactParticle) {
-        List<String> candidates = impactParticle.getCandidates();
-        if (candidates == null || candidates.isEmpty()) {
-            particles.sendToPlayer(owner, "flame", stationLocation, 0.3f, 0.3f, 0.3f, 0.05f, 20);
+    private void executeFinalBurst(Player owner, Location stationLocation) {
+        Location center = stationLocation.clone().add(0, FORGING_CENTER_Y, 0);
+        sendParticleSafe(owner, "crit", center, 4);
+        sendParticleSafe(owner, "flame", center, 8);
+    }
+
+    private void sendParticleSafe(Player owner, String particleKey, Location location, int count) {
+        if (particles == null) {
             return;
         }
-        String particleKey = candidates.get(0);
-        int count = impactParticle.getCount();
-        particles.sendToPlayer(owner, particleKey, stationLocation, 0.3f, 0.3f, 0.3f, 0.05f, count);
+        try {
+            particles.sendToPlayer(owner, particleKey, location,
+                0.03f, 0.03f, 0.03f, 0.02f, count);
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().log(Level.WARNING,
+                "Forge particle failed for owner " + owner.getUniqueId(), e);
+        }
+    }
+
+    private void executeFakeItemStep(Player owner, Location itemLoc, ItemStack item,
+                                     int tick, String transactionId) {
+        if (itemVisuals == null) {
+            return;
+        }
+        try {
+            if (tick == 0) {
+                if (itemVisuals.spawn(transactionId, owner, item, itemLoc)) {
+                    scheduleMetadataRefresh(owner, transactionId);
+                }
+            } else {
+                itemVisuals.move(transactionId, itemLoc);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().log(Level.WARNING,
+                "Forge item visual failed for transaction " + transactionId, e);
+            try {
+                itemVisuals.destroy(transactionId);
+            } catch (RuntimeException | LinkageError destroyFailure) {
+                plugin.getLogger().log(Level.WARNING,
+                    "Forge item visual cleanup failed for transaction " + transactionId, destroyFailure);
+            }
+        }
+    }
+
+    private void scheduleMetadataRefresh(Player owner, String transactionId) {
+        final String taskKey = transactionId + "_metadata";
+        final AtomicBoolean callbackRan = new AtomicBoolean(false);
+        try {
+            TaskHandle task = scheduler.runEntityLater(owner, () -> {
+                try {
+                    itemVisuals.refreshMetadata(transactionId);
+                } catch (RuntimeException | LinkageError e) {
+                    plugin.getLogger().log(Level.WARNING,
+                        "Forge item metadata refresh failed for transaction " + transactionId, e);
+                    try {
+                        itemVisuals.destroy(transactionId);
+                    } catch (RuntimeException | LinkageError destroyFailure) {
+                        plugin.getLogger().log(Level.WARNING,
+                            "Forge item metadata cleanup failed for transaction " + transactionId, destroyFailure);
+                    }
+                } finally {
+                    callbackRan.set(true);
+                    scheduledTasks.remove(taskKey);
+                }
+            }, () -> {
+                callbackRan.set(true);
+                scheduledTasks.remove(taskKey);
+            }, 1);
+            if (task != null && !callbackRan.get()) {
+                scheduledTasks.put(taskKey, task);
+            }
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().log(Level.WARNING,
+                "Forge item metadata refresh scheduling failed for transaction " + transactionId, e);
+        }
     }
 
     private void executeChargeSoundStep(Player owner, ForgeAnimationProfile.ChargeSound chargeSound,
@@ -252,6 +350,9 @@ public final class ForgeAnimationService {
 
         if (handle.cancel()) {
             cancelAllTasks(transactionId);
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
             if (completeNow) {
                 cleanupAfterCompletion(transactionId, null);
                 safeInvokeCallback(completionCallback, transactionId);
@@ -333,7 +434,8 @@ public final class ForgeAnimationService {
             try {
                 callback.accept(transactionId);
             } catch (Exception e) {
-                // no-op: callback failure must not propagate
+                plugin.getLogger().log(Level.SEVERE,
+                    "Forge animation callback failed for transaction " + transactionId, e);
             }
         }
     }
@@ -360,6 +462,9 @@ public final class ForgeAnimationService {
             }
         }
         cancelAllTasks(transactionId);
+        if (itemVisuals != null) {
+            itemVisuals.destroy(transactionId);
+        }
     }
 
     private void boundEviction() {
@@ -375,6 +480,86 @@ public final class ForgeAnimationService {
                     removed++;
                 }
             }
+        }
+    }
+
+    static Location computeForgingItemLocation(Location station, float progress) {
+        double baseX = station.getX();
+        double baseY = station.getY();
+        double baseZ = station.getZ();
+        double p = progress;
+        double itemAngle = 4 * Math.PI * p;
+        return new Location(station.getWorld(),
+            baseX + Math.cos(itemAngle) * ITEM_ORBIT_RADIUS,
+            baseY + FORGING_CENTER_Y + Math.sin(itemAngle) * ITEM_BOB_HEIGHT,
+            baseZ + Math.sin(itemAngle) * ITEM_ORBIT_RADIUS,
+            (float) (720 * p), 0f);
+    }
+
+    static List<Location> computeSpiralPoints(Location station, float progress) {
+        List<Location> points = new ArrayList<>(2 * SPIRAL_SAMPLES_PER_STRAND);
+        double centerY = station.getY() + FORGING_CENTER_Y;
+        double animationAngle = 4 * Math.PI * progress;
+        for (int strand = 0; strand < 2; strand++) {
+            for (int sample = 0; sample < SPIRAL_SAMPLES_PER_STRAND; sample++) {
+                double sampleProgress = (double) sample / (SPIRAL_SAMPLES_PER_STRAND - 1);
+                double angle = animationAngle + 2 * Math.PI * sampleProgress + strand * Math.PI;
+                double y = centerY - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT * sampleProgress;
+                points.add(new Location(station.getWorld(),
+                    station.getX() + Math.cos(angle) * SPIRAL_RADIUS,
+                    y,
+                    station.getZ() + Math.sin(angle) * SPIRAL_RADIUS));
+            }
+        }
+        return Collections.unmodifiableList(points);
+    }
+
+    static List<Location> computeTrailPoints(Location station, float progress) {
+        Location item = computeForgingItemLocation(station, progress);
+        double angle = 4 * Math.PI * progress;
+        List<Location> points = new ArrayList<>(ITEM_TRAIL_POINTS);
+        for (int index = 1; index <= ITEM_TRAIL_POINTS; index++) {
+            double distance = 0.08 * index;
+            double descent = Math.min(0.12, distance * 0.25);
+            double horizontalDistance = Math.sqrt(distance * distance - descent * descent);
+            points.add(new Location(station.getWorld(),
+                item.getX() + Math.sin(angle) * horizontalDistance,
+                item.getY() - descent,
+                item.getZ() - Math.cos(angle) * horizontalDistance));
+        }
+        return Collections.unmodifiableList(points);
+    }
+
+    private static List<Location> computeConnectorPoints(Location station, Location item) {
+        List<Location> points = new ArrayList<>(3);
+        Location start = station.clone().add(0, 1.10, 0);
+        for (int index = 1; index <= 3; index++) {
+            double progress = index / 4.0;
+            points.add(new Location(station.getWorld(),
+                start.getX() + (item.getX() - start.getX()) * progress,
+                start.getY() + (item.getY() - start.getY()) * progress,
+                start.getZ() + (item.getZ() - start.getZ()) * progress));
+        }
+        return points;
+    }
+
+    public void shutdown() {
+        List<Map.Entry<String, AnimationHandle>> handleSnapshot = new ArrayList<>(handles.entrySet());
+        for (Map.Entry<String, AnimationHandle> entry : handleSnapshot) {
+            AnimationHandle handle = entry.getValue();
+            if (handle != null && !handle.isTerminal()) {
+                handle.cancel();
+            }
+        }
+        for (TaskHandle task : scheduledTasks.values()) {
+            if (task != null) {
+                task.cancel();
+            }
+        }
+        scheduledTasks.clear();
+        handles.clear();
+        if (itemVisuals != null) {
+            itemVisuals.destroyAll();
         }
     }
 

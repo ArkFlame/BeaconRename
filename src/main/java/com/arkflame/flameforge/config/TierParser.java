@@ -390,9 +390,12 @@ public class TierParser {
         boolean resetAttributes = breakPolicy.getBoolean("reset-attributes", true);
         boolean resetPowers = breakPolicy.getBoolean("reset-powers", true);
         boolean resetCustomModelData = breakPolicy.getBoolean("reset-custom-model-data", true);
+        boolean destroyItem = breakPolicy.getBoolean("destroy-item", false);
+        String resultDisplayName = breakPolicy.getString("result-display-name", null);
+        List<String> resultLore = breakPolicy.getStringList("result-lore", Collections.emptyList());
 
         return new BreakPolicy(resetTier, targetTier, resetEnchantments, resetDisplayName, resetLore,
-            resetAttributes, resetPowers, resetCustomModelData, false);
+            resetAttributes, resetPowers, resetCustomModelData, destroyItem, resultDisplayName, resultLore);
     }
 
     private CurseDefinition parseCurse(YamlValues curse) {
@@ -721,21 +724,8 @@ public class TierParser {
                     "Invalid hit-interval for power '" + powerId + "'");
                 continue;
             }
-            BigDecimal chance = BigDecimal.ONE;
-            Object chanceObj = map.get("chance");
-            if (chanceObj instanceof Number) {
-                chance = BigDecimal.valueOf(((Number) chanceObj).doubleValue());
-            } else if (chanceObj instanceof String) {
-                try {
-                    chance = new BigDecimal((String) chanceObj);
-                } catch (NumberFormatException e) {
-                    report.addError(section.getCurrentPath(), "chance",
-                        "Invalid chance decimal for power '" + powerId + "': " + chanceObj);
-                    continue;
-                }
-            } else if (chanceObj != null) {
-                report.addError(section.getCurrentPath(), "chance",
-                    "Invalid chance for power '" + powerId + "'");
+            BigDecimal chance = parsePowerDecimal(map, section, "chance", BigDecimal.ONE, BigDecimal.ZERO, BigDecimal.ONE, powerId);
+            if (chance == null) {
                 continue;
             }
             List<String> effectCandidates = new ArrayList<>();
@@ -811,6 +801,35 @@ public class TierParser {
                     "Invalid vertical-strength for power '" + powerId + "'");
                 continue;
             }
+            List<String> particleCandidates = new ArrayList<>();
+            Object particleObj = map.get("particle-candidates");
+            if (particleObj instanceof List) {
+                for (Object o : (List<?>) particleObj) {
+                    particleCandidates.add(String.valueOf(o));
+                }
+            } else if (particleObj != null) {
+                report.addError(section.getCurrentPath(), "particle-candidates",
+                    "Invalid particle-candidates for power '" + powerId + "'");
+                continue;
+            }
+            BigDecimal radius = parsePowerDecimal(map, section, "radius", BigDecimal.ZERO,
+                BigDecimal.ZERO, new BigDecimal("16"), powerId);
+            BigDecimal damageAmount = parsePowerDecimal(map, section, "damage-amount", BigDecimal.ZERO,
+                BigDecimal.ZERO, new BigDecimal("40"), powerId);
+            Integer pulseCount = parsePowerInt(map, section, "pulse-count", 1, 1, 20, powerId);
+            Integer pulseIntervalTicks = parsePowerInt(map, section, "pulse-interval-ticks", 10, 1, 200, powerId);
+            Integer maxTargets = parsePowerInt(map, section, "max-targets", 1, 1, 16, powerId);
+            Integer chainDelayTicks = parsePowerInt(map, section, "chain-delay-ticks", 0, 0, 40, powerId);
+            Integer trailPoints = parsePowerInt(map, section, "trail-points", 8, 2, 32, powerId);
+            BigDecimal primaryKnockbackMultiplier = parsePowerDecimal(map, section,
+                "primary-knockback-multiplier", BigDecimal.ONE, BigDecimal.ONE, new BigDecimal("4"), powerId);
+            BigDecimal secondaryDamageMultiplier = parsePowerDecimal(map, section,
+                "secondary-damage-multiplier", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ONE, powerId);
+            if (radius == null || damageAmount == null || pulseCount == null || pulseIntervalTicks == null
+                || maxTargets == null || chainDelayTicks == null || trailPoints == null
+                || primaryKnockbackMultiplier == null || secondaryDamageMultiplier == null) {
+                continue;
+            }
             List<ForgePowerDefinition.ActivationSlot> activationSlots = new ArrayList<>();
             Object slotObj = map.get("activation-slots");
             if (slotObj instanceof List) {
@@ -841,9 +860,61 @@ public class TierParser {
             }
             result.add(new ForgePowerDefinition(powerId, type, cooldownTicks, hitInterval, chance,
                 effectCandidates, durationTicks, amplifier, fireTicks, healAmount,
-                horizontalStrength, verticalStrength, activationSlots));
+                horizontalStrength, verticalStrength, activationSlots, particleCandidates, radius,
+                damageAmount, pulseCount, pulseIntervalTicks, maxTargets, chainDelayTicks, trailPoints,
+                primaryKnockbackMultiplier, secondaryDamageMultiplier));
         }
         return result;
+    }
+
+    private BigDecimal parsePowerDecimal(Map<?, ?> map, ConfigurationSection section, String key,
+                                         BigDecimal defaultValue, BigDecimal min, BigDecimal max,
+                                         String powerId) {
+        Object raw = map.get(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        BigDecimal value;
+        try {
+            if (raw instanceof Number) {
+                value = new BigDecimal(raw.toString());
+            } else if (raw instanceof String) {
+                value = new BigDecimal((String) raw);
+            } else {
+                throw new NumberFormatException("not decimal");
+            }
+        } catch (NumberFormatException e) {
+            report.addError(section.getCurrentPath(), key,
+                "Invalid " + key + " decimal for power '" + powerId + "': " + raw);
+            return null;
+        }
+        if (value.compareTo(min) < 0 || value.compareTo(max) > 0) {
+            report.addError(section.getCurrentPath(), key,
+                key + " must be between " + min + " and " + max + " for power '" + powerId + "', got " + value);
+            return null;
+        }
+        return value;
+    }
+
+    private Integer parsePowerInt(Map<?, ?> map, ConfigurationSection section, String key,
+                                  int defaultValue, int min, int max, String powerId) {
+        Object raw = map.get(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        if (!(raw instanceof Number) || raw instanceof Float || raw instanceof Double
+            && ((Double) raw).doubleValue() % 1 != 0) {
+            report.addError(section.getCurrentPath(), key,
+                "Invalid " + key + " for power '" + powerId + "': " + raw);
+            return null;
+        }
+        int value = ((Number) raw).intValue();
+        if (value < min || value > max) {
+            report.addError(section.getCurrentPath(), key,
+                key + " must be between " + min + " and " + max + " for power '" + powerId + "', got " + value);
+            return null;
+        }
+        return value;
     }
 
     private BigDecimal parseDecimal(YamlValues values, String path, BigDecimal def) {

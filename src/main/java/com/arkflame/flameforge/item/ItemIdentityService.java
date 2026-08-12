@@ -6,12 +6,15 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.UUID;
 
 public final class ItemIdentityService {
@@ -22,7 +25,12 @@ public final class ItemIdentityService {
     private static final String KEY_LAST_TIER = "last_tier";
     private static final String KEY_LAST_OUTCOME = "last_outcome";
     private static final String KEY_FORGE_ID = "forge_id";
-    private static final String MODERN_KEY = "flameforge:state";
+    private static final String KEY_SHORT_ID = "short_id";
+    private static final String MODERN_NAMESPACE = "flameforge";
+    private static final String MODERN_KEY = "state";
+    private static final String HIDDEN_MARKER = "\u00A70\u00A71";
+    private static final String VISIBLE_SHORT_ID_PREFIX = "Forge ID: #";
+    private static final Pattern SHORT_ID_PATTERN = Pattern.compile("[A-HJ-NP-Z2-9]{8}");
 
     private volatile Boolean modernPdcAvailable;
     private Method getPdcMethod;
@@ -41,8 +49,14 @@ public final class ItemIdentityService {
     private Object stringType;
 
     private final ItemIdentityCodec codec = new ItemIdentityCodec();
+    private final ShortForgeIdRegistry shortForgeIdRegistry;
 
     private ItemIdentityService() {
+        this(new ShortForgeIdRegistry());
+    }
+
+    ItemIdentityService(final ShortForgeIdRegistry shortForgeIdRegistry) {
+        this.shortForgeIdRegistry = Objects.requireNonNull(shortForgeIdRegistry, "shortForgeIdRegistry");
         initReflection();
     }
 
@@ -310,11 +324,22 @@ public final class ItemIdentityService {
         if (Boolean.TRUE.equals(modernPdcAvailable)) {
             ItemIdentityCodec.Decoded decoded = readModernForgeIdentity(item);
             if (decoded != null && decoded.isValid()) {
+                observeShortId(item, decoded.getIdentity());
                 return new ForgeIdentityRead(ForgeIdentityStatus.VALID, decoded.getIdentity());
             }
             if (decoded != null && decoded.getResult() == ItemIdentityCodec.DecodeResult.INVALID_IDENTITY) {
                 return new ForgeIdentityRead(ForgeIdentityStatus.INVALID, ItemIdentityCodec.Identity.empty());
             }
+        }
+
+        Optional<String> hiddenPayload = readHiddenLegacyPayload(item);
+        if (hiddenPayload.isPresent()) {
+            ItemIdentityCodec.Decoded decoded = codec.decodeFromString(hiddenPayload.get());
+            if (decoded.isValid()) {
+                observeShortId(item, decoded.getIdentity());
+                return new ForgeIdentityRead(ForgeIdentityStatus.VALID, decoded.getIdentity());
+            }
+            return new ForgeIdentityRead(ForgeIdentityStatus.INVALID, ItemIdentityCodec.Identity.empty());
         }
 
         String legacyMarker = codec.getLegacyMarker();
@@ -323,6 +348,7 @@ public final class ItemIdentityService {
             if (payload != null) {
                 ItemIdentityCodec.Decoded decoded = codec.decodeFromString(payload);
                 if (decoded.isValid()) {
+                    observeShortId(item, decoded.getIdentity());
                     return new ForgeIdentityRead(ForgeIdentityStatus.VALID, decoded.getIdentity());
                 }
                 return new ForgeIdentityRead(ForgeIdentityStatus.INVALID, ItemIdentityCodec.Identity.empty());
@@ -346,6 +372,7 @@ public final class ItemIdentityService {
                         .withForgeId(old.getForgeId())
                         .withBaseMaterial(item.getType().name())
                         .withBaseDisplayName(defaultBaseDisplayName(item.getType()));
+                observeShortId(item, identity);
                 return new ForgeIdentityRead(ForgeIdentityStatus.VALID, identity);
             default:
                 return new ForgeIdentityRead(ForgeIdentityStatus.NONE, ItemIdentityCodec.Identity.empty());
@@ -369,9 +396,9 @@ public final class ItemIdentityService {
     }
 
     private OldReadResult readOldIdentity(final ItemStack item) {
-        OldReadResult pdcResult = readOldIdentityFromPdc(item);
-        if (pdcResult.status != OldReadStatus.ABSENT) {
-            return pdcResult;
+        if (Boolean.TRUE.equals(modernPdcAvailable)) {
+            final OldReadResult pdcResult = readOldIdentityFromPdc(item);
+            if (pdcResult.status != OldReadStatus.ABSENT) return pdcResult;
         }
         return readOldIdentityFromLore(item);
     }
@@ -473,7 +500,7 @@ public final class ItemIdentityService {
             if (pdc == null) {
                 return null;
             }
-            final Object key = namespacedKeyClass.getConstructor(String.class, String.class).newInstance("flameforge", MODERN_KEY);
+            final Object key = namespacedKeyClass.getConstructor(String.class, String.class).newInstance(MODERN_NAMESPACE, MODERN_KEY);
             final boolean hasKey = (Boolean) pdcHasMethod.invoke(pdc, key, stringType);
             if (!hasKey) {
                 return null;
@@ -533,23 +560,26 @@ public final class ItemIdentityService {
             return Optional.empty();
         }
         final ItemStack clone = item.clone();
+        final Optional<String> existingShortId = Boolean.TRUE.equals(modernPdcAvailable)
+                ? readPdcShortId(clone) : readVisibleShortId(clone);
+        final String shortId = existingShortId.filter(value -> shortForgeIdRegistry.claimExisting(identity.getForgeId(), value))
+                .orElseGet(() -> shortForgeIdRegistry.claimOrGenerate(identity.getForgeId()));
 
         if (Boolean.TRUE.equals(modernPdcAvailable)) {
-            if (!writeModernForgeIdentity(clone, identity)) {
+            if (!writeModernForgeIdentity(clone, identity, shortId)) {
                 return Optional.empty();
             }
         }
 
-        if (!writeLegacyV2Marker(clone, identity)) {
+        if (!writeIdentityLore(clone, identity, shortId)) {
             return Optional.empty();
         }
-
-        removeOldFlameForgeIdentityLines(clone);
 
         return Optional.of(clone);
     }
 
-    private boolean writeModernForgeIdentity(final ItemStack item, final ItemIdentityCodec.Identity identity) {
+    private boolean writeModernForgeIdentity(final ItemStack item, final ItemIdentityCodec.Identity identity,
+                                             final String shortId) {
         try {
             final ItemMeta meta = item.getItemMeta();
             if (meta == null) {
@@ -559,9 +589,13 @@ public final class ItemIdentityService {
             if (pdc == null) {
                 return false;
             }
-            final Object key = namespacedKeyClass.getConstructor(String.class, String.class).newInstance("flameforge", MODERN_KEY);
+            final Object key = namespacedKeyClass.getConstructor(String.class, String.class).newInstance(MODERN_NAMESPACE, MODERN_KEY);
             final String payload = codec.encodeToString(identity);
             pdcSetMethod.invoke(pdc, key, stringType, payload);
+            final Object shortIdKey = namespacedKeyClass.getConstructor(String.class, String.class)
+                    .newInstance(MODERN_NAMESPACE, KEY_SHORT_ID);
+            pdcSetMethod.invoke(pdc, shortIdKey, stringType, shortId);
+            removeOldIdentityPdcValues(pdc);
             item.setItemMeta(meta);
             return true;
         } catch (Exception e) {
@@ -569,7 +603,21 @@ public final class ItemIdentityService {
         }
     }
 
-    private boolean writeLegacyV2Marker(final ItemStack item, final ItemIdentityCodec.Identity identity) {
+    private void removeOldIdentityPdcValues(final Object pdc) throws Exception {
+        final String[] integerKeys = {KEY_REFORGE_COUNT, KEY_HIGHEST_TIER};
+        for (final String keyComponent : integerKeys) {
+            pdcRemoveMethod.invoke(pdc, namespacedKeyClass.getConstructor(String.class, String.class)
+                    .newInstance(MODERN_NAMESPACE, keyComponent));
+        }
+        final String[] stringKeys = {KEY_LAST_TIER, KEY_LAST_OUTCOME, KEY_FORGE_ID};
+        for (final String keyComponent : stringKeys) {
+            pdcRemoveMethod.invoke(pdc, namespacedKeyClass.getConstructor(String.class, String.class)
+                    .newInstance(MODERN_NAMESPACE, keyComponent));
+        }
+    }
+
+    private boolean writeIdentityLore(final ItemStack item, final ItemIdentityCodec.Identity identity,
+                                      final String shortId) {
         if (item == null || !item.hasItemMeta()) {
             return false;
         }
@@ -585,12 +633,16 @@ public final class ItemIdentityService {
         } else {
             lore = new ArrayList<>(lore);
         }
-        final String marker = codec.getLegacyMarker();
-        final String payload = codec.encodeToString(identity);
-        final String markerLine = marker + payload;
-        replaceOrAppendLegacyV2Marker(lore, markerLine);
+        List<String> filtered = new ArrayList<>();
+        for (final String line : lore) {
+            if (!isIdentityLoreLine(line)) {
+                filtered.add(line);
+            }
+        }
+        filtered.add(encodeHiddenLegacyPayload(codec.encodeToString(identity)));
+        filtered.add(buildIdentityLoreLine(shortId));
         try {
-            meta.setLore(lore);
+            meta.setLore(filtered);
             item.setItemMeta(meta);
         } catch (Exception e) {
             return false;
@@ -598,50 +650,131 @@ public final class ItemIdentityService {
         return true;
     }
 
-    private void replaceOrAppendLegacyV2Marker(final List<String> lore, final String markerLine) {
-        final String marker = codec.getLegacyMarker();
-        boolean found = false;
-        for (int i = 0; i < lore.size(); i++) {
-            final String line = lore.get(i);
-            if (line != null && line.startsWith(marker)) {
-                lore.set(i, markerLine);
-                found = true;
-                break;
+    String encodeHiddenLegacyPayload(final String payload) {
+        if (payload == null) {
+            return "";
+        }
+        final byte[] bytes = payload.getBytes(StandardCharsets.US_ASCII);
+        StringBuilder encoded = new StringBuilder(HIDDEN_MARKER.length() + bytes.length * 4 + 2);
+        encoded.append(HIDDEN_MARKER);
+        for (final byte value : bytes) {
+            int unsigned = value & 0xFF;
+            encoded.append('\u00A7').append(Character.forDigit(unsigned >>> 4, 16));
+            encoded.append('\u00A7').append(Character.forDigit(unsigned & 0x0F, 16));
+        }
+        return encoded.append('\u00A7').append('r').toString();
+    }
+
+    Optional<String> decodeHiddenLegacyPayload(final String line) {
+        if (line == null || !line.startsWith(HIDDEN_MARKER) || !line.endsWith("\u00A7r")) {
+            return Optional.empty();
+        }
+        final String encoded = line.substring(HIDDEN_MARKER.length(), line.length() - 2);
+        if (encoded.length() % 4 != 0) {
+            return Optional.empty();
+        }
+        byte[] decoded = new byte[encoded.length() / 4];
+        for (int i = 0; i < encoded.length(); i += 4) {
+            if (encoded.charAt(i) != '\u00A7' || encoded.charAt(i + 2) != '\u00A7') {
+                return Optional.empty();
+            }
+            int high = Character.digit(encoded.charAt(i + 1), 16);
+            int low = Character.digit(encoded.charAt(i + 3), 16);
+            if (high < 0 || low < 0) {
+                return Optional.empty();
+            }
+            decoded[i / 4] = (byte) ((high << 4) | low);
+        }
+        return Optional.of(new String(decoded, StandardCharsets.US_ASCII));
+    }
+
+    Optional<String> readVisibleShortId(final ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return Optional.empty();
+        }
+        final ItemMeta meta = item.getItemMeta();
+        if (meta == null || !meta.hasLore() || meta.getLore() == null) {
+            return Optional.empty();
+        }
+        for (final String line : meta.getLore()) {
+            if (line != null && line.startsWith(VISIBLE_SHORT_ID_PREFIX)) {
+                String value = line.substring(VISIBLE_SHORT_ID_PREFIX.length());
+                if (SHORT_ID_PATTERN.matcher(value).matches()) {
+                    return Optional.of(value);
+                }
             }
         }
-        if (!found) {
-            lore.add(markerLine);
+        return Optional.empty();
+    }
+
+    String buildIdentityLoreLine(final String shortId) {
+        if (shortId == null || !SHORT_ID_PATTERN.matcher(shortId).matches()) {
+            throw new IllegalArgumentException("shortId");
+        }
+        return VISIBLE_SHORT_ID_PREFIX + shortId;
+    }
+
+    private Optional<String> readHiddenLegacyPayload(final ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return Optional.empty();
+        }
+        final ItemMeta meta = item.getItemMeta();
+        if (meta == null || !meta.hasLore() || meta.getLore() == null) {
+            return Optional.empty();
+        }
+        for (final String line : meta.getLore()) {
+            Optional<String> payload = decodeHiddenLegacyPayload(line);
+            if (payload.isPresent()) {
+                return payload;
+            }
+            if (line != null && line.startsWith(HIDDEN_MARKER)) {
+                return Optional.of("");
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<String> readPdcShortId(final ItemStack item) {
+        try {
+            final ItemMeta meta = item.getItemMeta();
+            if (meta == null) {
+                return Optional.empty();
+            }
+            final Object pdc = getPdcMethod.invoke(meta);
+            if (pdc == null) {
+                return Optional.empty();
+            }
+            final Object key = namespacedKeyClass.getConstructor(String.class, String.class)
+                    .newInstance(MODERN_NAMESPACE, KEY_SHORT_ID);
+            if (!(Boolean) pdcHasMethod.invoke(pdc, key, stringType)) {
+                return Optional.empty();
+            }
+            final Object value = pdcGetMethod.invoke(pdc, key, stringType);
+            if (value instanceof String && SHORT_ID_PATTERN.matcher((String) value).matches()) {
+                return Optional.of((String) value);
+            }
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    private void observeShortId(final ItemStack item, final ItemIdentityCodec.Identity identity) {
+        Optional<String> shortId = Boolean.TRUE.equals(modernPdcAvailable)
+                ? readPdcShortId(item) : readVisibleShortId(item);
+        if (Boolean.TRUE.equals(modernPdcAvailable) && !shortId.isPresent()) {
+            shortId = readVisibleShortId(item);
+        }
+        if (shortId.isPresent()) {
+            shortForgeIdRegistry.claimExisting(identity.getForgeId(), shortId.get());
         }
     }
 
-    private void removeOldFlameForgeIdentityLines(final ItemStack item) {
-        if (item == null || !item.hasItemMeta()) {
-            return;
-        }
-        final ItemMeta meta = item.getItemMeta();
-        List<String> lore;
-        try {
-            lore = meta.getLore();
-        } catch (Exception e) {
-            return;
-        }
-        if (lore == null) {
-            return;
-        }
-        List<String> filtered = new ArrayList<>();
-        final String legacyMarker = LEGACY_PREFIX;
-        final String v2Marker = codec.getLegacyMarker();
-        for (final String line : lore) {
-            if (line != null && line.startsWith(legacyMarker) && !line.startsWith(v2Marker)) {
-                continue;
-            }
-            filtered.add(line);
-        }
-        try {
-            meta.setLore(filtered);
-            item.setItemMeta(meta);
-        } catch (Exception e) {
-        }
+    private boolean isIdentityLoreLine(final String line) {
+        return line != null && (line.startsWith(LEGACY_PREFIX)
+                || line.startsWith(codec.getLegacyMarker())
+                || line.startsWith(HIDDEN_MARKER)
+                || line.startsWith(VISIBLE_SHORT_ID_PREFIX));
     }
 
     public boolean hasForgeIdentityMarker(final ItemStack item) {
@@ -657,7 +790,7 @@ public final class ItemIdentityService {
                 }
                 final Object pdc = getPdcMethod.invoke(meta);
                 if (pdc != null) {
-                    final Object key = namespacedKeyClass.getConstructor(String.class, String.class).newInstance("flameforge", MODERN_KEY);
+                    final Object key = namespacedKeyClass.getConstructor(String.class, String.class).newInstance(MODERN_NAMESPACE, MODERN_KEY);
                     final boolean hasKey = (Boolean) pdcHasMethod.invoke(pdc, key, stringType);
                     if (hasKey) {
                         return true;
@@ -667,7 +800,20 @@ public final class ItemIdentityService {
             }
         }
 
-        return hasLegacyV2Marker(item, codec.getLegacyMarker());
+        if (hasLegacyV2Marker(item, codec.getLegacyMarker())) {
+            return true;
+        }
+        if (item.hasItemMeta()) {
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null && meta.hasLore() && meta.getLore() != null) {
+                for (String line : meta.getLore()) {
+                    if (isIdentityLoreLine(line)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     public ItemIdentityCodec getCodec() {

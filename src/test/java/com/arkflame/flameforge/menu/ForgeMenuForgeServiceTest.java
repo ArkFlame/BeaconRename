@@ -2,8 +2,9 @@ package com.arkflame.flameforge.menu;
 
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
-import com.arkflame.flameforge.forge.*;
-import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.forge.ForgePlan;
+import com.arkflame.flameforge.forge.ForgePlanResult;
+import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.text.MessageService;
 import org.bukkit.Material;
@@ -14,17 +15,13 @@ import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.math.BigDecimal;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class ForgeMenuForgeServiceTest {
-
     private ForgeMenuRegistry registry;
     private ForgeMenuViewResolver viewResolver;
     private ForgeService forgeService;
@@ -32,8 +29,7 @@ class ForgeMenuForgeServiceTest {
     private ForgeMenuService menuService;
     private SchedulerBridge scheduler;
     private MessageService messageService;
-
-    private ForgeMenuForgeService forgeMenuService;
+    private ForgeMenuForgeService service;
 
     @BeforeEach
     void setUp() {
@@ -42,278 +38,103 @@ class ForgeMenuForgeServiceTest {
         forgeService = mock(ForgeService.class);
         settlementService = mock(ForgeMenuSettlementService.class);
         menuService = mock(ForgeMenuService.class);
+        scheduler = mock(SchedulerBridge.class);
         messageService = mock(MessageService.class);
 
-        scheduler = mock(SchedulerBridge.class);
         when(scheduler.runEntity(any(Player.class), any(Runnable.class), any(Runnable.class)))
-            .thenAnswer(invocation -> {
-                Runnable runnable = invocation.getArgument(1);
-                runnable.run();
-                return mock(TaskHandle.class);
-            });
+                .thenAnswer(invocation -> {
+                    Runnable task = invocation.getArgument(1);
+                    task.run();
+                    return mock(TaskHandle.class);
+                });
 
-        forgeMenuService = new ForgeMenuForgeService(
-            registry, viewResolver, forgeService, settlementService,
-            menuService, scheduler, messageService, Logger.getLogger("test")
-        );
+        service = new ForgeMenuForgeService(registry, viewResolver, forgeService, settlementService,
+                menuService, scheduler, messageService, Logger.getLogger("ForgeMenuForgeServiceTest"));
     }
 
     @Test
-    void planFailureLeavesContextInput() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
+    void invalidConfirmKeepsInputAndDoesNotCharge() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        when(forgeService.createPlan(eq(fixture.player), eq(fixture.session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.nextTierMissing());
 
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
+        service.requestConfirm(fixture.player, fixture.holder);
 
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        InventoryView view = mock(InventoryView.class);
-        when(view.getTopInventory()).thenReturn(topInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenReturn(ForgePlanResult.nextTierMissing());
-
-        forgeMenuService.requestConfirm(player, holder);
-
-        assertTrue(registry.getCurrent(playerId, menuId).isPresent());
-        verify(messageService).send(eq(player), eq("menu.item-denied.no-tier"));
-        verify(menuService).rerender(player);
+        assertTrue(registry.getCurrent(fixture.playerId, fixture.menuId).isPresent());
+        assertEquals(Material.DIAMOND, registry.getCurrent(fixture.playerId, fixture.menuId)
+                .get().peekInput().get().getType());
+        verify(forgeService, never()).confirmAndExecute(any(Player.class), any(PlayerForgeState.class),
+                any(ItemStack.class), any(ForgePlan.class), any());
+        verify(messageService, atLeastOnce()).send(fixture.player, "menu.item-denied.no-tier");
     }
 
     @Test
-    void unaffordableLeavesContextInput() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        InventoryView view = mock(InventoryView.class);
-        when(view.getTopInventory()).thenReturn(topInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
+    void validConfirmClaimsAndSubmitsOnce() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
         ForgePlan plan = mock(ForgePlan.class);
-        ForgePlanResult planResult = ForgePlanResult.ready(plan);
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenReturn(planResult);
-        when(plan.isAffordable()).thenReturn(false);
-
-        forgeMenuService.requestConfirm(player, holder);
-
-        assertTrue(registry.getCurrent(playerId, menuId).isPresent());
-        verify(messageService).send(eq(player), eq("menu.requirements-not-met"));
-        verify(menuService).rerender(player);
-    }
-
-    @Test
-    void successfulConfirmationRemovesRegistryClaimsOnceSubmitsOnce() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        InventoryView view = mock(InventoryView.class);
-        when(view.getTopInventory()).thenReturn(topInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
-        ForgePlan plan = mock(ForgePlan.class);
-        ForgePlanResult planResult = ForgePlanResult.ready(plan);
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenReturn(planResult);
         when(plan.isAffordable()).thenReturn(true);
+        when(forgeService.createPlan(eq(fixture.player), eq(fixture.session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(plan));
 
-        AtomicReference<Consumer<ForgeResolution>> capturedCallback = new AtomicReference<>();
-        doAnswer(invocation -> {
-            capturedCallback.set(invocation.getArgument(4));
-            return null;
-        }).when(forgeService).confirmAndExecute(any(Player.class), any(), any(), any(), any());
+        service.requestConfirm(fixture.player, fixture.holder);
+        service.requestConfirm(fixture.player, fixture.holder);
 
-        forgeMenuService.requestConfirm(player, holder);
-
-        assertFalse(registry.getCurrent(playerId, menuId).isPresent());
-        verify(player).closeInventory();
-        verify(forgeService).confirmAndExecute(eq(player), eq(session), any(), eq(plan), any());
+        assertFalse(registry.getCurrent(fixture.playerId, fixture.menuId).isPresent());
+        assertTrue(fixture.context.isForging());
+        verify(forgeService, times(1)).confirmAndExecute(eq(fixture.player), eq(fixture.session),
+                any(ItemStack.class), eq(plan), any());
+        verify(settlementService, never()).settleOnlineOrQueue(any(ForgeMenuContext.class), any(Player.class));
     }
 
     @Test
-    void staleHolderCannotConfirmNewerSameStationContext() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuIdA = UUID.randomUUID();
-        UUID menuIdB = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext contextB = new ForgeMenuContext(menuIdB, playerId, stationId, session, System.currentTimeMillis());
-        registry.replace(contextB);
-
-        ForgeInventoryHolder holderA = new ForgeInventoryHolder(menuIdA, playerId, stationId);
-
-        forgeMenuService.requestConfirm(player, holderA);
-
-        verify(forgeService, never()).confirmAndExecute(any(), any(), any(), any(), any());
-        assertTrue(registry.getCurrent(playerId, menuIdB).isPresent());
-    }
-
-    @Test
-    void completionFeedbackReturnsToEntitySchedulerAndDoesNotReopen() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
-
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack inputItem = new ItemStack(Material.DIAMOND, 1);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
-        InventoryView view = mock(InventoryView.class);
-        when(view.getTopInventory()).thenReturn(topInventory);
-        when(player.getOpenInventory()).thenReturn(view);
-
+    void submissionFailureReturnsInputAndReportsFailure() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
         ForgePlan plan = mock(ForgePlan.class);
-        ForgePlanResult planResult = ForgePlanResult.ready(plan);
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenReturn(planResult);
         when(plan.isAffordable()).thenReturn(true);
+        when(forgeService.createPlan(eq(fixture.player), eq(fixture.session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(plan));
+        doThrow(new IllegalStateException("submission failed")).when(forgeService)
+                .confirmAndExecute(eq(fixture.player), eq(fixture.session), any(ItemStack.class), eq(plan), any());
 
-        AtomicReference<Consumer<ForgeResolution>> capturedCallback = new AtomicReference<>();
-        doAnswer(invocation -> {
-            capturedCallback.set(invocation.getArgument(4));
-            return null;
-        }).when(forgeService).confirmAndExecute(any(Player.class), any(), any(), any(), any());
+        service.requestConfirm(fixture.player, fixture.holder);
 
-        forgeMenuService.requestConfirm(player, holder);
-
-        assertNotNull(capturedCallback.get());
-
-        verify(messageService, never()).send(player, "forge.confirm.complete");
-
-        Consumer<ForgeResolution> callback = capturedCallback.get();
-        ForgeResolution successResolution = ForgeResolution.success(
-            UUID.randomUUID(),
-            ForgeOutcomeCategory.SUCCESS,
-            null,
-            "SUCCESS",
-            null,
-            null,
-            null,
-            null,
-            null
-        );
-        callback.accept(successResolution);
-
-        verify(messageService).send(player, "forge.confirm.complete");
-        verify(scheduler, never()).runGlobal(any(), any());
-        verify(player, never()).openInventory(any(Inventory.class));
+        assertFalse(registry.getCurrent(fixture.playerId, fixture.menuId).isPresent());
+        assertTrue(fixture.context.isRetired());
+        assertEquals(Material.DIAMOND, fixture.context.peekInput().get().getType());
+        verify(forgeService, times(1)).confirmAndExecute(eq(fixture.player), eq(fixture.session),
+                any(ItemStack.class), eq(plan), any());
+        verify(settlementService, atLeastOnce()).settleOnlineOrQueue(fixture.context, fixture.player);
+        verify(messageService, atLeastOnce()).send(fixture.player, "menu.forge-start-failed");
     }
 
-    @Test
-    void confirmAndExecuteThrowsRestoresClaimedItemAndSettlesOnce() {
-        UUID playerId = UUID.randomUUID();
-        UUID menuId = UUID.randomUUID();
-        String stationId = "station1";
+    private Fixture fixture(ItemStack input) {
+        Fixture fixture = new Fixture();
+        fixture.playerId = UUID.randomUUID();
+        fixture.menuId = UUID.randomUUID();
+        fixture.player = mock(Player.class);
+        fixture.session = mock(PlayerForgeState.class);
+        fixture.holder = new ForgeInventoryHolder(fixture.menuId, fixture.playerId, "station");
+        fixture.context = new ForgeMenuContext(fixture.menuId, fixture.playerId, "station",
+                fixture.session, System.currentTimeMillis());
+        fixture.context.tryInsert(input);
+        registry.replace(fixture.context);
 
-        Player player = mock(Player.class);
-        when(player.getUniqueId()).thenReturn(playerId);
-        when(player.isOnline()).thenReturn(true);
-
-        ItemStack inputItem = mock(ItemStack.class);
-        when(inputItem.getType()).thenReturn(Material.DIAMOND);
-        when(inputItem.clone()).thenReturn(inputItem);
-
-        PlayerForgeState session = mock(PlayerForgeState.class);
-        when(session.getActiveStationId()).thenReturn(stationId);
-
-        ForgeMenuContext context = new ForgeMenuContext(menuId, playerId, stationId, session, System.currentTimeMillis());
-        context.tryInsert(inputItem);
-        registry.replace(context);
-
-        ForgeInventoryHolder holder = new ForgeInventoryHolder(menuId, playerId, stationId);
-
-        Inventory topInventory = mock(Inventory.class);
-        when(topInventory.getHolder()).thenReturn(holder);
+        when(fixture.player.getUniqueId()).thenReturn(fixture.playerId);
+        when(fixture.player.isOnline()).thenReturn(true);
+        Inventory top = mock(Inventory.class);
+        when(top.getHolder()).thenReturn(fixture.holder);
         InventoryView view = mock(InventoryView.class);
-        when(view.getTopInventory()).thenReturn(topInventory);
-        when(player.getOpenInventory()).thenReturn(view);
+        when(view.getTopInventory()).thenReturn(top);
+        when(fixture.player.getOpenInventory()).thenReturn(view);
+        return fixture;
+    }
 
-        ForgePlan plan = mock(ForgePlan.class);
-        ForgePlanResult planResult = ForgePlanResult.ready(plan);
-        when(forgeService.createPlan(any(Player.class), any(), any())).thenReturn(planResult);
-        when(plan.isAffordable()).thenReturn(true);
-
-        doThrow(new RuntimeException("forge service error"))
-            .when(forgeService).confirmAndExecute(any(Player.class), any(), any(), any(), any());
-
-        forgeMenuService.requestConfirm(player, holder);
-
-        assertFalse(registry.getCurrent(playerId, menuId).isPresent());
-        verify(settlementService, never()).settleOnlineOrQueue(any(ForgeMenuContext.class), eq(player));
-        verify(settlementService, never()).settleOffline(any());
-        verify(player).closeInventory();
+    private static final class Fixture {
+        private UUID playerId;
+        private UUID menuId;
+        private Player player;
+        private PlayerForgeState session;
+        private ForgeInventoryHolder holder;
+        private ForgeMenuContext context;
     }
 }

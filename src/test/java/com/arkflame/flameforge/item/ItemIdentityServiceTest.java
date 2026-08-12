@@ -1,227 +1,173 @@
 package com.arkflame.flameforge.item;
 
+import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ItemIdentityServiceTest {
 
     @Test
-    void testV2CodecSchemaVersion() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty();
-        assertEquals(2, identity.getSchemaVersion());
-    }
-
-    @Test
-    void testV2CodecEncodesAndDecodesRoundTrip() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        UUID forgeId = UUID.randomUUID();
-        ItemIdentityCodec.Identity original = ItemIdentityCodec.Identity.empty()
-            .withCurrentTier(3)
-            .withHighestTier(5)
-            .withReforgeCount(7)
-            .withForgeId(forgeId)
-            .withLastTierId("tier3")
-            .withLastVariantId("variant_a");
-
-        String encoded = codec.encodeToString(original);
-        assertNotNull(encoded);
-        assertFalse(encoded.isEmpty());
-
-        ItemIdentityCodec.Decoded decoded = codec.decodeFromString(encoded);
-        assertTrue(decoded.isValid());
-        assertEquals(ItemIdentityCodec.DecodeResult.VALID, decoded.getResult());
-
-        ItemIdentityCodec.Identity result = decoded.getIdentity();
-        assertEquals(3, result.getCurrentTier());
-        assertEquals(5, result.getHighestTier());
-        assertEquals(7, result.getReforgeCount());
-        assertEquals(forgeId, result.getForgeId());
-        assertEquals("tier3", result.getLastTierId());
-        assertEquals("variant_a", result.getLastVariantId());
-    }
-
-    @Test
-    void testV2CodecIsActiveAuthority() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        assertEquals("flameforge:state", codec.getModernKey());
-        assertEquals("\u00A70\u00A70FLAMEFORGE:v2:", codec.getLegacyMarker());
-    }
-
-    @Test
-    void testV2CodecDecodeInvalidReturnsInvalid() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        ItemIdentityCodec.Decoded decoded = codec.decodeFromString("not-valid-base64!@#$");
-        assertFalse(decoded.isValid());
-        assertEquals(ItemIdentityCodec.DecodeResult.INVALID_IDENTITY, decoded.getResult());
-    }
-
-    @Test
-    void testV2CodecDecodeNullReturnsInvalid() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        ItemIdentityCodec.Decoded decoded = codec.decodeFromString(null);
-        assertFalse(decoded.isValid());
-        assertEquals(ItemIdentityCodec.DecodeResult.INVALID_IDENTITY, decoded.getResult());
-    }
-
-    @Test
-    void testV2CodecDecodeEmptyReturnsInvalid() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        ItemIdentityCodec.Decoded decoded = codec.decodeFromString("");
-        assertFalse(decoded.isValid());
-        assertEquals(ItemIdentityCodec.DecodeResult.INVALID_IDENTITY, decoded.getResult());
-    }
-
-    @Test
-    void testV2CodecEncodeNullIdentityReturnsEmpty() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        String encoded = codec.encodeToString(null);
-        assertEquals("", encoded);
-    }
-
-    @Test
-    void testIdentityDataFreshCreatesDefault() {
-        ItemIdentityService.IdentityData data = ItemIdentityService.IdentityData.fresh();
-        assertEquals(0, data.getReforgeCount());
-        assertEquals(0, data.getHighestTier());
-        assertNull(data.getLastTier());
-        assertNull(data.getLastOutcome());
-        assertNotNull(data.getForgeId());
-    }
-
-    @Test
-    void testIdentityDataWithReforgeCount() {
-        ItemIdentityService.IdentityData original = ItemIdentityService.IdentityData.fresh();
-        ItemIdentityService.IdentityData updated = original.withReforgeCount(5);
-        assertEquals(5, updated.getReforgeCount());
-        assertEquals(0, updated.getHighestTier());
-    }
-
-    @Test
-    void testIdentityDataWithHighestTier() {
-        ItemIdentityService.IdentityData original = ItemIdentityService.IdentityData.fresh();
-        ItemIdentityService.IdentityData updated = original.withHighestTier(3);
-        assertEquals(3, updated.getHighestTier());
-    }
-
-    @Test
-    void testIdentityDataIncrementReforge() {
-        ItemIdentityService.IdentityData original = ItemIdentityService.IdentityData.fresh();
-        ItemIdentityService.IdentityData incremented = original.incrementReforge();
-        assertEquals(1, incremented.getReforgeCount());
-    }
-
-    @Test
-    void testIdentityDataPreservesForgeId() {
-        UUID originalId = UUID.randomUUID();
-        ItemIdentityService.IdentityData original = new ItemIdentityService.IdentityData(
-            0, 0, null, null, originalId
-        );
-        ItemIdentityService.IdentityData updated = original.withHighestTier(5);
-        assertEquals(originalId, updated.getForgeId());
-    }
-
-    @Test
-    void testV2CodecMaxEncodedLength() {
-        ItemIdentityCodec codec = new ItemIdentityCodec();
-        assertEquals(4000, codec.maxEncodedLength());
-    }
-
-    @Test
-    void testReadForgeIdentityNoMarkerReturnsNone() {
-        ItemIdentityService service = ItemIdentityService.getInstance();
-        org.bukkit.inventory.ItemStack mockItem = mock(org.bukkit.inventory.ItemStack.class);
-        org.bukkit.inventory.meta.ItemMeta mockMeta = mock(org.bukkit.inventory.meta.ItemMeta.class);
-        when(mockItem.hasItemMeta()).thenReturn(false);
-
-        ItemIdentityService.ForgeIdentityRead result = service.readForgeIdentity(mockItem);
-
-        assertEquals(ItemIdentityService.ForgeIdentityStatus.NONE, result.getStatus());
-    }
-
-    @Test
-    void testReadForgeIdentityMalformedV2ForgeIdReturnsInvalid() {
-        ItemIdentityService service = ItemIdentityService.getInstance();
+    void richIdentityRoundTripsAndMalformedIdentityIsRejected() {
         ItemIdentityCodec codec = new ItemIdentityCodec();
         UUID forgeId = UUID.randomUUID();
         ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
-            .withForgeId(forgeId)
-            .withCurrentTier(1)
-            .withHighestTier(1);
+                .withCurrentTier(3)
+                .withHighestTier(5)
+                .withReforgeCount(7)
+                .withCursed(true)
+                .withLastTierId("tier3")
+                .withLastVariantId("variant_a")
+                .withForgeId(forgeId)
+                .withBaseMaterial("DIAMOND_SWORD")
+                .withBaseDisplayName("Sword")
+                .withOriginalEnchantments(Collections.singletonMap("sharpness", 2))
+                .withForgeEnchantments(Collections.singletonMap("power", 3))
+                .withActiveAttributeIds(Collections.singletonList("damage"))
+                .withActivePowerIds(Collections.singletonList("flame"));
 
-        String encoded = codec.encodeToString(identity);
-        String malformedPayload = encoded.substring(0, Math.max(0, encoded.length() - 5)) + "XXXXX";
+        ItemIdentityCodec.Decoded decoded = codec.decodeFromString(codec.encodeToString(identity));
 
-        org.bukkit.inventory.ItemStack mockItem = mock(org.bukkit.inventory.ItemStack.class);
-        org.bukkit.inventory.meta.ItemMeta mockMeta = mock(org.bukkit.inventory.meta.ItemMeta.class);
-        when(mockItem.hasItemMeta()).thenReturn(true);
-        when(mockItem.getItemMeta()).thenReturn(mockMeta);
-        when(mockMeta.hasLore()).thenReturn(true);
-        java.util.List<String> lore = new java.util.ArrayList<>();
-        lore.add(codec.getLegacyMarker() + malformedPayload);
-        when(mockMeta.getLore()).thenReturn(lore);
+        assertTrue(decoded.isValid());
+        assertEquals(identity, decoded.getIdentity());
+        assertFalse(codec.decodeFromString("malformed-identity").isValid());
 
-        ItemIdentityService.ForgeIdentityRead result = service.readForgeIdentity(mockItem);
+        ItemIdentityService service = serviceWithoutPdc();
+        ItemStack item = itemWithLore(service.encodeHiddenLegacyPayload("malformed-identity"),
+                "\u00A70\u00A70FLAMEFORGE:1|2|tier1||" + forgeId);
+        ItemIdentityService.ForgeIdentityRead read = service.readForgeIdentity(item);
 
-        assertEquals(ItemIdentityService.ForgeIdentityStatus.VALID, result.getStatus());
+        assertEquals(ItemIdentityService.ForgeIdentityStatus.INVALID, read.getStatus());
     }
 
     @Test
-    void testReadForgeIdentityValidV2Roundtrip() {
-        ItemIdentityService service = ItemIdentityService.getInstance();
-        ItemIdentityCodec codec = new ItemIdentityCodec();
+    void newIdentityWriteReadPreservesStateAndVisibleShortId() {
+        ItemIdentityService service = serviceWithoutPdc();
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
+                .withCurrentTier(4)
+                .withHighestTier(6)
+                .withReforgeCount(8)
+                .withLastTierId("tier4")
+                .withLastVariantId("variant_b")
+                .withForgeId(UUID.randomUUID())
+                .withBaseMaterial("DIAMOND_SWORD")
+                .withBaseDisplayName("Diamond Sword")
+                .withActivePowerIds(Collections.singletonList("power"));
+        ItemStack item = mutableItemWithLore("user lore");
+
+        ItemStack written = service.writeForgeIdentity(item, identity).orElseThrow(AssertionError::new);
+        ItemIdentityService.ForgeIdentityRead read = service.readForgeIdentity(written);
+
+        assertEquals(ItemIdentityService.ForgeIdentityStatus.VALID, read.getStatus());
+        assertEquals(identity, read.getIdentity());
+        assertTrue(service.readVisibleShortId(written).isPresent());
+        assertTrue(service.readVisibleShortId(written).get().matches("[A-HJ-NP-Z2-9]{8}"));
+    }
+
+    @Test
+    void legacyLoreFallsBackWhenPdcUnavailableAndMigrates() {
+        ItemIdentityService service = serviceWithoutPdc();
         UUID forgeId = UUID.randomUUID();
-        ItemIdentityCodec.Identity original = ItemIdentityCodec.Identity.empty()
-            .withCurrentTier(3)
-            .withHighestTier(5)
-            .withReforgeCount(2)
-            .withForgeId(forgeId)
-            .withLastTierId("tier3")
-            .withLastVariantId("variant_a");
+        ItemStack item = mutableItemWithLore("user lore",
+                "\u00A70\u00A70FLAMEFORGE:2|5|tier2|success|" + forgeId);
+        when(item.getType()).thenReturn(Material.DIAMOND_SWORD);
 
-        String encoded = codec.encodeToString(original);
-        String markerLine = codec.getLegacyMarker() + encoded;
+        ItemIdentityService.ForgeIdentityRead legacyRead = service.readForgeIdentity(item);
+        ItemIdentityCodec.Identity canonical = legacyRead.getIdentity();
 
-        org.bukkit.inventory.ItemStack mockItem = mock(org.bukkit.inventory.ItemStack.class);
-        org.bukkit.inventory.meta.ItemMeta mockMeta = mock(org.bukkit.inventory.meta.ItemMeta.class);
-        when(mockItem.hasItemMeta()).thenReturn(true);
-        when(mockItem.getItemMeta()).thenReturn(mockMeta);
-        when(mockMeta.hasLore()).thenReturn(true);
-        java.util.List<String> lore = new java.util.ArrayList<>();
-        lore.add(markerLine);
-        when(mockMeta.getLore()).thenReturn(lore);
+        assertEquals(ItemIdentityService.ForgeIdentityStatus.VALID, legacyRead.getStatus());
+        assertEquals(forgeId, canonical.getForgeId());
+        assertEquals(5, canonical.getHighestTier());
+        assertEquals(5, canonical.getCurrentTier());
 
-        ItemIdentityService.ForgeIdentityRead result = service.readForgeIdentity(mockItem);
+        ItemStack migrated = service.writeForgeIdentity(item, canonical).orElseThrow(AssertionError::new);
+        ItemIdentityService.ForgeIdentityRead migratedRead = service.readForgeIdentity(migrated);
 
-        assertEquals(ItemIdentityService.ForgeIdentityStatus.VALID, result.getStatus());
-        assertEquals(3, result.getIdentity().getCurrentTier());
-        assertEquals(5, result.getIdentity().getHighestTier());
-        assertEquals(2, result.getIdentity().getReforgeCount());
+        assertEquals(ItemIdentityService.ForgeIdentityStatus.VALID, migratedRead.getStatus());
+        assertEquals(canonical, migratedRead.getIdentity());
     }
 
     @Test
-    void testReadForgeIdentityValidOldIdentityMapsCurrentAndHighestTier() {
-        ItemIdentityService service = ItemIdentityService.getInstance();
-        String legacyLine = "\u00A70\u00A70FLAMEFORGE:2|5|tier2||" + UUID.randomUUID().toString();
+    void rewriteRemovesOldMarkersAndPreservesUserLore() {
+        ItemIdentityService service = serviceWithoutPdc();
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty().withForgeId(UUID.randomUUID());
+        String oldPayload = service.getCodec().encodeToString(ItemIdentityCodec.Identity.empty());
+        ItemStack item = mutableItemWithLore(
+                "Keep this line",
+                "\u00A70\u00A70FLAMEFORGE:1|2|tier1||" + UUID.randomUUID(),
+                service.getCodec().getLegacyMarker() + oldPayload,
+                service.encodeHiddenLegacyPayload(oldPayload),
+                "Forge ID: #ABCDEFG2");
 
-        org.bukkit.inventory.ItemStack mockItem = mock(org.bukkit.inventory.ItemStack.class);
-        org.bukkit.inventory.meta.ItemMeta mockMeta = mock(org.bukkit.inventory.meta.ItemMeta.class);
-        when(mockItem.hasItemMeta()).thenReturn(true);
-        when(mockItem.getItemMeta()).thenReturn(mockMeta);
-        when(mockMeta.hasLore()).thenReturn(true);
-        java.util.List<String> lore = new java.util.ArrayList<>();
-        lore.add(legacyLine);
-        when(mockMeta.getLore()).thenReturn(lore);
+        ItemStack rewritten = service.writeForgeIdentity(item, identity).orElseThrow(AssertionError::new);
+        List<String> lore = rewritten.getItemMeta().getLore();
 
-        ItemIdentityService.ForgeIdentityRead result = service.readForgeIdentity(mockItem);
+        assertTrue(lore.contains("Keep this line"));
+        assertEquals(1, lore.stream().filter(line -> line.startsWith("Forge ID: #")).count());
+        assertEquals(1, lore.stream().filter(line -> service.decodeHiddenLegacyPayload(line).isPresent()).count());
+        assertFalse(lore.stream().anyMatch(line -> line.startsWith("\u00A70\u00A70FLAMEFORGE:")));
+    }
 
-        assertEquals(ItemIdentityService.ForgeIdentityStatus.INVALID, result.getStatus());
+    @Test
+    void missingIdentityReturnsNone() {
+        ItemIdentityService service = serviceWithoutPdc();
+        ItemStack item = mock(ItemStack.class);
+        when(item.hasItemMeta()).thenReturn(false);
+
+        ItemIdentityService.ForgeIdentityRead read = service.readForgeIdentity(item);
+
+        assertEquals(ItemIdentityService.ForgeIdentityStatus.NONE, read.getStatus());
+        assertNotNull(read.getIdentity());
+    }
+
+    private ItemIdentityService serviceWithoutPdc() {
+        ItemIdentityService service = new ItemIdentityService(new ShortForgeIdRegistry());
+        try {
+            Field field = ItemIdentityService.class.getDeclaredField("modernPdcAvailable");
+            field.setAccessible(true);
+            field.set(service, false);
+            return service;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private ItemStack itemWithLore(String... lines) {
+        return mutableItemWithLore(lines);
+    }
+
+    private ItemStack mutableItemWithLore(String... lines) {
+        ItemStack item = mock(ItemStack.class);
+        ItemMeta meta = mock(ItemMeta.class);
+        List<String> lore = new ArrayList<>(Arrays.asList(lines));
+        when(item.hasItemMeta()).thenReturn(true);
+        when(item.getItemMeta()).thenReturn(meta);
+        when(item.clone()).thenReturn(item);
+        when(meta.hasLore()).thenAnswer(invocation -> !lore.isEmpty());
+        when(meta.getLore()).thenAnswer(invocation -> lore);
+        doAnswer(invocation -> {
+            lore.clear();
+            lore.addAll((List<String>) invocation.getArgument(0));
+            return null;
+        }).when(meta).setLore(anyList());
+        return item;
     }
 }

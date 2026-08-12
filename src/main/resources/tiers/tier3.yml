@@ -33,6 +33,12 @@ chances:
 break:
   reset-tier: true
   target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>✦ Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -64,9 +70,8 @@ animation:
     radius: 1.20
   impact-particle:
     candidates:
-      - BLOCK
-      - BLOCK_CRACK
-      - TILE_BREAK
+      - CRIT
+      - FLAME
     material-candidates:
       - ANVIL
   success:

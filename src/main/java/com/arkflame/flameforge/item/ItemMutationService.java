@@ -1,5 +1,7 @@
 package com.arkflame.flameforge.item;
 
+import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
@@ -33,16 +35,27 @@ public final class ItemMutationService {
     private final AttributeBridge attributeBridge;
     private final EnchantmentResolver enchantmentResolver;
     private final TextRenderer textRenderer;
+    private final ConfigService configService;
 
     public ItemMutationService(
             ItemIdentityService identityService,
             AttributeBridge attributeBridge,
             EnchantmentResolver enchantmentResolver,
             TextRenderer textRenderer) {
+        this(identityService, attributeBridge, enchantmentResolver, textRenderer, null);
+    }
+
+    public ItemMutationService(
+            ItemIdentityService identityService,
+            AttributeBridge attributeBridge,
+            EnchantmentResolver enchantmentResolver,
+            TextRenderer textRenderer,
+            ConfigService configService) {
         this.identityService = identityService;
         this.attributeBridge = attributeBridge;
         this.enchantmentResolver = enchantmentResolver;
         this.textRenderer = textRenderer;
+        this.configService = configService;
     }
 
     public MutationResult mutateSuccess(
@@ -54,6 +67,8 @@ public final class ItemMutationService {
         if (input == null) {
             return MutationResult.fail("null input");
         }
+        final String baseDisplayName = resolveBaseDisplayName(input);
+        final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
         final ItemMeta meta = clone.getItemMeta();
@@ -69,11 +84,11 @@ public final class ItemMutationService {
         applyVariantEnchants(meta, variant);
 
         if (variant.getName() != null && !variant.getName().isEmpty()) {
-            applyName(meta, variant.getName());
+            applyName(meta, variant.getName(), arguments);
         }
 
         if (variant.getLore() != null && !variant.getLore().isEmpty()) {
-            applyLore(meta, variant.getLore());
+            applyLore(meta, variant.getLore(), arguments);
         }
 
         List<AttributeSpec> recordedAttributes = new ArrayList<>();
@@ -92,7 +107,7 @@ public final class ItemMutationService {
 
         ItemIdentityCodec.Identity updatedIdentity = buildRichIdentityForSuccess(
                 identity, targetTier.getLevel(), targetTier.getId(), variant.getId(),
-                recordedAttributes, recordedPowers, forgeId, clone);
+                recordedAttributes, recordedPowers, forgeId, input, baseDisplayName);
 
         Optional<ItemStack> written = identityService.writeForgeIdentity(clone, updatedIdentity);
         if (written.isPresent()) {
@@ -109,6 +124,8 @@ public final class ItemMutationService {
         if (input == null) {
             return MutationResult.fail("null input");
         }
+        final String baseDisplayName = resolveBaseDisplayName(input);
+        final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
         clone.setType(input.getType());
@@ -145,13 +162,19 @@ public final class ItemMutationService {
             attributeBridge.setCustomModelData(clone, null);
         }
 
+        if (!policy.isDestroyItem()) {
+            applyName(meta, policy.getResultDisplayName(), arguments);
+            applyLore(meta, policy.getResultLore(), arguments);
+        }
+
         try {
             clone.setItemMeta(meta);
         } catch (Exception e) {
             return MutationResult.fail("failed to apply meta: " + e.getMessage());
         }
 
-        ItemIdentityCodec.Identity breakIdentity = buildRichIdentityForBreak(identity, forgeId);
+        ItemIdentityCodec.Identity breakIdentity = buildRichIdentityForBreak(
+                identity, policy, input, forgeId, baseDisplayName);
         Optional<ItemStack> written = identityService.writeForgeIdentity(clone, breakIdentity);
         if (!written.isPresent()) {
             return MutationResult.fail("failed to write forge identity");
@@ -173,6 +196,8 @@ public final class ItemMutationService {
         if (input == null) {
             return MutationResult.fail("null input");
         }
+        final String baseDisplayName = resolveBaseDisplayName(input);
+        final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
         final ItemMeta meta = clone.getItemMeta();
@@ -181,11 +206,11 @@ public final class ItemMutationService {
         }
 
         if (curse.getName() != null && !curse.getName().isEmpty()) {
-            applyName(meta, curse.getName());
+            applyName(meta, curse.getName(), arguments);
         }
 
         if (curse.getLore() != null && !curse.getLore().isEmpty()) {
-            applyLore(meta, curse.getLore());
+            applyLore(meta, curse.getLore(), arguments);
         }
 
         if (!currentlyCursed && curse.getEnchantments() != null && !curse.getEnchantments().isEmpty()) {
@@ -216,7 +241,8 @@ public final class ItemMutationService {
             List<AttributeSpec> attributes,
             List<String> powers,
             UUID forgeId,
-            ItemStack item) {
+            ItemStack originalInput,
+            String baseDisplayName) {
         if (current == null) {
             current = ItemIdentityCodec.Identity.empty();
         }
@@ -234,18 +260,13 @@ public final class ItemMutationService {
         List<String> powerIds = powers != null ? new ArrayList<>(powers) : new ArrayList<>();
 
         String baseMaterial = current.getBaseMaterial();
-        if (baseMaterial == null && item != null) {
-            baseMaterial = item.getType().name();
+        if (baseMaterial == null && originalInput != null) {
+            baseMaterial = originalInput.getType().name();
         }
 
-        String baseDisplayName = current.getBaseDisplayName();
-        if (baseDisplayName == null && item != null && item.hasItemMeta()) {
-            ItemMeta meta = item.getItemMeta();
-            if (meta != null && meta.hasDisplayName()) {
-                baseDisplayName = meta.getDisplayName();
-            } else {
-                baseDisplayName = identityService.defaultBaseDisplayName(item.getType());
-            }
+        String identityBaseDisplayName = current.getBaseDisplayName();
+        if (identityBaseDisplayName == null || identityBaseDisplayName.trim().isEmpty()) {
+            identityBaseDisplayName = baseDisplayName;
         }
 
         UUID actualForgeId = forgeId != null ? forgeId : current.getForgeId();
@@ -261,7 +282,7 @@ public final class ItemMutationService {
                 .withLastVariantId(variantId)
                 .withForgeId(actualForgeId)
                 .withBaseMaterial(baseMaterial)
-                .withBaseDisplayName(baseDisplayName)
+                .withBaseDisplayName(identityBaseDisplayName)
                 .withActiveAttributeIds(attributeIds)
                 .withActivePowerIds(powerIds)
                 .withCursed(false);
@@ -269,7 +290,10 @@ public final class ItemMutationService {
 
     private ItemIdentityCodec.Identity buildRichIdentityForBreak(
             ItemIdentityCodec.Identity current,
-            UUID forgeId) {
+            BreakPolicy policy,
+            ItemStack originalInput,
+            UUID forgeId,
+            String baseDisplayName) {
         if (current == null) {
             current = ItemIdentityCodec.Identity.empty();
         }
@@ -279,9 +303,39 @@ public final class ItemMutationService {
             actualForgeId = UUID.randomUUID();
         }
 
-        return current
+        int currentTier = current.getCurrentTier();
+        String lastTierId = current.getLastTierId();
+        String lastVariantId = current.getLastVariantId();
+        if (policy.isResetTier()) {
+            currentTier = policy.getTargetTier();
+            lastTierId = null;
+            lastVariantId = null;
+        }
+
+        String baseMaterial = current.getBaseMaterial();
+        if (baseMaterial == null && originalInput != null) {
+            baseMaterial = originalInput.getType().name();
+        }
+        String identityBaseDisplayName = current.getBaseDisplayName();
+        if (identityBaseDisplayName == null || identityBaseDisplayName.trim().isEmpty()) {
+            identityBaseDisplayName = baseDisplayName;
+        }
+
+        ItemIdentityCodec.Identity result = current
+                .withCurrentTier(currentTier)
                 .withForgeId(actualForgeId)
+                .withLastTierId(lastTierId)
+                .withLastVariantId(lastVariantId)
+                .withBaseMaterial(baseMaterial)
+                .withBaseDisplayName(identityBaseDisplayName)
+                .withActiveAttributeIds(policy.isResetAttributes()
+                        ? Collections.emptyList() : current.getActiveAttributeIds())
+                .withActivePowerIds(policy.isResetPowers()
+                        ? Collections.emptyList() : current.getActivePowerIds())
+                .withForgeEnchantments(policy.isResetEnchants()
+                        ? Collections.emptyMap() : current.getForgeEnchantments())
                 .withCursed(false);
+        return result;
     }
 
     private ItemIdentityCodec.Identity buildRichIdentityForCurse(
@@ -299,6 +353,21 @@ public final class ItemMutationService {
         return current
                 .withForgeId(actualForgeId)
                 .withCursed(true);
+    }
+
+    private String resolveBaseDisplayName(ItemStack input) {
+        Material material = input.getType();
+        if (configService != null && material != null) {
+            ConfigSnapshot snapshot = configService.getCurrentSnapshot();
+            if (snapshot != null) {
+                String configured = snapshot.getRootString(
+                        "item-display-names." + material.name(), null);
+                if (configured != null && !configured.trim().isEmpty()) {
+                    return configured.trim();
+                }
+            }
+        }
+        return identityService.defaultBaseDisplayName(material);
     }
 
     private void removeFlameForgeMetadata(ItemMeta meta) {
@@ -378,25 +447,25 @@ public final class ItemMutationService {
         return applied;
     }
 
-    private void applyName(ItemMeta meta, String name) {
+    private void applyName(ItemMeta meta, String name, MessageArguments arguments) {
         if (meta == null || name == null) {
             return;
         }
         try {
-            String rendered = textRenderer.renderItemLegacy(name, MessageArguments.create(), null);
+            String rendered = textRenderer.renderItemLegacy(name, arguments, null);
             meta.setDisplayName(rendered);
         } catch (Exception e) {
             throw new RuntimeException("failed to apply name", e);
         }
     }
 
-    private void applyLore(ItemMeta meta, List<String> lore) {
+    private void applyLore(ItemMeta meta, List<String> lore, MessageArguments arguments) {
         if (meta == null || lore == null) {
             return;
         }
         List<String> rendered = new ArrayList<>();
         for (String line : lore) {
-            String renderedLine = textRenderer.renderItemLegacy(line, MessageArguments.create(), null);
+            String renderedLine = textRenderer.renderItemLegacy(line, arguments, null);
             rendered.add(renderedLine);
         }
         try {

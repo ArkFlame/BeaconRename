@@ -25,13 +25,12 @@ public final class ForgeSessionService {
         if (shutdown) {
             throw new IllegalStateException("Service is shut down");
         }
-        ForgeSession existing = sessionsByPlayerId.get(playerId);
-        if (existing != null && !existing.isTerminal()) {
-            return existing;
-        }
-        ForgeSession newSession = new ForgeSession(playerId);
-        ForgeSession raced = sessionsByPlayerId.putIfAbsent(playerId, newSession);
-        return raced != null ? raced : newSession;
+        return sessionsByPlayerId.compute(playerId, (id, existing) -> {
+            if (existing != null && !existing.isTerminal()) {
+                return existing;
+            }
+            return new ForgeSession(id);
+        });
     }
 
     public ForgeSession getSession(String playerId) {
@@ -86,7 +85,9 @@ public final class ForgeSessionService {
         }
         synchronized (session) {
             if (session.isOpen()) {
-                session.transitionToSettling();
+                session.transitionToClosed();
+                onClose.accept(session);
+                return;
             }
             if (session.isSettling()) {
                 session.transitionToClosed();
