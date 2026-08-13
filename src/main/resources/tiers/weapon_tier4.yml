@@ -1,0 +1,175 @@
+schema-version: 2
+id: weapon_tier4
+level: 4
+enabled: true
+display:
+  name: "<gradient:#ff7a18:#ffd166><bold>Tier 4</bold></gradient>"
+  lore:
+    - "<gradient:#f97316:#ef4444>Push the item beyond ordinary limits.</gradient>"
+cooldown-seconds: 16
+input:
+  allowed-groups:
+    - WEAPON
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 50
+  money:
+    enabled: false
+    amount: 5000.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "75.0"
+  break: "14.0"
+  curse: "11.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>✦ Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>☠ This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - CRIT
+      - FLAME
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  electrified:
+    weight: "34.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#facc15:#eab308><bold>Electrified %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier IV forged variant"
+      - "<dark_gray>Power: Chain damage on hit"
+      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: electrified_chain
+        type: ON_HIT_CHAIN_DAMAGE
+        cooldown-ticks: 80
+        chance: "0.15"
+        damage-amount: "1.25"
+        radius: "4.5"
+        max-targets: 4
+        chain-delay-ticks: 2
+        trail-points: 10
+        particle-candidates:
+          - NOTE
+          - CRIT
+  hemorrhaging:
+    weight: "33.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#991b1b:#f87171><bold>Hemorrhaging %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier IV forged variant"
+      - "<dark_gray>Power: Heavy bleed on hit"
+      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: hemorrhaging_bleed
+        type: ON_HIT_BLEED
+        cooldown-ticks: 60
+        chance: "0.16"
+        damage-amount: "0.75"
+        pulse-count: 3
+        pulse-interval-ticks: 12
+  executioner:
+    weight: "33.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#fca5a5:#450a0a><bold>Executioner %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier IV forged variant"
+      - "<dark_gray>Power: Explosive strike"
+      - "<dark_gray>Cooldown: 100 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: executioner_explosion
+        type: ON_HIT_EXPLOSIVE
+        cooldown-ticks: 100
+        chance: "0.14"
+        damage-amount: "1.5"
+        radius: "3.5"
+        secondary-damage-multiplier: "0.45"
+        max-targets: 5
+        primary-knockback-multiplier: "1.5"
+        particle-candidates:
+          - EXPLOSION_NORMAL
+          - FLAME

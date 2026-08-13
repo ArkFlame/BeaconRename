@@ -1,0 +1,172 @@
+schema-version: 2
+id: weapon_tier3
+level: 3
+enabled: true
+display:
+  name: "<gradient:#ff7a18:#ffd166><bold>Tier 3</bold></gradient>"
+  lore:
+    - "<gradient:#34d399:#22d3ee>Awaken deeper effects.</gradient>"
+cooldown-seconds: 12
+input:
+  allowed-groups:
+    - WEAPON
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 35
+  money:
+    enabled: false
+    amount: 3500.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "80.0"
+  break: "11.0"
+  curse: "9.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>✦ Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>☠ This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - CRIT
+      - FLAME
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  plaguebringer:
+    weight: "34.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#84cc16:#14532d><bold>Plaguebringer %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier III forged variant"
+      - "<dark_gray>Power: Chain poison"
+      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: plaguebringer_chain
+        type: ON_HIT_CHAIN_POTION
+        cooldown-ticks: 80
+        chance: "0.14"
+        effect-candidates:
+          - POISON
+        duration-ticks: 80
+        amplifier: 0
+        radius: "4"
+        max-targets: 4
+        chain-delay-ticks: 3
+        trail-points: 8
+        particle-candidates:
+          - SPELL
+          - VILLAGER_HAPPY
+  stormbound:
+    weight: "33.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#fde047:#f59e0b><bold>Stormbound %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier III forged variant"
+      - "<dark_gray>Power: Lightning every fifth hit"
+      - "<dark_gray>Cooldown: 0 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: stormbound_lightning
+        type: EVERY_N_HIT_LIGHTNING
+        hit-interval: 5
+        cooldown-ticks: 0
+        chance: "1.0"
+  withered:
+    weight: "33.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#7e22ce:#111827><bold>Withered %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier III forged variant"
+      - "<dark_gray>Power: Wither on hit"
+      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: withered_potion
+        type: ON_HIT_POTION
+        cooldown-ticks: 60
+        chance: "0.15"
+        effect-candidates:
+          - WITHER
+        duration-ticks: 60
+        amplifier: 0

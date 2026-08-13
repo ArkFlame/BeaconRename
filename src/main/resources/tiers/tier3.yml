@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Tier III forged variant"
       - "<dark_gray>● <red>20% life-steal strike"
-      - "<dark_gray>● <white>60 tick cooldown"
+      - "<dark_gray>● <white>3 second cooldown"
     enchantments: []
     attributes: []
     powers:

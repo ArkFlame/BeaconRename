@@ -1,0 +1,126 @@
+schema-version: 2
+id: shield_tier5
+level: 5
+enabled: true
+display:
+  name: "<gradient:#ff7a18:#ffd166><bold>Shield Tier 5</bold></gradient>"
+  lore:
+    - "<gradient:#ff7a18:#ffd166>Master shield refinement.</gradient>"
+cooldown-seconds: 20
+input:
+  allowed-groups:
+    - SHIELD
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 50
+  money:
+    enabled: false
+    amount: 5000.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "68.0"
+  break: "19.0"
+  curse: "13.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - CRIT
+      - FLAME
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  venom_guard:
+    weight: "100.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#4ade80:#166534><bold>Venom Guard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier V forged variant"
+      - "<dark_gray>● <white>30% chance to poison attackers"
+      - "<dark_gray>● <white>60 seconds duration"
+      - "<dark_gray>● <white>80 seconds cooldown"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: venom_guard_block
+        type: ON_BLOCK_POTION
+        cooldown-ticks: 80
+        chance: "0.30"
+        effect-candidates:
+          - POISON
+        duration-ticks: 60
+        amplifier: 0

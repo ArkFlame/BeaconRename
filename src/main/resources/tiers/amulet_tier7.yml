@@ -1,0 +1,107 @@
+schema-version: 2
+id: amulet_tier7
+level: 7
+enabled: true
+display:
+  name: "<gradient:#fef3c7:#22c55e><bold>Amulet Tier 7</bold></gradient>"
+  lore:
+    - "<gradient:#fef3c7:#22c55e>Ultimate amulet refinement.</gradient>"
+cooldown-seconds: 30
+input:
+  allowed-groups:
+    - AMULET
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 150
+  money:
+    enabled: false
+    amount: 15000.00
+  items:
+    enabled: false
+    required: []
+chances:
+  success: "25.0"
+  break: "55.0"
+  curse: "20.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  destroy-item: true
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore: []
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
+  lore: []
+  enchantment-candidates: []
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+variants:
+  eternal_charm:
+    weight: "50.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#fef3c7:#22c55e><bold>Eternal Charm %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier VII amulet variant"
+      - "<green>Regeneration II and speed II for 60 seconds while in inventory"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: eternal_charm_regeneration
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - REGENERATION
+        duration-ticks: 1200
+        amplifier: 1
+        activation-slots:
+          - INVENTORY
+      - id: eternal_charm_speed
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - SPEED
+        duration-ticks: 1200
+        amplifier: 1
+        activation-slots:
+          - INVENTORY
+  paragon_charm:
+    weight: "50.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#f9a8d4:#60a5fa><bold>Paragon Charm %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier VII amulet variant"
+      - "<aqua>Regeneration II and resistance for 60 seconds while in inventory"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: paragon_charm_regeneration
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - REGENERATION
+        duration-ticks: 1200
+        amplifier: 1
+        activation-slots:
+          - INVENTORY
+      - id: paragon_charm_resistance
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - DAMAGE_RESISTANCE
+          - RESISTANCE
+        duration-ticks: 1200
+        amplifier: 0
+        activation-slots:
+          - INVENTORY

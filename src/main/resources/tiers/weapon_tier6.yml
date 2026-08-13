@@ -1,0 +1,177 @@
+schema-version: 2
+id: weapon_tier6
+level: 6
+enabled: true
+display:
+  name: "<gradient:#ff7a18:#ffd166><bold>Tier 6</bold></gradient>"
+  lore:
+    - "<gradient:#a78bfa:#ec4899>Master advanced combat effects.</gradient>"
+cooldown-seconds: 25
+input:
+  allowed-groups:
+    - WEAPON
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 100
+  money:
+    enabled: false
+    amount: 10000.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "65.0"
+  break: "20.0"
+  curse: "15.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>✦ Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>☠ This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - CRIT
+      - FLAME
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  annihilator:
+    weight: "34.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#fde047:#ef4444><bold>Annihilator %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VI forged variant"
+      - "<dark_gray>Power: Chain damage on hit"
+      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: annihilator_chain
+        type: ON_HIT_CHAIN_DAMAGE
+        cooldown-ticks: 80
+        chance: "0.25"
+        damage-amount: "2"
+        radius: "6"
+        max-targets: 6
+        chain-delay-ticks: 2
+        trail-points: 12
+        particle-candidates:
+          - NOTE
+          - CRIT
+  reaper:
+    weight: "33.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#e11d48:#4c0519><bold>Reaper %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VI forged variant"
+      - "<dark_gray>Power: Bleed and heal on hit"
+      - "<dark_gray>Cooldowns: 60 and 80 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: reaper_bleed
+        type: ON_HIT_BLEED
+        cooldown-ticks: 60
+        chance: "0.22"
+        damage-amount: "1"
+        pulse-count: 4
+        pulse-interval-ticks: 12
+      - id: reaper_heal
+        type: ON_HIT_HEAL
+        cooldown-ticks: 80
+        chance: "0.12"
+        heal-amount: "1.5"
+  demolisher:
+    weight: "33.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#fb923c:#7c2d12><bold>Demolisher %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VI forged variant"
+      - "<dark_gray>Power: Explosive strike"
+      - "<dark_gray>Cooldown: 100 seconds"
+      - "<dark_gray>Original material retained"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: demolisher_explosion
+        type: ON_HIT_EXPLOSIVE
+        cooldown-ticks: 100
+        chance: "0.18"
+        damage-amount: "2"
+        radius: "4.5"
+        secondary-damage-multiplier: "0.50"
+        max-targets: 6
+        primary-knockback-multiplier: "1.75"

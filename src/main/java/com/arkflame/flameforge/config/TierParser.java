@@ -845,7 +845,7 @@ public class TierParser {
                         activationSlots.add(ForgePowerDefinition.ActivationSlot.CHEST);
                         activationSlots.add(ForgePowerDefinition.ActivationSlot.LEGS);
                         activationSlots.add(ForgePowerDefinition.ActivationSlot.FEET);
-                    } else if (normalized.equals("HEAD") || normalized.equals("CHEST") || normalized.equals("LEGS") || normalized.equals("FEET")) {
+                    } else if (normalized.equals("HEAD") || normalized.equals("CHEST") || normalized.equals("LEGS") || normalized.equals("FEET") || normalized.equals("INVENTORY")) {
                         try {
                             activationSlots.add(ForgePowerDefinition.ActivationSlot.valueOf(normalized));
                         } catch (IllegalArgumentException e) {

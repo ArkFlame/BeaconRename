@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Tier VII forged variant"
       - "<dark_gray>● <dark_purple>30% Wither II strike"
-      - "<dark_gray>● <white>60 tick cooldown"
+      - "<dark_gray>● <white>3 second cooldown"
       - "<dark_gray>● <red>22% chance to cause bleeding"
     enchantments: []
     attributes: []

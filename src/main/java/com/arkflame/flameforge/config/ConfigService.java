@@ -92,7 +92,7 @@ public class ConfigService {
         ValidationReport report = tierCandidate.getValidationReport();
 
         ConfigSnapshot.Builder builder = ConfigSnapshot.builder()
-            .tiers(new java.util.ArrayList<>(tierCandidate.getByLevel().values()))
+            .tiers(tierCandidate.allAscending())
             .validationReport(report);
 
         loadBundledRootConfig(builder);

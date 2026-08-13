@@ -1,0 +1,139 @@
+schema-version: 2
+id: armor_tier3
+level: 3
+enabled: true
+display:
+  name: "<gradient:#4ade80:#14532d><bold>Armor Tier III</bold></gradient>"
+  lore:
+    - "<gradient:#4ade80:#14532d>Armor refinement tier III.</gradient>"
+cooldown-seconds: 12
+input:
+  allowed-groups:
+    - ARMOR
+  denied-materials: []
+requirements:
+  combine: ALL
+  xp:
+    enabled: true
+    amount: 30
+  money:
+    enabled: false
+    amount: 1000.00
+  items:
+    enabled: false
+    required:
+      - materials:
+          - DIAMOND
+        amount: 1
+        display-name: "<aqua>Diamond"
+chances:
+  success: "80.0"
+  break: "11.0"
+  curse: "9.0"
+break:
+  reset-tier: true
+  target-tier: 0
+  destroy-item: false
+  result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>Previous forge powers were stripped."
+    - "<gray>Reforge the item to rebuild it."
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
+  lore:
+    - "<dark_red>This item is permanently cursed."
+    - "<gray>Cursed items cannot be forged again."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound:
+    candidates:
+      - BLOCK_NOTE_BLOCK_PLING
+      - NOTE_PLING
+    volume: 1.0
+    start-pitch: 0.50
+    end-pitch: 2.00
+  charge-particle:
+    candidates:
+      - FLAME
+    count: 12
+    radius: 1.20
+  impact-particle:
+    candidates:
+      - CRIT
+      - FLAME
+    material-candidates:
+      - ANVIL
+  success:
+    sound-candidates:
+      - BLOCK_ANVIL_USE
+      - ANVIL_USE
+    particle-candidates:
+      - VILLAGER_HAPPY
+      - HAPPY_VILLAGER
+    title: "<gradient:#22c55e:#bbf7d0><bold>FORGE SUCCESS</bold></gradient>"
+    subtitle: "<white>%variant_name% <gray>• Tier %target_tier%"
+  break:
+    sound-candidates:
+      - ENTITY_ITEM_BREAK
+      - ITEM_BREAK
+    particle-candidates:
+      - REDSTONE
+      - RED_DUST
+    title: "<gradient:#ef4444:#7f1d1d><bold>FORGE BROKE</bold></gradient>"
+    subtitle: "<gray>Your configured break reset was applied."
+  curse:
+    sound-candidates:
+      - ENTITY_WITHER_AMBIENT
+      - WITHER_IDLE
+      - VILLAGER_NO
+    particle-candidates:
+      - SMOKE_LARGE
+      - LARGE_SMOKE
+    title: "<gradient:#7e22ce:#111827><bold>CURSED</bold></gradient>"
+    subtitle: "<dark_red>This item cannot be forged again."
+variants:
+  antidotal:
+    weight: "50.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#4ade80:#14532d><bold>Antidotal %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier III forged variant"
+      - "<dark_gray>● <green>50% poison damage reduction"
+    enchantments: []
+    attributes:
+      - id: antidotal_reduction
+        type: POISON_DAMAGE_REDUCTION_PERCENT
+        value: "0.50"
+    powers: []
+  swiftguard:
+    weight: "50.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#38bdf8:#8b5cf6><bold>Swiftguard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier III forged variant"
+      - "<dark_gray>● <aqua>Speed II while equipped"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: swiftguard_speed
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - SPEED
+        duration-ticks: 60
+        amplifier: 1
+        activation-slots:
+          - ARMOR

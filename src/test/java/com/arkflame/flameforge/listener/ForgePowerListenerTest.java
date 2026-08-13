@@ -19,6 +19,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +53,7 @@ class ForgePowerListenerTest {
 
         Player player = mock(Player.class);
         when(player.isOnline()).thenReturn(true);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         ItemStack item = mock(ItemStack.class);
         when(item.hasItemMeta()).thenReturn(true);
         when(item.isSimilar(item)).thenReturn(true);
@@ -118,6 +120,7 @@ class ForgePowerListenerTest {
         ItemStack dashItem = mock(ItemStack.class);
         when(dashItem.hasItemMeta()).thenReturn(true);
         when(interactingPlayer.getItemInHand()).thenReturn(dashItem);
+        when(equipmentBridge.getItem(interactingPlayer, EquipmentBridge.Slot.MAINHAND)).thenReturn(dashItem);
         UUID dashForgeId = UUID.randomUUID();
         ItemIdentityCodec.Identity dashIdentity = ItemIdentityCodec.Identity.empty()
             .withForgeId(dashForgeId)
@@ -189,5 +192,25 @@ class ForgePowerListenerTest {
         when(invalidTrigger.getAction()).thenReturn(Action.LEFT_CLICK_AIR);
         invalidListener.onPlayerInteract(invalidTrigger);
         verifyNoInteractions(invalidPowerService);
+    }
+
+    @Test
+    void inventoryDirtyEventUsesEntityOwnedDebounce() {
+        ForgePowerService powerService = mock(ForgePowerService.class);
+        EquipmentBridge equipmentBridge = mock(EquipmentBridge.class);
+        ItemIdentityService identityService = mock(ItemIdentityService.class);
+        TierRepository tierRepository = mock(TierRepository.class);
+        SchedulerBridge schedulerBridge = mock(SchedulerBridge.class);
+        AttributeBridge attributeBridge = mock(AttributeBridge.class);
+        ForgePowerListener listener = new ForgePowerListener(powerService, equipmentBridge,
+            identityService, tierRepository, schedulerBridge, attributeBridge);
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        InventoryClickEvent event = mock(InventoryClickEvent.class);
+        when(event.getWhoClicked()).thenReturn(player);
+
+        listener.onInventoryClick(event);
+
+        verify(schedulerBridge).runEntityLater(any(Entity.class), any(Runnable.class), any(Runnable.class), anyLong());
     }
 }

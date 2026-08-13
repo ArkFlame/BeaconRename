@@ -1,7 +1,6 @@
 package com.arkflame.flameforge.item;
 
 import com.arkflame.flameforge.config.ConfigService;
-import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
@@ -12,7 +11,6 @@ import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.TextRenderer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -35,7 +33,7 @@ public final class ItemMutationService {
     private final AttributeBridge attributeBridge;
     private final EnchantmentResolver enchantmentResolver;
     private final TextRenderer textRenderer;
-    private final ConfigService configService;
+    private final ItemDisplayNameResolver displayNameResolver;
 
     public ItemMutationService(
             ItemIdentityService identityService,
@@ -55,7 +53,7 @@ public final class ItemMutationService {
         this.attributeBridge = attributeBridge;
         this.enchantmentResolver = enchantmentResolver;
         this.textRenderer = textRenderer;
-        this.configService = configService;
+        this.displayNameResolver = new ItemDisplayNameResolver(identityService, configService);
     }
 
     public MutationResult mutateSuccess(
@@ -67,7 +65,7 @@ public final class ItemMutationService {
         if (input == null) {
             return MutationResult.fail("null input");
         }
-        final String baseDisplayName = resolveBaseDisplayName(input);
+        final String baseDisplayName = resolveBaseDisplayName(input, identity);
         final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
@@ -124,7 +122,7 @@ public final class ItemMutationService {
         if (input == null) {
             return MutationResult.fail("null input");
         }
-        final String baseDisplayName = resolveBaseDisplayName(input);
+        final String baseDisplayName = resolveBaseDisplayName(input, identity);
         final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
@@ -196,7 +194,7 @@ public final class ItemMutationService {
         if (input == null) {
             return MutationResult.fail("null input");
         }
-        final String baseDisplayName = resolveBaseDisplayName(input);
+        final String baseDisplayName = resolveBaseDisplayName(input, identity);
         final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
@@ -355,19 +353,8 @@ public final class ItemMutationService {
                 .withCursed(true);
     }
 
-    private String resolveBaseDisplayName(ItemStack input) {
-        Material material = input.getType();
-        if (configService != null && material != null) {
-            ConfigSnapshot snapshot = configService.getCurrentSnapshot();
-            if (snapshot != null) {
-                String configured = snapshot.getRootString(
-                        "item-display-names." + material.name(), null);
-                if (configured != null && !configured.trim().isEmpty()) {
-                    return configured.trim();
-                }
-            }
-        }
-        return identityService.defaultBaseDisplayName(material);
+    private String resolveBaseDisplayName(final ItemStack input, final ItemIdentityCodec.Identity identity) {
+        return displayNameResolver.resolve(input, identity);
     }
 
     private void removeFlameForgeMetadata(ItemMeta meta) {
@@ -452,7 +439,7 @@ public final class ItemMutationService {
             return;
         }
         try {
-            String rendered = textRenderer.renderItemLegacy(name, arguments, null);
+            String rendered = textRenderer.renderItemLegacyInheritedLiteral(name, arguments, "base_name", null);
             meta.setDisplayName(rendered);
         } catch (Exception e) {
             throw new RuntimeException("failed to apply name", e);
@@ -465,7 +452,7 @@ public final class ItemMutationService {
         }
         List<String> rendered = new ArrayList<>();
         for (String line : lore) {
-            String renderedLine = textRenderer.renderItemLegacy(line, arguments, null);
+            String renderedLine = textRenderer.renderItemLegacyInheritedLiteral(line, arguments, "base_name", null);
             rendered.add(renderedLine);
         }
         try {

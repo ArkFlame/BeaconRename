@@ -153,7 +153,7 @@ variants:
     lore:
       - "<gray>Tier II forged variant"
       - "<dark_gray>● <light_purple>Shift + right click to heal"
-      - "<dark_gray>● <white>160 tick cooldown"
+      - "<dark_gray>● <white>8 second cooldown"
     enchantments: []
     attributes: []
     powers:

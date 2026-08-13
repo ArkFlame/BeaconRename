@@ -49,4 +49,19 @@ class TextRendererTest {
         assertTrue(rendered.stream().allMatch(line -> line != null && !line.isEmpty()));
         assertTrue(rendered.stream().noneMatch(line -> line.contains("%value%")));
     }
+
+    @Test
+    void inheritedLiteralEscapesMiniMessageTagsButRendersOtherArguments() {
+        MessageArguments arguments = MessageArguments.create()
+                .string("base_name", "<red>Inherited</red>")
+                .string("suffix", "Sword");
+
+        String rendered = renderer.renderItemLegacyInheritedLiteral(
+                "<green>%base_name% %suffix%</green>", arguments, "base_name", "test");
+
+        assertTrue(rendered.contains("<red>Inherited</red>"));
+        assertTrue(rendered.contains("Sword"));
+        assertFalse(rendered.contains("%base_name%"));
+        assertFalse(rendered.contains("%suffix%"));
+    }
 }

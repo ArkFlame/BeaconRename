@@ -6,6 +6,8 @@ import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.model.AnimationStep;
 import com.arkflame.flameforge.model.ForgeAnimationProfile;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.text.TextBridge;
 import com.arkflame.flameforge.text.TextRenderer;
 import net.kyori.adventure.text.Component;
@@ -30,10 +32,13 @@ public final class ForgeAnimationService {
     private static final double FORGING_CENTER_Y = 2.00;
     private static final double ITEM_ORBIT_RADIUS = 0.18;
     private static final double ITEM_BOB_HEIGHT = 0.08;
+    private static final double ITEM_RISE_HEIGHT = 0.30;
     private static final double SPIRAL_RADIUS = 0.42;
     private static final double SPIRAL_HALF_HEIGHT = 0.45;
     private static final int SPIRAL_SAMPLES_PER_STRAND = 6;
     private static final int ITEM_TRAIL_POINTS = 4;
+    private static final int REVEAL_DURATION_TICKS = 10;
+    private static final int REVEAL_FEEDBACK_TICK = 5;
     private static final String STEP_TYPE_PARTICLE = "particle";
     private static final String STEP_TYPE_SOUND = "sound";
     private static final String STEP_TYPE_TEXT = "text";
@@ -49,6 +54,7 @@ public final class ForgeAnimationService {
     private final TextBridge text;
     private final TextRenderer textRenderer;
     private final ForgeItemVisualService itemVisuals;
+    private final ForgeAnimationThemeResolver themeResolver;
 
     private final Map<String, AnimationHandle> handles = new ConcurrentHashMap<>();
     private final Map<String, TaskHandle> scheduledTasks = new ConcurrentHashMap<>();
@@ -63,18 +69,33 @@ public final class ForgeAnimationService {
         this.text = text;
         this.textRenderer = textRenderer;
         this.itemVisuals = itemVisuals;
+        this.themeResolver = new ForgeAnimationThemeResolver();
     }
 
     public AnimationHandle playAnimation(String transactionId, Player owner, Location stationLocation,
-                                        ItemStack visualItem, ForgeAnimationProfile profile,
-                                        Consumer<String> completionCallback,
-                                        Consumer<String> failureCallback) {
-        if (transactionId == null || owner == null || profile == null) {
-            throw new IllegalArgumentException("transactionId, owner, and profile must not be null");
+                                         ItemStack visualItem, ForgeAnimationProfile profile,
+                                         Consumer<String> completionCallback,
+                                         Consumer<String> failureCallback) {
+        ForgeVariant legacyVariant = new ForgeVariant("legacy-animation", "", Collections.emptyList(),
+            0.0, null, Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+        return playAnimation(transactionId, owner, stationLocation, visualItem, profile,
+            ForgeOutcomeCategory.SUCCESS, legacyVariant, completionCallback, failureCallback);
+    }
+
+    public AnimationHandle playAnimation(String transactionId, Player owner, Location stationLocation,
+                                         ItemStack visualItem, ForgeAnimationProfile profile,
+                                         ForgeOutcomeCategory outcomeCategory, ForgeVariant usedVariant,
+                                         Consumer<String> completionCallback,
+                                         Consumer<String> failureCallback) {
+        if (transactionId == null || owner == null || stationLocation == null || profile == null
+            || visualItem == null || outcomeCategory == null) {
+            throw new IllegalArgumentException("transactionId, owner, stationLocation, visualItem, profile, and outcomeCategory must not be null");
         }
-        if (visualItem == null) {
-            throw new IllegalArgumentException("visualItem must not be null");
+        if (outcomeCategory == ForgeOutcomeCategory.SUCCESS && usedVariant == null) {
+            throw new IllegalArgumentException("usedVariant must not be null for SUCCESS");
         }
+
+        ForgeAnimationTheme theme = themeResolver.resolve(outcomeCategory, usedVariant);
 
         ItemStack visualItemClone = visualItem.clone();
 
@@ -117,7 +138,8 @@ public final class ForgeAnimationService {
 
         for (int tick : tickSequence) {
             final int tickSnapshot = tick;
-            TaskHandle taskHandle = scheduleTick(tickSnapshot, owner, stationLocation, visualItemClone, profile, handle, transactionId);
+            TaskHandle taskHandle = scheduleTick(tickSnapshot, owner, stationLocation, visualItemClone, profile,
+                theme, handle, transactionId);
             if (taskHandle == null) {
                 admissionFailed = true;
                 break;
@@ -145,6 +167,29 @@ public final class ForgeAnimationService {
             return handle;
         }
 
+        for (int revealTick = 1; revealTick <= REVEAL_DURATION_TICKS; revealTick++) {
+            TaskHandle revealTask = scheduleRevealTick(revealTick, owner, stationLocation, profile, theme,
+                outcomeCategory, handle, transactionId);
+            if (revealTask == null) {
+                admissionFailed = true;
+                break;
+            }
+            admittedTasks.add(revealTask);
+        }
+        if (admissionFailed) {
+            for (TaskHandle task : admittedTasks) {
+                task.cancel();
+            }
+            handle.fail();
+            handles.remove(transactionId);
+            cancelAllTasks(transactionId);
+            if (itemVisuals != null) {
+                itemVisuals.destroy(transactionId);
+            }
+            safeInvokeCallback(failureCallback, transactionId);
+            return handle;
+        }
+
         final TaskHandle[] completionTaskHolder = new TaskHandle[1];
         completionTaskHolder[0] = scheduler.runEntityLater(owner, () -> {
             if (handle.complete()) {
@@ -153,7 +198,7 @@ public final class ForgeAnimationService {
             }
         }, () -> {
             cleanupTask(transactionId, completionTaskHolder[0]);
-        }, durationTicks);
+        }, durationTicks + REVEAL_DURATION_TICKS);
 
         if (completionTaskHolder[0] == null) {
             for (TaskHandle task : admittedTasks) {
@@ -161,6 +206,7 @@ public final class ForgeAnimationService {
             }
             handle.fail();
             handles.remove(transactionId);
+            cancelAllTasks(transactionId);
             if (itemVisuals != null) {
                 itemVisuals.destroy(transactionId);
             }
@@ -168,7 +214,11 @@ public final class ForgeAnimationService {
             return handle;
         }
 
-        scheduledTasks.put(transactionId + "_completion", completionTaskHolder[0]);
+        if (!handle.isTerminal()) {
+            scheduledTasks.put(transactionId + "_completion", completionTaskHolder[0]);
+        } else {
+            completionTaskHolder[0].cancel();
+        }
 
         return handle;
     }
@@ -186,7 +236,7 @@ public final class ForgeAnimationService {
 
     private TaskHandle scheduleTick(int tick, Player owner, Location stationLocation,
                                     ItemStack visualItemClone, ForgeAnimationProfile profile,
-                                    AnimationHandle handle, String transactionId) {
+                                    ForgeAnimationTheme theme, AnimationHandle handle, String transactionId) {
         ForgeAnimationProfile.ChargeSound chargeSound = profile.getChargeSound();
         ForgeAnimationProfile.ChargeParticle chargeParticle = profile.getChargeParticle();
 
@@ -202,7 +252,7 @@ public final class ForgeAnimationService {
                 return;
             }
             Location itemLoc = computeForgingItemLocation(stationLocation, progress);
-            executeForgingParticleStep(owner, stationLocation, chargeParticle, progress, itemLoc);
+            executeForgingParticleStep(owner, stationLocation, chargeParticle, progress, itemLoc, theme);
             if (tick == durationTicks) {
                 executeFinalBurst(owner, stationLocation);
             }
@@ -229,6 +279,24 @@ public final class ForgeAnimationService {
         return new BasicTaskHandle();
     }
 
+    private TaskHandle scheduleRevealTick(int revealTick, Player owner, Location stationLocation,
+                                          ForgeAnimationProfile profile, ForgeAnimationTheme theme,
+                                          ForgeOutcomeCategory outcomeCategory, AnimationHandle handle,
+                                          String transactionId) {
+        final int delay = profile.getDurationTicks() + revealTick;
+        TaskHandle task = scheduler.runEntityLater(owner, () -> {
+            if (handle.isTerminal()) {
+                return;
+            }
+            executeRevealStep(owner, stationLocation, profile, theme, outcomeCategory, revealTick);
+        }, () -> scheduledTasks.remove(transactionId + "_reveal_" + revealTick), delay);
+        if (task == null) {
+            return null;
+        }
+        scheduledTasks.put(transactionId + "_reveal_" + revealTick, task);
+        return new BasicTaskHandle();
+    }
+
     private float interpolatePitch(ForgeAnimationProfile.ChargeSound chargeSound, float progress) {
         float startPitch = chargeSound.getStartPitch().floatValue();
         float endPitch = chargeSound.getEndPitch().floatValue();
@@ -236,8 +304,8 @@ public final class ForgeAnimationService {
     }
 
     private void executeForgingParticleStep(Player owner, Location stationLocation,
-                                           ForgeAnimationProfile.ChargeParticle chargeParticle,
-                                           float progress, Location itemLoc) {
+                                            ForgeAnimationProfile.ChargeParticle chargeParticle,
+                                            float progress, Location itemLoc, ForgeAnimationTheme theme) {
         String particleKey;
         if (chargeParticle != null && chargeParticle.getCandidates() != null && !chargeParticle.getCandidates().isEmpty()) {
             particleKey = chargeParticle.getCandidates().get(0);
@@ -252,6 +320,39 @@ public final class ForgeAnimationService {
         }
         for (Location connectorPoint : computeConnectorPoints(stationLocation, itemLoc)) {
             sendParticleSafe(owner, particleKey, connectorPoint, 1);
+        }
+        sendColoredDustSafe(owner, itemLoc, theme, 5);
+    }
+
+    private void executeRevealStep(Player owner, Location stationLocation, ForgeAnimationProfile profile,
+                                   ForgeAnimationTheme theme, ForgeOutcomeCategory category, int revealTick) {
+        double progress = revealTick / (double) REVEAL_DURATION_TICKS;
+        Location center = stationLocation.clone().add(0, FORGING_CENTER_Y, 0);
+        double radius = 0.14 + 0.42 * smoothClamp(progress);
+        double height = 0.12 + 0.36 * smoothClamp(progress);
+        for (int star = 0; star < 2; star++) {
+            double angle = (star * Math.PI) + revealTick * 0.65;
+            Location starLocation = center.clone().add(Math.cos(angle) * radius,
+                height + star * 0.08, Math.sin(angle) * radius);
+            sendParticleSafe(owner, theme.getStarParticle(), starLocation, 2);
+            sendColoredDustSafe(owner, starLocation, theme.getStarRed(), theme.getStarGreen(),
+                theme.getStarBlue(), 1);
+        }
+        if (revealTick == REVEAL_FEEDBACK_TICK) {
+            executeOutcomeFeedbackStep(owner, feedbackFor(profile, category));
+        }
+    }
+
+    private ForgeAnimationProfile.OutcomeFeedback feedbackFor(ForgeAnimationProfile profile,
+                                                               ForgeOutcomeCategory category) {
+        switch (category) {
+            case BREAK:
+                return profile.getBreakFeedback();
+            case CURSE:
+                return profile.getCurseFeedback();
+            case SUCCESS:
+            default:
+                return profile.getSuccessFeedback();
         }
     }
 
@@ -271,6 +372,24 @@ public final class ForgeAnimationService {
         } catch (RuntimeException | LinkageError e) {
             plugin.getLogger().log(Level.WARNING,
                 "Forge particle failed for owner " + owner.getUniqueId(), e);
+        }
+    }
+
+    private void sendColoredDustSafe(Player owner, Location location, ForgeAnimationTheme theme, int count) {
+        sendColoredDustSafe(owner, location, theme.getAuraRed(), theme.getAuraGreen(),
+            theme.getAuraBlue(), count);
+    }
+
+    private void sendColoredDustSafe(Player owner, Location location, int red, int green, int blue,
+                                     int count) {
+        if (particles == null) {
+            return;
+        }
+        try {
+            particles.sendColoredDust(owner, location, red, green, blue, 1.0f, count);
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().log(Level.FINE,
+                "Forge colored aura failed for owner " + owner.getUniqueId(), e);
         }
     }
 
@@ -487,11 +606,12 @@ public final class ForgeAnimationService {
         double baseX = station.getX();
         double baseY = station.getY();
         double baseZ = station.getZ();
-        double p = progress;
+        double p = smoothClamp(progress);
         double itemAngle = 4 * Math.PI * p;
         return new Location(station.getWorld(),
             baseX + Math.cos(itemAngle) * ITEM_ORBIT_RADIUS,
-            baseY + FORGING_CENTER_Y + Math.sin(itemAngle) * ITEM_BOB_HEIGHT,
+            baseY + FORGING_CENTER_Y - ITEM_RISE_HEIGHT / 2.0 + p * ITEM_RISE_HEIGHT
+                + Math.sin(itemAngle) * ITEM_BOB_HEIGHT,
             baseZ + Math.sin(itemAngle) * ITEM_ORBIT_RADIUS,
             (float) (720 * p), 0f);
     }
@@ -499,12 +619,13 @@ public final class ForgeAnimationService {
     static List<Location> computeSpiralPoints(Location station, float progress) {
         List<Location> points = new ArrayList<>(2 * SPIRAL_SAMPLES_PER_STRAND);
         double centerY = station.getY() + FORGING_CENTER_Y;
-        double animationAngle = 4 * Math.PI * progress;
+        double p = smoothClamp(progress);
+        double animationAngle = 4 * Math.PI * p;
         for (int strand = 0; strand < 2; strand++) {
             for (int sample = 0; sample < SPIRAL_SAMPLES_PER_STRAND; sample++) {
                 double sampleProgress = (double) sample / (SPIRAL_SAMPLES_PER_STRAND - 1);
                 double angle = animationAngle + 2 * Math.PI * sampleProgress + strand * Math.PI;
-                double y = centerY - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT * sampleProgress;
+                double y = centerY - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT * smoothClamp(sampleProgress);
                 points.add(new Location(station.getWorld(),
                     station.getX() + Math.cos(angle) * SPIRAL_RADIUS,
                     y,
@@ -516,7 +637,7 @@ public final class ForgeAnimationService {
 
     static List<Location> computeTrailPoints(Location station, float progress) {
         Location item = computeForgingItemLocation(station, progress);
-        double angle = 4 * Math.PI * progress;
+        double angle = 4 * Math.PI * smoothClamp(progress);
         List<Location> points = new ArrayList<>(ITEM_TRAIL_POINTS);
         for (int index = 1; index <= ITEM_TRAIL_POINTS; index++) {
             double distance = 0.08 * index;
@@ -541,6 +662,11 @@ public final class ForgeAnimationService {
                 start.getZ() + (item.getZ() - start.getZ()) * progress));
         }
         return points;
+    }
+
+    private static double smoothClamp(double progress) {
+        double clamped = Math.max(0.0, Math.min(1.0, progress));
+        return clamped * clamped * (3.0 - 2.0 * clamped);
     }
 
     public void shutdown() {

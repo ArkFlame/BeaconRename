@@ -1,0 +1,109 @@
+schema-version: 1
+legacy-tier-ids:
+  - tier1
+  - tier2
+  - tier3
+  - tier4
+  - tier5
+  - tier6
+  - tier7
+categories:
+  weapon:
+    id: weapon
+    fallback: false
+    materials:
+      - MACE
+      - TRIDENT
+      - BOW
+      - CROSSBOW
+      - WOODEN_SWORD
+      - WOOD_SWORD
+      - STONE_SWORD
+      - IRON_SWORD
+      - GOLDEN_SWORD
+      - GOLD_SWORD
+      - DIAMOND_SWORD
+      - NETHERITE_SWORD
+      - WOODEN_AXE
+      - WOOD_AXE
+      - STONE_AXE
+      - IRON_AXE
+      - GOLDEN_AXE
+      - GOLD_AXE
+      - DIAMOND_AXE
+      - NETHERITE_AXE
+    progression:
+      - weapon_tier1
+      - weapon_tier2
+      - weapon_tier3
+      - weapon_tier4
+      - weapon_tier5
+      - weapon_tier6
+      - weapon_tier7
+  armor:
+    id: armor
+    fallback: false
+    materials:
+      - LEATHER_HELMET
+      - LEATHER_CHESTPLATE
+      - LEATHER_LEGGINGS
+      - LEATHER_BOOTS
+      - CHAINMAIL_HELMET
+      - CHAINMAIL_CHESTPLATE
+      - CHAINMAIL_LEGGINGS
+      - CHAINMAIL_BOOTS
+      - IRON_HELMET
+      - IRON_CHESTPLATE
+      - IRON_LEGGINGS
+      - IRON_BOOTS
+      - GOLDEN_HELMET
+      - GOLD_HELMET
+      - GOLDEN_CHESTPLATE
+      - GOLD_CHESTPLATE
+      - GOLDEN_LEGGINGS
+      - GOLD_LEGGINGS
+      - GOLDEN_BOOTS
+      - GOLD_BOOTS
+      - DIAMOND_HELMET
+      - DIAMOND_CHESTPLATE
+      - DIAMOND_LEGGINGS
+      - DIAMOND_BOOTS
+      - NETHERITE_HELMET
+      - NETHERITE_CHESTPLATE
+      - NETHERITE_LEGGINGS
+      - NETHERITE_BOOTS
+      - TURTLE_HELMET
+      - ELYTRA
+    progression:
+      - armor_tier1
+      - armor_tier2
+      - armor_tier3
+      - armor_tier4
+      - armor_tier5
+      - armor_tier6
+      - armor_tier7
+  shield:
+    id: shield
+    fallback: false
+    materials:
+      - SHIELD
+    progression:
+      - shield_tier1
+      - shield_tier2
+      - shield_tier3
+      - shield_tier4
+      - shield_tier5
+      - shield_tier6
+      - shield_tier7
+  amulet:
+    id: amulet
+    fallback: true
+    materials: []
+    progression:
+      - amulet_tier1
+      - amulet_tier2
+      - amulet_tier3
+      - amulet_tier4
+      - amulet_tier5
+      - amulet_tier6
+      - amulet_tier7

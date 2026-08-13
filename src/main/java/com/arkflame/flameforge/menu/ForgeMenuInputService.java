@@ -135,10 +135,10 @@ public final class ForgeMenuInputService {
                 return;
             }
             ForgeMenuContext context = contextOpt.get();
-            Optional<ItemStack> extracted = context.extractInput();
-            if (extracted.isPresent()) {
-                settlementService.settleOnlineOrQueue(context, player);
+            if (!context.isOpen()) {
+                return;
             }
+            settlementService.returnOpenInputOnlineOrQueue(context, player);
             ForgeMenuService.MenuResult rerenderResult = menuService.rerender(player);
             if (!rerenderResult.isOpened()) {
                 registry.removeIfCurrent(playerId, holder.getMenuId());

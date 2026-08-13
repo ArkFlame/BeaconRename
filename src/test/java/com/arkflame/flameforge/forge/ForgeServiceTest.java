@@ -83,7 +83,8 @@ class ForgeServiceTest {
         Fixture f = fixture();
         ChargeReceipt receipt = ChargeReceipt.success(3, new BigDecimal("4.00"), Collections.emptyList());
         when(f.cost.charge(any(), any(), any())).thenReturn(receipt);
-        when(f.animation.playAnimation(anyString(), any(), any(), any(), any(), any(), any()))
+        when(f.animation.playAnimation(anyString(), any(), any(), any(), any(), any(ForgeOutcomeCategory.class),
+            any(ForgeVariant.class), any(), any()))
             .thenReturn(mock(AnimationHandle.class));
         when(f.delivery.deliverItem(any(), eq(f.player), any(), isNull())).thenReturn(true);
         @SuppressWarnings("unchecked")
@@ -92,7 +93,8 @@ class ForgeServiceTest {
 
         f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
             value -> resolution[0] = value);
-        verify(f.animation).playAnimation(anyString(), any(), any(), any(), any(), any(), failure.capture());
+        verify(f.animation).playAnimation(anyString(), any(), any(), any(), any(), any(ForgeOutcomeCategory.class),
+            any(ForgeVariant.class), any(), failure.capture());
         failure.getValue().accept("animation-failed");
 
         assertNotNull(resolution[0]);
@@ -145,7 +147,8 @@ class ForgeServiceTest {
                 Collections.singleton("forge_execution"), resultItem));
         when(f.delivery.generateDeliveryId(any(), eq("SUCCESS"))).thenReturn("once");
         when(f.delivery.deliverItem(same(resultItem), eq(f.player), any(), eq("once"))).thenReturn(true);
-        when(f.animation.playAnimation(anyString(), any(), any(), any(), any(), any(), any()))
+        when(f.animation.playAnimation(anyString(), any(), any(), any(), any(), any(ForgeOutcomeCategory.class),
+            any(ForgeVariant.class), any(), any()))
             .thenReturn(mock(AnimationHandle.class));
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Consumer<String>> completion = ArgumentCaptor.forClass(Consumer.class);
@@ -153,7 +156,8 @@ class ForgeServiceTest {
 
         f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
             value -> callbacks.incrementAndGet());
-        verify(f.animation).playAnimation(anyString(), any(), any(), any(), any(), completion.capture(), any());
+        verify(f.animation).playAnimation(anyString(), any(), any(), any(), any(), any(ForgeOutcomeCategory.class),
+            any(ForgeVariant.class), completion.capture(), any());
         completion.getValue().accept("complete");
         completion.getValue().accept("complete-again");
 

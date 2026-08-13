@@ -19,11 +19,14 @@ import org.bukkit.util.Vector;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,6 +52,7 @@ public final class ForgePowerService {
     private final AtomicLong evictionCounter = new AtomicLong(0);
     private static final int MAX_PASSIVE_TASKS_PER_PLAYER = 64;
     private final Map<UUID, List<TaskHandle>> passiveTasksByPlayer = new ConcurrentHashMap<>();
+    private final Map<UUID, Set<UUID>> inventoryForgeIdsByPlayer = new ConcurrentHashMap<>();
 
     public interface TimeSource {
         long monotonicMillis();
@@ -164,6 +168,7 @@ public final class ForgePowerService {
 
     public void clearCooldownsForPlayer(Player player) {
         cooldowns.keySet().removeIf(key -> key.playerUuid.equals(player.getUniqueId()));
+        clearInventoryCacheForPlayer(player);
     }
 
     public void clearPassiveTasksForPlayer(Player player) {
@@ -196,6 +201,7 @@ public final class ForgePowerService {
     public void clearAll() {
         cooldowns.clear();
         hitCounters.clear();
+        inventoryForgeIdsByPlayer.clear();
         clearAllPassiveTasks();
     }
 
@@ -214,6 +220,50 @@ public final class ForgePowerService {
 
     public long getEvictionCount() {
         return evictionCounter.get();
+    }
+
+    public void refreshInventoryCache(Player player) {
+        if (player == null) {
+            return;
+        }
+        Set<UUID> forgeIds = new HashSet<>();
+        List<ItemStack> items = new ArrayList<>();
+        Collections.addAll(items, equipmentBridge.getInventoryContents(player));
+        Collections.addAll(items, equipmentBridge.getArmorContents(player));
+        items.add(equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND));
+        items.add(equipmentBridge.getItem(player, EquipmentBridge.Slot.OFFHAND));
+        for (ItemStack item : items) {
+            if (item == null || !item.hasItemMeta()) {
+                continue;
+            }
+            ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
+            if (read.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID) {
+                forgeIds.add(read.getIdentity().getForgeId());
+            }
+        }
+        inventoryForgeIdsByPlayer.put(player.getUniqueId(), Collections.unmodifiableSet(forgeIds));
+    }
+
+    public Set<UUID> getCachedInventoryForgeIds(Player player) {
+        if (player == null) {
+            return Collections.emptySet();
+        }
+        Set<UUID> cached = inventoryForgeIdsByPlayer.get(player.getUniqueId());
+        return cached == null ? Collections.<UUID>emptySet() : new HashSet<>(cached);
+    }
+
+    public boolean hasCachedInventoryForgeId(Player player, UUID forgeId) {
+        if (player == null || forgeId == null) {
+            return false;
+        }
+        Set<UUID> cached = inventoryForgeIdsByPlayer.get(player.getUniqueId());
+        return cached != null && cached.contains(forgeId);
+    }
+
+    public void clearInventoryCacheForPlayer(Player player) {
+        if (player != null) {
+            inventoryForgeIdsByPlayer.remove(player.getUniqueId());
+        }
     }
 
     public boolean activatePassivePower(Player player, ForgePowerDefinition power, UUID forgeId) {
@@ -253,6 +303,9 @@ public final class ForgePowerService {
     }
 
     private boolean isForgeItemInSlot(Player player, UUID forgeId, EquipmentBridge.Slot slot) {
+        if (slot == EquipmentBridge.Slot.INVENTORY) {
+            return hasCachedInventoryForgeId(player, forgeId);
+        }
         ItemStack item = equipmentBridge.getItem(player, slot);
         if (item == null || !item.hasItemMeta()) {
             return false;
@@ -273,6 +326,7 @@ public final class ForgePowerService {
             case CHEST: return EquipmentBridge.Slot.CHEST;
             case LEGS: return EquipmentBridge.Slot.LEGS;
             case FEET: return EquipmentBridge.Slot.FEET;
+            case INVENTORY: return EquipmentBridge.Slot.INVENTORY;
             default: return null;
         }
     }
@@ -388,6 +442,27 @@ public final class ForgePowerService {
         return true;
     }
 
+    public boolean triggerOnBlockPower(Player defender, LivingEntity attacker,
+                                       ForgePowerDefinition power, UUID forgeId) {
+        ForgePowerDefinition.PowerType type = power.getPowerType();
+        if (type != ForgePowerDefinition.PowerType.ON_BLOCK_POTION
+            && type != ForgePowerDefinition.PowerType.ON_BLOCK_KNOCKBACK
+            && type != ForgePowerDefinition.PowerType.ON_BLOCK_HEAL) {
+            return false;
+        }
+        if (!rollChance(power.getChance()) || !usePower(defender, power, forgeId)) {
+            return false;
+        }
+        if (type == ForgePowerDefinition.PowerType.ON_BLOCK_POTION) {
+            applyOnHitPotion(defender, attacker, power);
+        } else if (type == ForgePowerDefinition.PowerType.ON_BLOCK_KNOCKBACK) {
+            applyKnockback(defender, attacker, power);
+        } else {
+            applySelfHeal(defender, power);
+        }
+        return true;
+    }
+
     private boolean triggerEveryNHitPower(Player attacker, LivingEntity victim, ForgePowerDefinition power, UUID forgeId) {
         ForgePowerDefinition.PowerType type = power.getPowerType();
         HitCounterKey counterKey = new HitCounterKey(attacker.getUniqueId(), forgeId, power.getId());
@@ -427,7 +502,7 @@ public final class ForgePowerService {
         schedulerBridge.runRegion(location, () -> location.getWorld().strikeLightning(location));
     }
 
-    private void applyKnockback(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
+    private void applyKnockback(LivingEntity attacker, LivingEntity victim, ForgePowerDefinition power) {
         BigDecimal horizontal = power.getHorizontalStrength();
         BigDecimal vertical = power.getVerticalStrength();
         double horizontalStrength = horizontal != null ? horizontal.doubleValue() : 1.0;
@@ -539,6 +614,7 @@ public final class ForgePowerService {
 
     private void applyExplosive(final Player attacker, final LivingEntity victim,
                                 final ForgePowerDefinition power) {
+        particleBridge.sendToPlayer(attacker, "EXPLOSION_LARGE", victim.getLocation(), 0F, 0F, 0F, 0F, 1);
         final AtomicBoolean primary = new AtomicBoolean(true);
         multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
             @Override
@@ -571,7 +647,7 @@ public final class ForgePowerService {
         }
         final PotionEffect effect = new PotionEffect(effectType.get(), power.getDurationTicks(),
             power.getAmplifier(), false, false);
-        multiStrikeService.execute(attacker, victim, power, true, new MultiStrikeService.StrikeAction() {
+        multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
             @Override
             public void apply(LivingEntity target) {
                 target.addPotionEffect(effect);

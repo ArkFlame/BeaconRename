@@ -149,10 +149,6 @@ public final class ForgeService {
     public void confirmAndExecute(Player player, PlayerForgeState sessionState,
                                  ItemStack input, ForgePlan plan,
                                  Consumer<ForgeResolution> completionCallback) {
-        if (Thread.holdsLock(getClass())) {
-            throw new IllegalStateException("Cannot call while holding lock");
-        }
-
         UUID transactionId = UUID.randomUUID();
 
         if (player == null || sessionState == null || input == null || plan == null) {
@@ -280,7 +276,8 @@ public final class ForgeService {
         try {
             animHandle = animationService.playAnimation(
                 context.getTransactionId().toString(), player, context.getStationLocation(),
-                plan.getInput(), plan.getTargetTier().getAnimationProfile(), (txId) -> {
+                plan.getInput(), plan.getTargetTier().getAnimationProfile(),
+                transaction.getOutcomeCategory(), transaction.getUsedVariant(), (txId) -> {
                     synchronized (session) {
                         if (session.isClosed()) {
                             return;

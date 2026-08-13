@@ -43,11 +43,35 @@ public final class TextRenderer {
     public Component render(final String input, final Map<String, String> stringValues,
                            final Map<String, Component> componentValues, final String messageKey,
                            final Logger logger) {
+        return renderInternal(input, stringValues, componentValues, null, messageKey, logger);
+    }
+
+    public Component renderInheritedLiteral(final String input, final Map<String, String> stringValues,
+                                            final Map<String, Component> componentValues,
+                                            final String literalKey, final String messageKey,
+                                            final Logger logger) {
+        String normalizedLiteralKey = normalizePlaceholderKey(literalKey);
+        if (!normalizedLiteralKey.matches("[A-Za-z0-9_-]+")) {
+            throw new IllegalArgumentException("literalKey");
+        }
+        return renderInternal(input, stringValues, componentValues, normalizedLiteralKey, messageKey, logger);
+    }
+
+    private Component renderInternal(final String input, final Map<String, String> stringValues,
+                                     final Map<String, Component> componentValues,
+                                     final String literalKey, final String messageKey,
+                                     final Logger logger) {
         if (input == null || input.isEmpty()) {
             return Component.empty();
         }
 
+        String normalizedLiteralKey = literalKey != null ? normalizePlaceholderKey(literalKey) : null;
+        String literalValue = findStringValue(stringValues, normalizedLiteralKey);
         String normalized = normalizePercentMarkers(input);
+        if (normalizedLiteralKey != null && literalValue != null) {
+            normalized = normalized.replace(normalizedTag(normalizedLiteralKey),
+                    miniMessage.escapeTags(literalValue));
+        }
 
         TagResolver.Builder resolverBuilder = TagResolver.builder();
 
@@ -56,6 +80,10 @@ public final class TextRenderer {
         if (stringValues != null) {
             for (Map.Entry<String, String> entry : stringValues.entrySet()) {
                 String normalizedKey = normalizePlaceholderKey(entry.getKey());
+                if (normalizedKey.equals(normalizedLiteralKey)) {
+                    referencedPlaceholders.remove(normalizedKey);
+                    continue;
+                }
                 String tagName = INTERNAL_TAG_PREFIX + normalizedKey;
                 String value = entry.getValue() != null ? entry.getValue() : "";
                 resolverBuilder.resolver(Placeholder.unparsed(tagName, value));
@@ -66,6 +94,10 @@ public final class TextRenderer {
         if (componentValues != null) {
             for (Map.Entry<String, Component> entry : componentValues.entrySet()) {
                 String normalizedKey = normalizePlaceholderKey(entry.getKey());
+                if (normalizedKey.equals(normalizedLiteralKey)) {
+                    referencedPlaceholders.remove(normalizedKey);
+                    continue;
+                }
                 String tagName = INTERNAL_TAG_PREFIX + normalizedKey;
                 Component value = entry.getValue() != null ? entry.getValue() : Component.empty();
                 resolverBuilder.resolver(Placeholder.component(tagName, value));
@@ -81,11 +113,27 @@ public final class TextRenderer {
         TagResolver resolver = resolverBuilder.build();
 
         try {
-            return miniMessage.deserialize(normalized, resolver);
+        return miniMessage.deserialize(normalized, resolver);
         } catch (Exception e) {
             logInvalidMiniMessage(messageKey, e, logger);
             return errorComponent("Message format error");
         }
+    }
+
+    private String findStringValue(final Map<String, String> values, final String normalizedKey) {
+        if (values == null || normalizedKey == null) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : values.entrySet()) {
+            if (normalizedKey.equals(normalizePlaceholderKey(entry.getKey()))) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private String normalizedTag(final String key) {
+        return "<" + INTERNAL_TAG_PREFIX + key + ">";
     }
 
     public Component renderLegacy(final String input, final Map<String, String> stringValues,
@@ -136,7 +184,7 @@ public final class TextRenderer {
         StringBuffer result = new StringBuffer();
         while (matcher.find()) {
             String placeholderName = matcher.group(1);
-            matcher.appendReplacement(result, "<" + INTERNAL_TAG_PREFIX + placeholderName + ">");
+            matcher.appendReplacement(result, Matcher.quoteReplacement(normalizedTag(placeholderName)));
         }
         matcher.appendTail(result);
         return result.toString();
@@ -204,6 +252,19 @@ public final class TextRenderer {
             return "";
         }
         Component component = renderComponent(template, arguments, messageKey);
+        component = component.decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE);
+        return itemLegacySerializer.serialize(component);
+    }
+
+    public String renderItemLegacyInheritedLiteral(final String template, final MessageArguments arguments,
+                                                   final String literalKey, final String messageKey) {
+        if (template == null) {
+            return "";
+        }
+        Map<String, String> stringValues = arguments != null ? arguments.getStringValues() : Collections.emptyMap();
+        Map<String, Component> componentValues = arguments != null ? arguments.getComponentValues() : Collections.emptyMap();
+        Component component = renderInheritedLiteral(template, stringValues, componentValues,
+                literalKey, messageKey, null);
         component = component.decorationIfAbsent(TextDecoration.ITALIC, TextDecoration.State.FALSE);
         return itemLegacySerializer.serialize(component);
     }

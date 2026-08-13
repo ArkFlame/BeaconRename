@@ -224,6 +224,20 @@ class ForgeMenuServiceTest {
                 Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
+    @Test
+    void variantNameSupportsMiniMessageFormatting() {
+        List<ForgeVariant> variants = Collections.singletonList(
+                variant("<gold><bold>Rich Variant</bold></gold>", 100.0));
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, variants);
+        when(variantEligibility.eligibleVariants(any(ItemStack.class), anyList())).thenReturn(variants);
+
+        List<String> lines = menuService.buildVariantLines(new ItemStack(Material.DIAMOND, 1), plan, menuConfig());
+
+        assertEquals(1, lines.size());
+        assertTrue(lines.get(0).contains("Rich Variant"));
+        assertTrue(lines.get(0).contains("80.0%"));
+    }
+
     private Map<String, Object> menuConfig() {
         Map<String, Object> config = new HashMap<>();
         config.put("title", "<gold><bold>FlameForge</bold>");

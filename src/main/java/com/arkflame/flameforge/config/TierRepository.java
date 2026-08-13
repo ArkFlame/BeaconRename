@@ -18,25 +18,31 @@ public class TierRepository {
     private final JavaPlugin plugin;
     private final File tiersDirectory;
     private final File dataFolder;
+    private final File equipmentFile;
     private boolean directoryExistedBeforeStartup;
 
     private final Map<String, TierDefinition> tiersById = new LinkedHashMap<>();
     private final NavigableMap<Integer, TierDefinition> tiersByLevel = new TreeMap<>();
+    private EquipmentCatalog equipmentCatalog = EquipmentCatalog.empty();
 
     public TierRepository(JavaPlugin plugin) {
         this.plugin = plugin;
         this.dataFolder = plugin.getDataFolder();
         this.tiersDirectory = new File(dataFolder, "tiers");
+        this.equipmentFile = new File(dataFolder, "equipment.yml");
     }
 
     public static final class LoadCandidate {
         private final Map<String, TierDefinition> byId;
         private final NavigableMap<Integer, TierDefinition> byLevel;
+        private final EquipmentCatalog catalog;
         private final ValidationReport validationReport;
 
-        private LoadCandidate(Map<String, TierDefinition> byId, NavigableMap<Integer, TierDefinition> byLevel, ValidationReport validationReport) {
+        private LoadCandidate(Map<String, TierDefinition> byId, NavigableMap<Integer, TierDefinition> byLevel,
+                              EquipmentCatalog catalog, ValidationReport validationReport) {
             this.byId = byId;
             this.byLevel = byLevel;
+            this.catalog = catalog;
             this.validationReport = validationReport;
         }
 
@@ -46,6 +52,14 @@ public class TierRepository {
 
         public NavigableMap<Integer, TierDefinition> getByLevel() {
             return byLevel;
+        }
+
+        public List<TierDefinition> allAscending() {
+            return Collections.unmodifiableList(new ArrayList<>(byLevel.values()));
+        }
+
+        public EquipmentCatalog getCatalog() {
+            return catalog;
         }
 
         public ValidationReport getValidationReport() {
@@ -125,7 +139,9 @@ public class TierRepository {
             }
         }
 
-        return new LoadCandidate(loadedTiers, loadedByLevel, report);
+        EquipmentCatalog loadedCatalog = loadEquipmentCatalog(report);
+
+        return new LoadCandidate(loadedTiers, loadedByLevel, loadedCatalog, report);
     }
 
     public synchronized void publish(LoadCandidate candidate) {
@@ -137,22 +153,51 @@ public class TierRepository {
         tiersByLevel.clear();
         tiersById.putAll(candidate.byId);
         tiersByLevel.putAll(candidate.byLevel);
+        equipmentCatalog = candidate.catalog;
     }
 
     public void bootstrapDefaultsIfDirectoryAbsent() {
         this.directoryExistedBeforeStartup = tiersDirectory.exists();
 
-        if (directoryExistedBeforeStartup) {
+        if (!directoryExistedBeforeStartup && !tiersDirectory.mkdirs()) {
             return;
         }
 
-        if (!tiersDirectory.mkdirs()) {
-            return;
-        }
-
+        Set<String> bundledTierResources = new LinkedHashSet<>();
         for (int i = 1; i <= 7; i++) {
-            String resourceName = TIER_PREFIX + i + TIER_EXTENSION;
+            bundledTierResources.add(TIER_PREFIX + i + TIER_EXTENSION);
+        }
+        copyBundledEquipment();
+
+        ValidationReport catalogReport = new ValidationReport();
+        EquipmentCatalog catalog = EquipmentCatalogParser.parse(plugin.getResource("equipment.yml"), catalogReport);
+        for (EquipmentCatalog.Category category : catalog.all()) {
+            for (String progressionId : category.getProgression()) {
+                bundledTierResources.add(progressionId + TIER_EXTENSION);
+            }
+        }
+        for (String resourceName : bundledTierResources) {
             copyBundledTier(resourceName);
+        }
+    }
+
+    private EquipmentCatalog loadEquipmentCatalog(ValidationReport report) {
+        InputStream bundled = plugin.getResource("equipment.yml");
+        return EquipmentCatalogParser.parse(bundled, equipmentFile, report);
+    }
+
+    private void copyBundledEquipment() {
+        InputStream stream = plugin.getResource("equipment.yml");
+        if (stream == null || equipmentFile.exists()) {
+            if (stream != null) {
+                try { stream.close(); } catch (IOException ignored) { }
+            }
+            return;
+        }
+        try (InputStream in = stream) {
+            Files.copy(in, equipmentFile.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            plugin.getLogger().warning("Failed to copy bundled equipment.yml - " + e.getMessage());
         }
     }
 
@@ -254,6 +299,64 @@ public class TierRepository {
 
     public Optional<TierDefinition> findByLevel(int level) {
         return Optional.ofNullable(tiersByLevel.get(level));
+    }
+
+    public Optional<TierDefinition> findByCategory(String categoryId, int level) {
+        Optional<TierDefinition> categoryTier = equipmentCatalog.findCategory(categoryId)
+            .flatMap(category -> findByIdAtLevel(category.getProgression(), level));
+        return categoryTier.isPresent() ? categoryTier : findByLevel(level);
+    }
+
+    public Optional<TierDefinition> findByCategoryAndLevel(String categoryId, int level) {
+        return findByCategory(categoryId, level);
+    }
+
+    public Optional<TierDefinition> findNext(String categoryId, int currentLevel) {
+        return findCategoryTier(categoryId, currentLevel, false);
+    }
+
+    public Optional<TierDefinition> findNext(String categoryId, String currentTierId) {
+        Optional<TierDefinition> current = findById(currentTierId);
+        return current.isPresent()
+            ? findNext(categoryId, current.get().getLevel())
+            : findNext(categoryId, 0);
+    }
+
+    public Optional<TierDefinition> findExactNext(String categoryId, int currentLevel) {
+        return findCategoryTier(categoryId, currentLevel, true);
+    }
+
+    private Optional<TierDefinition> findCategoryTier(String categoryId, int currentLevel, boolean exact) {
+        Optional<EquipmentCatalog.Category> category = equipmentCatalog.findCategory(categoryId);
+        if (!category.isPresent()) {
+            return exact ? findExactNext(currentLevel) : findNextLevel(currentLevel);
+        }
+        List<String> progression = category.get().getProgression();
+        for (String tierId : progression) {
+            TierDefinition tier = tiersById.get(tierId);
+            if (tier != null && (exact ? tier.getLevel() == currentLevel + 1 : tier.getLevel() > currentLevel)) {
+                return Optional.of(tier);
+            }
+        }
+        return exact ? findExactNext(currentLevel) : findNextLevel(currentLevel);
+    }
+
+    private Optional<TierDefinition> findByIdAtLevel(List<String> ids, int level) {
+        for (String id : ids) {
+            TierDefinition tier = tiersById.get(id);
+            if (tier != null && tier.getLevel() == level) {
+                return Optional.of(tier);
+            }
+        }
+        return Optional.empty();
+    }
+
+    public EquipmentCatalog getEquipmentCatalog() {
+        return equipmentCatalog;
+    }
+
+    public EquipmentCatalog.Category categoryForMaterial(String material) {
+        return equipmentCatalog.categoryForMaterial(material);
     }
 
     public Optional<TierDefinition> findNextLevel(int currentLevel) {

@@ -14,6 +14,7 @@ public final class EquipmentBridge {
         CHEST,
         LEGS,
         FEET
+        , INVENTORY
     }
 
     private final Method getItemInOffhandMethod;
@@ -47,6 +48,8 @@ public final class EquipmentBridge {
             case LEGS:
             case FEET:
                 return getArmorSlot(player, slot);
+            case INVENTORY:
+                return null;
             default:
                 return null;
         }
@@ -120,6 +123,17 @@ public final class EquipmentBridge {
             return new ItemStack[4];
         }
         return player.getInventory().getArmorContents();
+    }
+
+    public ItemStack[] getInventoryContents(Player player) {
+        if (player == null || player.getInventory() == null) {
+            return new ItemStack[0];
+        }
+        ItemStack[] contents = player.getInventory().getContents();
+        if (contents == null) {
+            return new ItemStack[0];
+        }
+        return contents.clone();
     }
 
     public boolean isOffhandSupported() {

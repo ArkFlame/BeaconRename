@@ -6,6 +6,12 @@ import java.lang.reflect.Method;
 import java.util.logging.Logger;
 
 public final class InteractionHandBridge {
+    public enum Hand {
+        MAIN,
+        OFF,
+        UNKNOWN
+    }
+
     private final Method getHandMethod;
     private final Logger logger;
     private boolean loggedUnknown;
@@ -22,28 +28,34 @@ public final class InteractionHandBridge {
     }
 
     public boolean isPrimary(PlayerInteractEvent event) {
-        if (getHandMethod == null) {
-            return true;
+        return getHand(event) == Hand.MAIN;
+    }
+
+    public Hand getHand(PlayerInteractEvent event) {
+        if (event == null || getHandMethod == null) {
+            return getHandMethod == null ? Hand.MAIN : Hand.UNKNOWN;
         }
         try {
             Object hand = getHandMethod.invoke(event);
             if (hand == null) {
-                return false;
+                return Hand.UNKNOWN;
             }
             String name = hand.toString();
             if ("HAND".equals(name)) {
-                return true;
+                return Hand.MAIN;
             }
             if ("OFF_HAND".equals(name)) {
-                return false;
+                return Hand.OFF;
             }
             if (!loggedUnknown) {
                 loggedUnknown = true;
-                logger.info("Unknown hand enum: " + name);
+                if (logger != null) {
+                    logger.info("Unknown hand enum: " + name);
+                }
             }
-            return false;
+            return Hand.UNKNOWN;
         } catch (Exception e) {
-            return false;
+            return Hand.UNKNOWN;
         }
     }
 }

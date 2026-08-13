@@ -34,5 +34,6 @@ class ParticleBridgeTest {
             0f, 0f, 0f, 0f, 1));
         assertDoesNotThrow(() -> bridge.sendToPlayer(player, known, null,
             0f, 0f, 0f, 0f, 1));
+        assertDoesNotThrow(() -> bridge.sendColoredDust(player, location, 255, 80, 20, 1f, 2));
     }
 }

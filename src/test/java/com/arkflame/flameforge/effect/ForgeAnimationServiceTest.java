@@ -5,6 +5,8 @@ import com.arkflame.flameforge.compat.effect.SoundResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.model.ForgeAnimationProfile;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.text.TextBridge;
 import com.arkflame.flameforge.text.TextRenderer;
 import org.bukkit.Location;
@@ -130,11 +132,37 @@ class ForgeAnimationServiceTest {
         verify(itemVisuals).destroyAll();
     }
 
+    @Test
+    void themedAnimationRejectsMissingRequiredValues() {
+        ForgeVariant variant = variant();
+        assertThrows(IllegalArgumentException.class, () -> service.playAnimation(
+            "tx-null-station", owner, null, visualItem, profile(),
+            ForgeOutcomeCategory.SUCCESS, variant, null, null));
+        assertThrows(IllegalArgumentException.class, () -> service.playAnimation(
+            "tx-null-variant", owner, stationLocation, visualItem, profile(),
+            ForgeOutcomeCategory.SUCCESS, null, null, null));
+    }
+
+    @Test
+    void themedAnimationAcceptsNullableVariantForNonSuccess() {
+        AnimationHandle handle = service.playAnimation(
+            "tx-break", owner, stationLocation, visualItem, profile(),
+            ForgeOutcomeCategory.BREAK, null, null, null);
+
+        assertNotNull(handle);
+        assertTrue(handle.isCompleted());
+    }
+
     private ForgeAnimationProfile profile() {
         return new ForgeAnimationProfile(
             8, 4, null,
             new ForgeAnimationProfile.ChargeParticle(Collections.singletonList("flame"), 5, BigDecimal.ONE),
             null, null, null, null);
+    }
+
+    private ForgeVariant variant() {
+        return new ForgeVariant("variant", "Variant", Collections.emptyList(), 1.0, null,
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
     private static final class PendingTask {

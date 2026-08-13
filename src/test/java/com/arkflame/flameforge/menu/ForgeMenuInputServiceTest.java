@@ -97,6 +97,60 @@ class ForgeMenuInputServiceTest {
     }
 
     @Test
+    void returnInputExtractsOnceAndKeepsOpenContext() {
+        Fixture fixture = fixture(1);
+        assertTrue(fixture.context.tryInsert(fixture.sourceItem));
+        when(menuService.rerender(fixture.player)).thenReturn(ForgeMenuService.MenuResult.opened(fixture.menuId));
+        when(delivery.generateDeliveryId(fixture.player, "menu_return")).thenReturn("input-return");
+        when(delivery.deliverItem(any(ItemStack.class), eq(fixture.player), isNull(), eq("input-return")))
+                .thenReturn(true);
+
+        service.requestReturnInput(fixture.player, fixture.holder);
+        service.requestReturnInput(fixture.player, fixture.holder);
+
+        verify(delivery, times(1)).deliverItem(any(ItemStack.class), eq(fixture.player), isNull(), eq("input-return"));
+        assertTrue(registry.getCurrent(fixture.playerId, fixture.menuId).isPresent());
+        assertTrue(fixture.context.isOpen());
+        assertFalse(fixture.context.peekInput().isPresent());
+        verify(menuService, times(2)).rerender(fixture.player);
+    }
+
+    @Test
+    void returnInputQueuesOfflineWithoutRetiringContext() {
+        Fixture fixture = fixture(1);
+        assertTrue(fixture.context.tryInsert(fixture.sourceItem));
+        when(fixture.player.isOnline()).thenReturn(true, false);
+        when(menuService.rerender(fixture.player)).thenReturn(ForgeMenuService.MenuResult.opened(fixture.menuId));
+        when(delivery.queuePendingDelivery(anyString(), eq(fixture.playerId), any(ItemStack.class), isNull()))
+                .thenReturn(true);
+
+        service.requestReturnInput(fixture.player, fixture.holder);
+
+        verify(delivery, times(1)).queuePendingDelivery(anyString(), eq(fixture.playerId), any(ItemStack.class), isNull());
+        assertTrue(registry.getCurrent(fixture.playerId, fixture.menuId).isPresent());
+        assertTrue(fixture.context.isOpen());
+        assertFalse(fixture.context.peekInput().isPresent());
+    }
+
+    @Test
+    void returnInputRerenderFailureSettlesEmptyContext() {
+        Fixture fixture = fixture(1);
+        assertTrue(fixture.context.tryInsert(fixture.sourceItem));
+        when(menuService.rerender(fixture.player)).thenReturn(
+                ForgeMenuService.MenuResult.renderFailed(fixture.menuId.toString(), "render failed"));
+        when(delivery.generateDeliveryId(fixture.player, "menu_return")).thenReturn("input-return");
+        when(delivery.deliverItem(any(ItemStack.class), eq(fixture.player), isNull(), eq("input-return")))
+                .thenReturn(true);
+
+        service.requestReturnInput(fixture.player, fixture.holder);
+
+        verify(delivery, times(1)).deliverItem(any(ItemStack.class), eq(fixture.player), isNull(), eq("input-return"));
+        assertFalse(registry.get(fixture.playerId).isPresent());
+        assertTrue(fixture.context.isRetired());
+        assertFalse(fixture.context.peekInput().isPresent());
+    }
+
+    @Test
     void quitOrDisableReturnsOrQueuesHeldInput() {
         Fixture quitFixture = fixture(1);
         Fixture disableFixture = fixture(2);

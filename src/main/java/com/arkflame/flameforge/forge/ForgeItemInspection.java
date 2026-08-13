@@ -104,17 +104,20 @@ public final class ForgeItemInspection {
         }
 
         int currentTier = identity.getCurrentTier();
-        TierDefinition currentTierDef = findTierByLevel(currentTier).orElse(null);
+        String categoryMaterial = identity.getBaseMaterial() != null
+            ? identity.getBaseMaterial() : item.getType().name();
+        String categoryId = tierRepository.categoryForMaterial(categoryMaterial).getId();
+        TierDefinition currentTierDef = findTier(categoryId, currentTier).orElse(null);
 
         if (currentTierDef != null && !currentTierDef.isEnabled()) {
             return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
         }
 
         int targetTier = currentTier + 1;
-        TierDefinition targetTierDef = findTierByLevel(targetTier).orElse(null);
+        TierDefinition targetTierDef = tierRepository.findExactNext(categoryId, currentTier).orElse(null);
 
         if (targetTierDef == null) {
-            if (isMaxReachableTier(currentTier)) {
+            if (isMaxReachableTier(categoryId, currentTier)) {
                 return new InspectionResult(Status.MAX_TIER, identity);
             }
             return new InspectionResult(Status.NEXT_TIER_MISSING, identity);
@@ -303,17 +306,22 @@ public final class ForgeItemInspection {
         }
     }
 
-    private Optional<TierDefinition> findTierByLevel(int level) {
-        return tierRepository.all().stream()
-            .filter(t -> t.getLevel() == level)
-            .findFirst();
+    private Optional<TierDefinition> findTier(String categoryId, int level) {
+        Optional<TierDefinition> categoryTier = tierRepository.findByCategory(categoryId, level);
+        return categoryTier.isPresent() ? categoryTier : tierRepository.findByLevel(level);
     }
 
-    private boolean isMaxReachableTier(int currentTier) {
-        int maxDefined = tierRepository.all().stream()
+    private boolean isMaxReachableTier(String categoryId, int currentTier) {
+        int maxDefined = tierRepository.getEquipmentCatalog().findCategory(categoryId)
+            .map(category -> category.getProgression().stream()
+                .map(tierRepository::findById)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .mapToInt(TierDefinition::getLevel)
+                .max().orElse(0))
+            .orElseGet(() -> tierRepository.all().stream()
             .mapToInt(TierDefinition::getLevel)
-            .max()
-            .orElse(0);
+            .max().orElse(0));
         return currentTier >= maxDefined;
     }
 

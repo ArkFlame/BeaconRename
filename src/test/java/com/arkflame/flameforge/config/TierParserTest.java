@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class TierParserTest {
 
@@ -77,5 +78,28 @@ class TierParserTest {
         assertNotNull(tier);
         assertTrue(report.hasErrors());
         assertTrue(tier.getVariants().get(0).getPowers().isEmpty());
+    }
+
+    @Test
+    void parsesInventoryActivationAndBlockPowerTypes() {
+        YamlConfiguration yaml = new YamlConfiguration();
+        yaml.set("schema-version", 2);
+        yaml.set("id", "activation-scope");
+        yaml.set("level", 1);
+        yaml.set("variants.example.weight", 1);
+        Map<String, Object> power = new HashMap<>();
+        power.put("id", "block-potion");
+        power.put("type", ForgePowerDefinition.PowerType.ON_BLOCK_POTION.name());
+        power.put("activation-slots", Arrays.asList("INVENTORY"));
+        yaml.set("variants.example.powers", Arrays.asList(power));
+
+        ValidationReport report = new ValidationReport();
+        TierDefinition tier = TierParser.parse(yaml, report);
+
+        assertFalse(report.hasErrors());
+        assertEquals(ForgePowerDefinition.PowerType.ON_BLOCK_POTION,
+            tier.getVariants().get(0).getPowers().get(0).getPowerType());
+        assertEquals(ForgePowerDefinition.ActivationSlot.INVENTORY,
+            tier.getVariants().get(0).getPowers().get(0).getActivationSlots().get(0));
     }
 }

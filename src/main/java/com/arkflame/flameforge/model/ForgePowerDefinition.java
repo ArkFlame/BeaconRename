@@ -20,7 +20,10 @@ public final class ForgePowerDefinition {
         ON_HIT_BLEED,
         ON_HIT_EXPLOSIVE,
         ON_HIT_CHAIN_POTION,
-        ON_HIT_CHAIN_DAMAGE
+        ON_HIT_CHAIN_DAMAGE,
+        ON_BLOCK_POTION,
+        ON_BLOCK_KNOCKBACK,
+        ON_BLOCK_HEAL
     }
 
     public enum ActivationSlot {
@@ -29,7 +32,8 @@ public final class ForgePowerDefinition {
         HEAD,
         CHEST,
         LEGS,
-        FEET
+        FEET,
+        INVENTORY
     }
 
     private final String id;

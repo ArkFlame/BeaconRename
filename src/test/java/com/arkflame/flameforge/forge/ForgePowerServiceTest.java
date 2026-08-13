@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -141,6 +142,31 @@ class ForgePowerServiceTest {
         when(player.getHealth()).thenReturn(10.0);
         assertTrue(service.activateHeal(player, heal, forgeId));
         verify(player).setHealth(11.0);
+    }
+
+    @Test
+    void inventoryCacheReturnsDefensiveCopy() {
+        EquipmentBridge equipment = mock(EquipmentBridge.class);
+        ItemIdentityService identity = mock(ItemIdentityService.class);
+        Player player = mock(Player.class);
+        UUID playerId = UUID.randomUUID();
+        UUID forgeId = UUID.randomUUID();
+        when(player.getUniqueId()).thenReturn(playerId);
+        ItemStack item = mock(ItemStack.class);
+        when(item.hasItemMeta()).thenReturn(true);
+        when(identity.readForgeIdentity(item)).thenReturn(new ItemIdentityService.ForgeIdentityRead(
+            ItemIdentityService.ForgeIdentityStatus.VALID,
+            ItemIdentityCodec.Identity.empty().withForgeId(forgeId)));
+        when(equipment.getInventoryContents(player)).thenReturn(new ItemStack[] {item});
+        when(equipment.getArmorContents(player)).thenReturn(new ItemStack[0]);
+        ForgePowerService service = service(new FakeSchedulerBridge(), mock(PotionEffectResolver.class),
+            equipment, identity, mock(MultiStrikeService.class));
+
+        service.refreshInventoryCache(player);
+        Set<UUID> cached = service.getCachedInventoryForgeIds(player);
+        cached.clear();
+
+        assertTrue(service.hasCachedInventoryForgeId(player, forgeId));
     }
 
     private static ForgePowerService service(SchedulerBridge scheduler, PotionEffectResolver resolver,

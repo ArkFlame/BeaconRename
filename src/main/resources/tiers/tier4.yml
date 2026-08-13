@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Tier IV forged variant"
       - "<dark_gray>● <dark_purple>20% wither strike"
-      - "<dark_gray>● <white>60 tick cooldown"
+      - "<dark_gray>● <white>3 second cooldown"
     enchantments: []
     attributes: []
     powers:
@@ -160,7 +160,7 @@ variants:
     lore:
       - "<gray>Tier IV forged variant"
       - "<dark_gray>● <aqua>Shift + right click to dash"
-      - "<dark_gray>● <white>120 tick cooldown"
+      - "<dark_gray>● <white>6 second cooldown"
     enchantments: []
     attributes: []
     powers:

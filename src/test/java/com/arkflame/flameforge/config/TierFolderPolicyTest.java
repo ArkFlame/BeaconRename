@@ -54,6 +54,21 @@ class TierFolderPolicyTest {
         assertFalse(repository.all().isEmpty());
     }
 
+    @Test
+    void bootstrapCopiesMissingBundledTiersWhenDirectoryAlreadyExists() throws Exception {
+        JavaPlugin plugin = mock(JavaPlugin.class);
+        when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
+        stubBundledTiers(plugin);
+
+        Files.createDirectories(tempDir.resolve("tiers"));
+        TierRepository repository = new TierRepository(plugin);
+        repository.bootstrapDefaultsIfDirectoryAbsent();
+
+        for (int level = 1; level <= 7; level++) {
+            assertTrue(Files.exists(tempDir.resolve("tiers").resolve("tier" + level + ".yml")));
+        }
+    }
+
     private void stubBundledTiers(JavaPlugin plugin) {
         for (int level = 1; level <= 7; level++) {
             String path = "tiers/tier" + level + ".yml";

@@ -5,10 +5,14 @@ import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Constructor;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class ParticleBridge {
     private static final ParticleBridge INSTANCE = new ParticleBridge();
@@ -21,6 +25,12 @@ public final class ParticleBridge {
     private final boolean modernAvailable;
     private final Class<?> particleClass;
     private final Method spawnParticleMethod;
+    private final Method coloredSpawnParticleMethod;
+    private final Class<?> dustOptionsClass;
+    private final Method colorFromRgbMethod;
+    private final Constructor<?> dustOptionsConstructor;
+    private final AtomicBoolean coloredDustDiagnostic = new AtomicBoolean(false);
+    private final Logger logger = Logger.getLogger(ParticleBridge.class.getName());
 
     static {
         PARTICLE_ALIASES.put("explode", "explosion_normal");
@@ -122,19 +132,49 @@ public final class ParticleBridge {
     private ParticleBridge() {
         Class<?> clazz = null;
         Method method = null;
+        Method coloredMethod = null;
+        Class<?> dustClass = null;
+        Method colorMethod = null;
+        Constructor<?> dustConstructor = null;
         boolean modern = false;
         try {
             clazz = Class.forName("org.bukkit.Particle");
-            method = Player.class.getMethod("spawnParticle", clazz, Location.class, int.class);
-            modern = true;
-        } catch (NoSuchMethodException | ClassNotFoundException e) {
+            method = findSpawnParticleMethod(clazz, 7);
+            if (method == null) {
+                method = findSpawnParticleMethod(clazz, 3);
+            }
+            coloredMethod = findSpawnParticleMethod(clazz, 8);
+            modern = method != null;
+            try {
+                dustClass = Class.forName("org.bukkit.Particle$DustOptions");
+                Class<?> colorClass = Class.forName("org.bukkit.Color");
+                colorMethod = colorClass.getMethod("fromRGB", int.class, int.class, int.class);
+                dustConstructor = dustClass.getConstructor(colorClass, float.class);
+            } catch (ReflectiveOperationException ignored) {
+                coloredMethod = null;
+            }
+        } catch (ReflectiveOperationException e) {
             clazz = null;
             method = null;
             modern = false;
         }
         this.particleClass = clazz;
         this.spawnParticleMethod = method;
+        this.coloredSpawnParticleMethod = coloredMethod;
+        this.dustOptionsClass = dustClass;
+        this.colorFromRgbMethod = colorMethod;
+        this.dustOptionsConstructor = dustConstructor;
         this.modernAvailable = modern;
+    }
+
+    private static Method findSpawnParticleMethod(Class<?> particleType, int parameterCount) {
+        for (Method method : Player.class.getMethods()) {
+            if ("spawnParticle".equals(method.getName()) && method.getParameterTypes().length == parameterCount
+                && method.getParameterTypes()[0] == particleType) {
+                return method;
+            }
+        }
+        return null;
     }
 
     public static ParticleBridge getInstance() {
@@ -143,6 +183,41 @@ public final class ParticleBridge {
 
     public boolean isModernAvailable() {
         return modernAvailable;
+    }
+
+    public void sendColoredDust(Player player, Location location, int red, int green, int blue,
+                                float size, int count) {
+        if (player == null || location == null) {
+            return;
+        }
+        if (coloredSpawnParticleMethod != null && dustOptionsClass != null
+            && colorFromRgbMethod != null && dustOptionsConstructor != null) {
+            try {
+                Object particle = resolveParticle("redstone");
+                Object color = colorFromRgbMethod.invoke(null, clamp(red), clamp(green), clamp(blue));
+                Object dust = dustOptionsConstructor.newInstance(color, Math.max(0.01f, size));
+                coloredSpawnParticleMethod.invoke(player, particle, location, count,
+                    0.0, 0.0, 0.0, 0.0, dust);
+                return;
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                logColoredDustFallback(e);
+            } catch (LinkageError e) {
+                logColoredDustFallback(e);
+            }
+        } else {
+            logColoredDustFallback(null);
+        }
+        sendToPlayer(player, "spell", location, 0f, 0f, 0f, 0f, count);
+    }
+
+    private void logColoredDustFallback(Throwable failure) {
+        if (coloredDustDiagnostic.compareAndSet(false, true)) {
+            logger.log(Level.FINE, "Colored forge dust unavailable; using cosmetic fallback", failure);
+        }
+    }
+
+    private static int clamp(int value) {
+        return Math.max(0, Math.min(255, value));
     }
 
     public void sendToPlayer(final Player player, final String particleKey, final Location location,
@@ -235,7 +310,11 @@ public final class ParticleBridge {
             return;
         }
         try {
-            spawnParticleMethod.invoke(player, particle, location, 1, 0, 0, 0, 0);
+            if (spawnParticleMethod.getParameterTypes().length == 3) {
+                spawnParticleMethod.invoke(player, particle, location, 1);
+            } else {
+                spawnParticleMethod.invoke(player, particle, location, 1, 0.0, 0.0, 0.0, 0.0);
+            }
         } catch (Exception e) {
         }
     }
@@ -258,7 +337,12 @@ public final class ParticleBridge {
                 sendLegacy(player, particleKey, location, offsetX, offsetY, offsetZ, speed, count);
                 return;
             }
-            spawnParticleMethod.invoke(player, particle, location, count, offsetX, offsetY, offsetZ, speed);
+            if (spawnParticleMethod.getParameterTypes().length == 3) {
+                spawnParticleMethod.invoke(player, particle, location, count);
+            } else {
+                spawnParticleMethod.invoke(player, particle, location, count,
+                    offsetX, offsetY, offsetZ, speed);
+            }
         } catch (Exception e) {
             sendLegacy(player, particleKey, location, offsetX, offsetY, offsetZ, speed, count);
         }

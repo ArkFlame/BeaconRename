@@ -8,6 +8,7 @@ import org.bukkit.inventory.ItemStack;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public final class ForgeVariantEligibility {
     private final ItemIdentityService identityService;
@@ -26,7 +27,9 @@ public final class ForgeVariantEligibility {
         }
         Material material = item.getType();
         for (String group : applicableGroups) {
-            if (identityService.matchesMaterialGroup(material, group)) {
+            if ("ANY".equalsIgnoreCase(group)
+                || identityService.matchesMaterialGroup(material, group)
+                || identityService.matchesMaterialGroupName(material.name(), group.toLowerCase(Locale.ROOT))) {
                 return true;
             }
         }

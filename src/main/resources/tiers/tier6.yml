@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Tier VI forged variant"
       - "<dark_gray>● <green>28% Poison II contagion"
-      - "<dark_gray>● <white>60 tick cooldown"
+      - "<dark_gray>● <white>3 second cooldown"
       - "<dark_gray>● <red>Bleeding follows the contagion"
     enchantments: []
     attributes: []
@@ -183,7 +183,7 @@ variants:
     lore:
       - "<gray>Tier VI forged variant"
       - "<dark_gray>● <light_purple>Shift + right click to restore 6 health"
-      - "<dark_gray>● <white>160 tick cooldown"
+      - "<dark_gray>● <white>8 second cooldown"
     enchantments: []
     attributes: []
     powers:

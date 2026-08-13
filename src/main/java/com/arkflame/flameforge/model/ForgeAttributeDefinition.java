@@ -5,7 +5,14 @@ import java.util.Objects;
 public final class ForgeAttributeDefinition {
     public enum AttributeType {
         ATTACK_DAMAGE_FLAT,
-        DAMAGE_REDUCTION_PERCENT
+        DAMAGE_REDUCTION_PERCENT,
+        POISON_DAMAGE_REDUCTION_PERCENT,
+        MAGIC_DAMAGE_REDUCTION_PERCENT,
+        FALL_DAMAGE_REDUCTION_PERCENT;
+
+        public static final AttributeType POISON_REDUCTION_PERCENT = POISON_DAMAGE_REDUCTION_PERCENT;
+        public static final AttributeType MAGIC_REDUCTION_PERCENT = MAGIC_DAMAGE_REDUCTION_PERCENT;
+        public static final AttributeType FALL_REDUCTION_PERCENT = FALL_DAMAGE_REDUCTION_PERCENT;
     }
 
     private final String id;

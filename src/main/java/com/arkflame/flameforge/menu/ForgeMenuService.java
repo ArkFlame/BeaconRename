@@ -515,10 +515,11 @@ public final class ForgeMenuService {
             String variantName = variant.getName() != null ? variant.getName() : "Unknown";
 
             MessageArguments args = MessageArguments.create()
-                    .string("variant_name", variantName)
+                    .component("variant_name", textRenderer.renderComponent(variantName, null, "menu.variant-name"))
                     .string("variant_chance", formatPercent(vwp.actualPct));
 
-            lines.add(textRenderer.renderToMiniMessage(variantTemplate, args.getStringValues(), "menu.variant"));
+            lines.add(textRenderer.renderToMiniMessage(variantTemplate, args.getStringValues(),
+                    args.getComponentValues(), "menu.variant"));
         }
 
         return lines;

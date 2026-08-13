@@ -53,7 +53,8 @@ class ItemMutationServiceTest {
         configSnapshot = mock(ConfigSnapshot.class);
         when(configService.getCurrentSnapshot()).thenReturn(configSnapshot);
         when(identityService.defaultBaseDisplayName(any(Material.class))).thenReturn("Diamond Sword");
-        when(textRenderer.renderItemLegacy(anyString(), any(), isNull())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(textRenderer.renderItemLegacyInheritedLiteral(anyString(), any(), anyString(), isNull()))
+                .thenAnswer(invocation -> invocation.getArgument(0));
         when(identityService.writeForgeIdentity(any(), any())).thenAnswer(invocation ->
                 java.util.Optional.of((ItemStack) invocation.getArgument(0)));
         mutationService = new ItemMutationService(
