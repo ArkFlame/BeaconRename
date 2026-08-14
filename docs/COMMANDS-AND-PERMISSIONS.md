@@ -1,184 +1,170 @@
 # FlameForge Commands and Permissions
 
-## Commands Reference
+All commands are subcommands of `/flameforge` (aliases: `forge`, `ff`). The root
+command requires `flameforge.use`. Every command node is READY-only: while the
+plugin is loading, failed, or shutting down, commands reply with a startup
+status message instead of executing.
 
-All commands are subcommands of `/flameforge` (aliases: `forge`, `ff`).
+Usage notation: `<arg>` required, `[arg]` optional, `[id|auto]` alternative.
 
-### Help
+## Command Reference
+
+| Command                                        | Permission                        | Default | Access | Description                         |
+|------------------------------------------------|-----------------------------------|---------|--------|-------------------------------------|
+| `/flameforge help [page]`                      | `flameforge.command.help`         | true    | USER   | Show this help message              |
+| `/flameforge open`                             | `flameforge.command.open`         | true    | USER   | Open the forge menu                 |
+| `/flameforge open <player>`                    | `flameforge.command.open.others`  | op      | ADMIN  | Open the forge menu for a player    |
+| `/flameforge tiers [page]`                     | `flameforge.command.tiers`        | op      | ADMIN  | List all forge tiers                |
+| `/flameforge tier info <tier>`                 | `flameforge.command.tier.info`    | op      | ADMIN  | Show tier details                   |
+| `/flameforge preview <tier> [material]`        | `flameforge.command.preview`      | op      | ADMIN  | Preview forge outcomes              |
+| `/flameforge history`                          | `flameforge.command.history`      | true    | USER   | View your forge history             |
+| `/flameforge history <player>`                 | `flameforge.command.history.others`| op     | ADMIN  | View another player's history       |
+| `/flameforge tp <id>`                          | `flameforge.command.station.teleport` | op | ADMIN | Teleport to a forge station       |
+| `/flameforge station add [id|auto] [profile]`  | `flameforge.command.station.add`  | op      | ADMIN  | Add a new forge station             |
+| `/flameforge station remove <id>`              | `flameforge.command.station.remove`| op     | ADMIN  | Remove a forge station              |
+| `/flameforge station list [page]`              | `flameforge.command.station.list` | op      | ADMIN  | List all forge stations             |
+| `/flameforge station info <id>`                | `flameforge.command.station.info` | op      | ADMIN  | Show station details                |
+| `/flameforge station teleport <id>`            | `flameforge.command.station.teleport` | op | ADMIN | Teleport to a forge station       |
+| `/flameforge reload`                           | `flameforge.command.reload`       | op      | ADMIN  | Reload configuration                |
+| `/flameforge validate`                         | `flameforge.command.validate`     | op      | ADMIN  | Validate configuration              |
+| `/flameforge testitem <tier> <variant> [material]` | `flameforge.command.testitem` | op | ADMIN | Test forge item mutations        |
+| `/flameforge setup tier create <id> <level>`   | `flameforge.command.setup.tier`   | op      | ADMIN  | Create a new tier                   |
+| `/flameforge setup tier clone <source> <id> <level>` | `flameforge.command.setup.tier` | op | ADMIN | Clone an existing tier          |
+
+`station teleport <id>` is an alias of `tp <id>` and is hidden from the help
+tree (only `tp` is listed).
+
+### Command details
+
+- **help** — permission-filtered help. Root help lists the immediate
+  subcommands grouped under General / Forging / Forge Management /
+  Administration; `/flameforge help <group>` navigates into one group (e.g.
+  `forging`, `forge-management`, `administration`). Unknown paths render
+  `help.unknown-path`. Entries carry hover text and click-to-insert
+  suggestions.
+- **open** — player-only; the command resolves the forge station the *target
+  player* is currently looking at (the sender without a target, or the named
+  player with `flameforge.command.open.others`) and opens that player's forge
+  menu. Errors: `open.no-target` (player offline), `open.no-forge-target`
+  (target not looking at a registered forge), forge not found, station profile
+  missing, missing station permission (`station-permission-required`), no
+  allowed tier at the station.
+- **tiers** — paginated list of loaded tiers with level.
+- **tier info** — shows level, enabled, cooldown in seconds
+  (`tier-info.cooldown`, `cooldown-seconds`), requirement combine mode, XP /
+  money / item requirements, success/break/curse chances, and variants with
+  weight.
+- **preview** — player-only, READY-only. Resolves the tier, then uses the held
+  item (`preview.no-item` if nothing held), optionally replaced by
+  `[material]` (`preview.unknown-material`). Shows the first eligible variant
+  (`preview.variant`) and the result material (`preview.material`). No
+  transaction occurs.
+- **history** — shows the player's header and current tier. The full history
+  log is not yet implemented (the message `history.not-implemented` is
+  rendered after the current tier).
+- **tp / station teleport** — player-only, READY-only; teleports asynchronously
+  and reports scheduler rejections / world-unloaded / teleport-rejected
+  outcomes.
+- **station add** — player-only, READY-only. While looking at a non-air block,
+  registers a forge. `[id]` is validated to letters, numbers, underscore and
+  hyphen; `auto` (or omitting the id) generates a unique id (fails after eight
+  attempts). `[profile]` defaults to `default`. Guards: duplicate id,
+  duplicate location, storage-conflict (station file exists but was not
+  loaded), persistence failure (station not registered if the file cannot be
+  saved).
+- **station remove / list / info** — remove requires the id; list is paginated;
+  info shows world, location, profile, max tier.
+- **reload** — READY-only applies asynchronously. If validation finds errors
+  the reload is rejected and the previous configuration remains active. If the
+  current state is a retryable startup failure, reload retries startup
+  (`startup-retry-started`). Guards against concurrent reloads.
+- **validate** — READY-only parse-only validation; never applies changes.
+- **testitem** — see the dedicated section below.
+- **setup tier create / clone** — create writes a new empty tier file with the
+  given id and level (no default outcomes — edit the file); clone copies an
+  existing tier file to a new id/level. Both fail on duplicate ids and
+  non-numeric levels.
+
+## /flameforge testitem
+
+`/flameforge testitem <tier> <variant> [material]`
+
+- **Permission**: `flameforge.command.testitem` (op; child of `flameforge.admin`).
+- **Sender**: player-only. **State**: READY-only.
+- **Semantics**: no transaction — the command creates a *new* test item with a
+  fresh forge id and hands it to the player. No economy, cooldown, station, or
+  history is involved. Passive powers are refreshed after delivery so the item
+  takes effect immediately.
+
+Argument handling:
+
+1. `<tier>` must be a loaded tier id (`testitem.tier-not-found`).
+2. `<variant>` must exist in that tier (`testitem.variant-not-found`).
+3. `[material]` is resolved through `MaterialResolver` (aliases like
+   `golden_sword` → `GOLDEN_SWORD`/`GOLD_SWORD`; first runtime-present
+   candidate wins). Unknown or AIR material → `testitem.material-unavailable`.
+   When omitted, a category-based fallback is used:
+   - weapon → `NETHERITE_SWORD`, `DIAMOND_SWORD`, `IRON_SWORD`
+   - armor → `NETHERITE_CHESTPLATE`, `DIAMOND_CHESTPLATE`, `IRON_CHESTPLATE`
+   - shield → `SHIELD`
+   - amulet or uncategorized → `NETHERITE_INGOT`, `DIAMOND`, `EMERALD`, `WOOL`
+   (first present on the runtime server wins).
+4. If the tier belongs to a category, the material must belong to the same
+   category (`testitem.material-category-mismatch`).
+5. The variant must be eligible for the material (`testitem.variant-ineligible`).
+6. The item is mutated with the tier/variant success mutation; failure →
+   `testitem.mutation-failed`.
+
+On success the item is returned to the player and
+`testitem.success` (tier/variant/material) is shown.
+
+### Tab completion
+
+- Root level: permitted root subcommands matching the typed prefix, sorted
+  case-insensitively.
+- `testitem <…>`: arg 1 = loaded tier ids; arg 2 = variant ids of the given
+  tier; arg 3 = material names. All filtered by prefix.
+- `open` / `history`: online player names when the `.others` permission is held.
+- `tier info`: tier ids. `preview`: tier ids then materials.
+- `tp` / `station` / `setup`: station ids / station subcommands / setup tier
+  subcommands respectively.
+- `reload`, `validate`, `tiers` complete nothing.
+
+## Permission Tree
 
 ```
-/flameforge help [path]
+flameforge.use                    (default true)  — root command usage
+├─ flameforge.command.help        (true)   — /flameforge help
+├─ flameforge.command.open        (true)   — /flameforge open
+├─ flameforge.command.open.others (op)     — /flameforge open <player>
+├─ flameforge.command.reload      (op)     — /flameforge reload
+├─ flameforge.command.validate    (op)     — /flameforge validate
+├─ flameforge.command.tiers       (op)     — /flameforge tiers
+├─ flameforge.command.tier.info   (op)     — /flameforge tier info
+├─ flameforge.command.preview     (op)     — /flameforge preview
+├─ flameforge.command.history     (true)   — /flameforge history
+├─ flameforge.command.history.others (op)  — /flameforge history <player>
+├─ flameforge.command.station.add (op)     — /flameforge station add
+├─ flameforge.command.station.remove (op)  — /flameforge station remove
+├─ flameforge.command.station.list (op)    — /flameforge station list
+├─ flameforge.command.station.info (op)    — /flameforge station info
+├─ flameforge.command.station.teleport (op)— /flameforge tp / station teleport
+├─ flameforge.command.setup.tier  (op)     — /flameforge setup tier create|clone
+├─ flameforge.command.testitem    (op)     — /flameforge testitem
+flameforge.bypass.cost            (op)     — bypass forge costs
+flameforge.bypass.cooldown        (op)     — bypass forge cooldowns
+flameforge.admin                  (op)     — grants every node above (children)
 ```
-Displays hierarchical help menu without pages. The optional `path` argument filters to a specific command group (e.g., `flameforge help station`). Each entry supports click-to-insert — clicking a command suggestion inserts it into the chat input.
 
-- Default permission: `flameforge.command.help` (all players)
+`flameforge.admin` declares all `flameforge.command.*` nodes plus
+`flameforge.use` as children. The bypass nodes are *not* children of
+`flameforge.admin`. Command dispatch also accepts either the specific
+permission or `flameforge.admin` (`CommandNode.isPermitted`). Player-specific
+station permissions come from the station profile (`station-profiles.yml`),
+not from plugin.yml.
 
-### Open Forge
+## Message customization
 
-```
-/flameforge open [player]
-```
-Opens the forge menu. If `player` is specified and sender has `flameforge.command.open.others`, opens the menu for that player.
-
-- Default permission: `flameforge.command.open` (all players)
-
-### Reload
-
-```
-/flameforge reload
-```
-Reloads all configuration files and rebuilds internal snapshots. Async operation.
-
-- Default permission: `flameforge.command.reload` (op)
-
-### Validate
-
-```
-/flameforge validate
-```
-Runs configuration validation without reloading. Reports errors and warnings.
-
-- Default permission: `flameforge.command.validate` (op)
-
-### List Tiers
-
-```
-/flameforge tiers [page]
-```
-Lists all configured tiers with their level values.
-
-- Default permission: `flameforge.command.tiers` (op)
-
-### Tier Info
-
-```
-/flameforge tier info <tier-id>
-```
-Shows detailed information about a specific tier: level, requirements, animation durations, cost mode, cooldown, and outcomes.
-
-- Default permission: `flameforge.command.tier.info` (op)
-
-### Preview
-
-```
-/flameforge preview <tier-id> [material]
-```
-Shows a preview of the first outcome's mutation result for the held item (or specified material). Does not consume items or charge costs.
-
-- Default permission: `flameforge.command.preview` (op)
-
-### History
-
-```
-/flameforge history [player]
-```
-Shows reforge history for the player. Without arguments, shows sender's own history.
-
-- Default permission: `flameforge.command.history` (all players)
-- Other players: `flameforge.command.history.others` (op)
-
-### Station Management
-
-```
-/flameforge station add [id] [profile]
-```
-Registers any non-air block the player is looking at as a forge. Player must be within 6 blocks of the target. ID and profile are optional; profile defaults to `default`.
-
-- Default permission: `flameforge.command.station.add` (op)
-
-```
-/flameforge station remove <id>
-```
-Removes a registered station by its ID.
-
-- Default permission: `flameforge.command.station.remove` (op)
-
-```
-/flameforge station list [page]
-```
-Lists all registered stations with IDs, coordinates, and profiles.
-
-- Default permission: `flameforge.command.station.list` (op)
-
-```
-/flameforge station info <id>
-```
-Shows detailed information about a station: world, coordinates, profile, max tier.
-
-- Default permission: `flameforge.command.station.info` (op)
-
-```
-/flameforge station teleport <id>
-```
-Teleports the player to a station's location. On Folia, uses entity scheduler.
-
-- Default permission: `flameforge.command.station.teleport` (op)
-
-### Tier Setup
-
-```
-/flameforge setup tier create <id> <level>
-```
-Creates a new empty tier file in `tiers/` with the specified ID and level. The file is created with schema version 2 but contains no outcomes.
-
-- Default permission: `flameforge.command.setup.tier` (op)
-
-```
-/flameforge setup tier clone <source-id> <new-id> <level>
-```
-Clones an existing tier file to a new ID with a new level.
-
-- Default permission: `flameforge.command.setup.tier` (op)
-
-## Permission Nodes
-
-### Base Permissions
-
-| Permission                    | Description                              | Default |
-|-------------------------------|------------------------------------------|---------|
-| `flameforge.use`              | Basic plugin access                      | true    |
-| `flameforge.admin`            | All command permissions, including `flameforge.use` | op      |
-
-### Command Permissions
-
-| Permission                           | Description                              | Default |
-|--------------------------------------|------------------------------------------|---------|
-| `flameforge.command.help`           | Help menu                                | true    |
-| `flameforge.command.open`            | Open forge menu                          | true    |
-| `flameforge.command.open.others`     | Open menu for other players              | op      |
-| `flameforge.command.reload`         | Reload configuration                     | op      |
-| `flameforge.command.validate`        | Validate configuration                   | op      |
-| `flameforge.command.tiers`           | List tiers                               | op      |
-| `flameforge.command.tier.info`       | View tier information                    | op      |
-| `flameforge.command.preview`         | Preview outcomes                         | op      |
-| `flameforge.command.history`          | View own history                         | true    |
-| `flameforge.command.history.others`  | View other players' history              | op      |
-| `flameforge.command.station.add`     | Register stations                        | op      |
-| `flameforge.command.station.remove`  | Remove stations                          | op      |
-| `flameforge.command.station.list`    | List stations                            | op      |
-| `flameforge.command.station.info`    | View station information                 | op      |
-| `flameforge.command.station.teleport` | Teleport to stations                    | op      |
-| `flameforge.command.setup.tier`      | Create/clone tiers                       | op      |
-
-### Bypass Permissions
-
-| Permission                  | Description                              | Default |
-|-----------------------------|------------------------------------------|---------|
-| `flameforge.bypass.cost`    | Skip cost requirements                   | op      |
-| `flameforge.bypass.cooldown`| Skip cooldown periods                    | op      |
-
-## Tab Completion
-
-## Click Interception
-
-Help entries, suggestions, and hover text are rendered via Adventure MiniMessage. Clicking a help entry inserts the full command label and suggestion into the player's chat input, allowing players to quickly type commands without copying manually.
-
-## Tab Completion
-
-Tab completion is supported for:
-- Subcommand names
-- Online player names (for `open` and `history`)
-- Tier IDs (for `tier info`, `preview`, `setup tier clone`)
-- Station IDs (for `station remove`, `station info`, `station teleport`)
-- Material names and aliases (for `preview`)
-- Profile names (for `station add`)
+Command output is driven by `messages.yml` keys (e.g. `tier-info.usage`,
+`testitem.usage`, `station-add.usage`). The operator copy overlays the bundled
+defaults per key. Help descriptions live under `help.descriptions.*`.

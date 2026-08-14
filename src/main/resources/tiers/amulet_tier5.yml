@@ -65,6 +65,9 @@ variants:
           - RESISTANCE
         duration-ticks: 1200
         amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
         activation-slots:
           - INVENTORY
       - id: guardian_regeneration
@@ -74,6 +77,8 @@ variants:
           - REGENERATION
         duration-ticks: 1200
         amplifier: 0
+        particle-candidates:
+          - HEART
         activation-slots:
           - INVENTORY
   vital_charm:
@@ -83,7 +88,7 @@ variants:
     display-name: "<gradient:#86efac:#166534><bold>Vital Charm %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier V amulet variant"
-      - "<green>Regeneration II for 60 seconds while in inventory"
+      - "<green>Regeneration II for 60 seconds while held in main or off hand"
     enchantments: []
     attributes: []
     powers:
@@ -94,5 +99,8 @@ variants:
           - REGENERATION
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - HEART
         activation-slots:
-          - INVENTORY
+          - MAIN_HAND
+          - OFF_HAND

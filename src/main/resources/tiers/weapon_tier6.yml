@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Weapon Tier VI forged variant"
       - "<dark_gray>Power: Chain damage on hit"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -122,10 +122,11 @@ variants:
         chance: "0.25"
         damage-amount: "2"
         radius: "6"
-        max-targets: 6
+        max-targets: 10
         chain-delay-ticks: 2
         trail-points: 12
         particle-candidates:
+          - ELECTRIC_SPARK
           - NOTE
           - CRIT
   reaper:
@@ -136,7 +137,8 @@ variants:
     lore:
       - "<gray>Weapon Tier VI forged variant"
       - "<dark_gray>Power: Bleed and heal on hit"
-      - "<dark_gray>Cooldowns: 60 and 80 seconds"
+      - "<dark_gray>Bleed Cooldown: 3s"
+      - "<dark_gray>Heal Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -148,11 +150,16 @@ variants:
         damage-amount: "1"
         pulse-count: 4
         pulse-interval-ticks: 12
+        particle-candidates:
+          - CRIT
+          - HEART
       - id: reaper_heal
         type: ON_HIT_HEAL
         cooldown-ticks: 80
         chance: "0.12"
         heal-amount: "1.5"
+        particle-candidates:
+          - HEART
   demolisher:
     weight: "33.0"
     applicable-groups:
@@ -161,7 +168,7 @@ variants:
     lore:
       - "<gray>Weapon Tier VI forged variant"
       - "<dark_gray>Power: Explosive strike"
-      - "<dark_gray>Cooldown: 100 seconds"
+      - "<dark_gray>Cooldown: 5s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -175,3 +182,8 @@ variants:
         secondary-damage-multiplier: "0.50"
         max-targets: 6
         primary-knockback-multiplier: "1.75"
+        particle-candidates:
+          - EXPLOSION
+          - EXPLOSION_NORMAL
+          - EXPLOSION_EMITTER
+          - FLAME

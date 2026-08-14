@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
@@ -30,15 +31,30 @@ import java.util.logging.Level;
 public final class ForgeAnimationService {
     private static final int MAX_TRACKED_TRANSACTIONS = 1000;
     private static final double FORGING_CENTER_Y = 2.00;
-    private static final double ITEM_ORBIT_RADIUS = 0.18;
-    private static final double ITEM_BOB_HEIGHT = 0.08;
-    private static final double ITEM_RISE_HEIGHT = 0.30;
+    private static final double ITEM_PATH_BASE_Y = 1.15;
+    private static final double ITEM_PATH_RISE = 0.85;
+    private static final double ITEM_PATH_BOB_AMPLITUDE = 0.06;
+    private static final double ITEM_PATH_RADIUS_START = 0.24;
+    private static final double ITEM_PATH_RADIUS_END = 0.16;
+    private static final double ITEM_PATH_ROTATIONS = 6.0;
+    private static final double ITEM_PATH_YAW_DEGREES = 1080.0;
     private static final double SPIRAL_RADIUS = 0.42;
+    private static final double SPIRAL_RADIUS_END = 0.28;
     private static final double SPIRAL_HALF_HEIGHT = 0.45;
     private static final int SPIRAL_SAMPLES_PER_STRAND = 6;
     private static final int ITEM_TRAIL_POINTS = 4;
+    private static final int AURA_SAMPLES = 4;
+    private static final double AURA_ORBIT_RADIUS = 0.35;
+    private static final double AURA_VERTICAL_OFFSET = 0.12;
+    private static final double CONNECTOR_FORGE_TOP_Y = 1.05;
     private static final int REVEAL_DURATION_TICKS = 10;
     private static final int REVEAL_FEEDBACK_TICK = 5;
+    private static final int REVEAL_STAR_VERTICES = 10;
+    private static final double REVEAL_STAR_OUTER_RADIUS = 0.75;
+    private static final double REVEAL_STAR_INNER_RADIUS = 0.32;
+    private static final double REVEAL_HALO_OUTER_RADIUS = 0.45;
+    private static final double REVEAL_HALO_INNER_RADIUS = 0.20;
+    private static final int REVEAL_EDGE_SAMPLES = 3;
     private static final String STEP_TYPE_PARTICLE = "particle";
     private static final String STEP_TYPE_SOUND = "sound";
     private static final String STEP_TYPE_TEXT = "text";
@@ -61,7 +77,8 @@ public final class ForgeAnimationService {
 
     public ForgeAnimationService(JavaPlugin plugin, SchedulerBridge scheduler,
                                  ParticleBridge particles, SoundResolver sounds, TextBridge text,
-                                 TextRenderer textRenderer, ForgeItemVisualService itemVisuals) {
+                                 TextRenderer textRenderer, ForgeItemVisualService itemVisuals,
+                                 ForgeAnimationThemeResolver themeResolver) {
         this.plugin = plugin;
         this.scheduler = scheduler;
         this.particles = particles;
@@ -69,7 +86,14 @@ public final class ForgeAnimationService {
         this.text = text;
         this.textRenderer = textRenderer;
         this.itemVisuals = itemVisuals;
-        this.themeResolver = new ForgeAnimationThemeResolver();
+        this.themeResolver = Objects.requireNonNull(themeResolver, "themeResolver");
+    }
+
+    public ForgeAnimationService(JavaPlugin plugin, SchedulerBridge scheduler,
+                                 ParticleBridge particles, SoundResolver sounds, TextBridge text,
+                                 TextRenderer textRenderer, ForgeItemVisualService itemVisuals) {
+        this(plugin, scheduler, particles, sounds, text, textRenderer, itemVisuals,
+            new ForgeAnimationThemeResolver());
     }
 
     public AnimationHandle playAnimation(String transactionId, Player owner, Location stationLocation,
@@ -288,6 +312,9 @@ public final class ForgeAnimationService {
             if (handle.isTerminal()) {
                 return;
             }
+            if (revealTick == 1) {
+                holdFakeItemAtFinalPosition(owner, stationLocation, transactionId);
+            }
             executeRevealStep(owner, stationLocation, profile, theme, outcomeCategory, revealTick);
         }, () -> scheduledTasks.remove(transactionId + "_reveal_" + revealTick), delay);
         if (task == null) {
@@ -321,25 +348,43 @@ public final class ForgeAnimationService {
         for (Location connectorPoint : computeConnectorPoints(stationLocation, itemLoc)) {
             sendParticleSafe(owner, particleKey, connectorPoint, 1);
         }
-        sendColoredDustSafe(owner, itemLoc, theme, 5);
+        for (Location auraPoint : computeAuraPoints(stationLocation, itemLoc)) {
+            sendColoredDustSafe(owner, auraPoint, theme.getAuraRed(), theme.getAuraGreen(),
+                theme.getAuraBlue(), 1);
+        }
+        sendParticleSafe(owner, theme.getAuraParticle(), itemLoc, 1);
     }
 
     private void executeRevealStep(Player owner, Location stationLocation, ForgeAnimationProfile profile,
                                    ForgeAnimationTheme theme, ForgeOutcomeCategory category, int revealTick) {
-        double progress = revealTick / (double) REVEAL_DURATION_TICKS;
-        Location center = stationLocation.clone().add(0, FORGING_CENTER_Y, 0);
-        double radius = 0.14 + 0.42 * smoothClamp(progress);
-        double height = 0.12 + 0.36 * smoothClamp(progress);
-        for (int star = 0; star < 2; star++) {
-            double angle = (star * Math.PI) + revealTick * 0.65;
-            Location starLocation = center.clone().add(Math.cos(angle) * radius,
-                height + star * 0.08, Math.sin(angle) * radius);
-            sendParticleSafe(owner, theme.getStarParticle(), starLocation, 2);
-            sendColoredDustSafe(owner, starLocation, theme.getStarRed(), theme.getStarGreen(),
+        for (Location sample : computeRevealStarSamples(stationLocation,
+            REVEAL_STAR_OUTER_RADIUS, REVEAL_STAR_INNER_RADIUS)) {
+            sendColoredDustSafe(owner, sample, theme.getStarRed(), theme.getStarGreen(),
                 theme.getStarBlue(), 1);
         }
+        for (Location vertex : computeRevealStarVertices(stationLocation,
+            REVEAL_STAR_OUTER_RADIUS, REVEAL_STAR_INNER_RADIUS)) {
+            sendParticleSafe(owner, theme.getStarParticle(), vertex, 1);
+        }
         if (revealTick == REVEAL_FEEDBACK_TICK) {
+            for (Location haloSample : computeRevealStarSamples(stationLocation,
+                REVEAL_HALO_OUTER_RADIUS, REVEAL_HALO_INNER_RADIUS)) {
+                sendColoredDustSafe(owner, haloSample, theme.getStarRed(), theme.getStarGreen(),
+                    theme.getStarBlue(), 1);
+            }
             executeOutcomeFeedbackStep(owner, feedbackFor(profile, category));
+        }
+    }
+
+    private void holdFakeItemAtFinalPosition(Player owner, Location stationLocation, String transactionId) {
+        if (itemVisuals == null) {
+            return;
+        }
+        try {
+            itemVisuals.move(transactionId, computeForgingItemLocation(stationLocation, 1.0f));
+        } catch (RuntimeException | LinkageError e) {
+            plugin.getLogger().log(Level.WARNING,
+                "Forge item hold failed for transaction " + transactionId, e);
         }
     }
 
@@ -373,11 +418,6 @@ public final class ForgeAnimationService {
             plugin.getLogger().log(Level.WARNING,
                 "Forge particle failed for owner " + owner.getUniqueId(), e);
         }
-    }
-
-    private void sendColoredDustSafe(Player owner, Location location, ForgeAnimationTheme theme, int count) {
-        sendColoredDustSafe(owner, location, theme.getAuraRed(), theme.getAuraGreen(),
-            theme.getAuraBlue(), count);
     }
 
     private void sendColoredDustSafe(Player owner, Location location, int red, int green, int blue,
@@ -606,30 +646,32 @@ public final class ForgeAnimationService {
         double baseX = station.getX();
         double baseY = station.getY();
         double baseZ = station.getZ();
-        double p = smoothClamp(progress);
-        double itemAngle = 4 * Math.PI * p;
+        double p = clamp01(progress);
+        double smooth = p * p * (3.0 - 2.0 * p);
+        double angle = ITEM_PATH_ROTATIONS * Math.PI * p;
+        double radius = ITEM_PATH_RADIUS_START + (ITEM_PATH_RADIUS_END - ITEM_PATH_RADIUS_START) * p;
         return new Location(station.getWorld(),
-            baseX + Math.cos(itemAngle) * ITEM_ORBIT_RADIUS,
-            baseY + FORGING_CENTER_Y - ITEM_RISE_HEIGHT / 2.0 + p * ITEM_RISE_HEIGHT
-                + Math.sin(itemAngle) * ITEM_BOB_HEIGHT,
-            baseZ + Math.sin(itemAngle) * ITEM_ORBIT_RADIUS,
-            (float) (720 * p), 0f);
+            baseX + Math.cos(angle) * radius,
+            baseY + ITEM_PATH_BASE_Y + ITEM_PATH_RISE * smooth + ITEM_PATH_BOB_AMPLITUDE * Math.sin(angle),
+            baseZ + Math.sin(angle) * radius,
+            (float) (ITEM_PATH_YAW_DEGREES * p), 0f);
     }
 
     static List<Location> computeSpiralPoints(Location station, float progress) {
+        Location item = computeForgingItemLocation(station, progress);
+        double p = clamp01(progress);
+        double radius = SPIRAL_RADIUS + (SPIRAL_RADIUS_END - SPIRAL_RADIUS) * p;
+        double animationAngle = ITEM_PATH_ROTATIONS * Math.PI * p;
         List<Location> points = new ArrayList<>(2 * SPIRAL_SAMPLES_PER_STRAND);
-        double centerY = station.getY() + FORGING_CENTER_Y;
-        double p = smoothClamp(progress);
-        double animationAngle = 4 * Math.PI * p;
         for (int strand = 0; strand < 2; strand++) {
             for (int sample = 0; sample < SPIRAL_SAMPLES_PER_STRAND; sample++) {
                 double sampleProgress = (double) sample / (SPIRAL_SAMPLES_PER_STRAND - 1);
                 double angle = animationAngle + 2 * Math.PI * sampleProgress + strand * Math.PI;
-                double y = centerY - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT * smoothClamp(sampleProgress);
+                double y = item.getY() - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT * smoothClamp(sampleProgress);
                 points.add(new Location(station.getWorld(),
-                    station.getX() + Math.cos(angle) * SPIRAL_RADIUS,
+                    item.getX() + Math.cos(angle) * radius,
                     y,
-                    station.getZ() + Math.sin(angle) * SPIRAL_RADIUS));
+                    item.getZ() + Math.sin(angle) * radius));
             }
         }
         return Collections.unmodifiableList(points);
@@ -637,7 +679,7 @@ public final class ForgeAnimationService {
 
     static List<Location> computeTrailPoints(Location station, float progress) {
         Location item = computeForgingItemLocation(station, progress);
-        double angle = 4 * Math.PI * smoothClamp(progress);
+        double angle = ITEM_PATH_ROTATIONS * Math.PI * clamp01(progress);
         List<Location> points = new ArrayList<>(ITEM_TRAIL_POINTS);
         for (int index = 1; index <= ITEM_TRAIL_POINTS; index++) {
             double distance = 0.08 * index;
@@ -653,7 +695,7 @@ public final class ForgeAnimationService {
 
     private static List<Location> computeConnectorPoints(Location station, Location item) {
         List<Location> points = new ArrayList<>(3);
-        Location start = station.clone().add(0, 1.10, 0);
+        Location start = station.clone().add(0, CONNECTOR_FORGE_TOP_Y, 0);
         for (int index = 1; index <= 3; index++) {
             double progress = index / 4.0;
             points.add(new Location(station.getWorld(),
@@ -664,8 +706,55 @@ public final class ForgeAnimationService {
         return points;
     }
 
+    private static List<Location> computeAuraPoints(Location station, Location item) {
+        List<Location> points = new ArrayList<>(AURA_SAMPLES);
+        for (int index = 0; index < AURA_SAMPLES; index++) {
+            double angle = index * Math.PI / 2.0;
+            double verticalOffset = (index % 2 == 0) ? -AURA_VERTICAL_OFFSET : AURA_VERTICAL_OFFSET;
+            points.add(new Location(station.getWorld(),
+                item.getX() + Math.cos(angle) * AURA_ORBIT_RADIUS,
+                item.getY() + verticalOffset,
+                item.getZ() + Math.sin(angle) * AURA_ORBIT_RADIUS));
+        }
+        return points;
+    }
+
+    private static List<Location> computeRevealStarVertices(Location station, double outerRadius,
+                                                            double innerRadius) {
+        Location center = station.clone().add(0, FORGING_CENTER_Y, 0);
+        List<Location> vertices = new ArrayList<>(REVEAL_STAR_VERTICES);
+        for (int index = 0; index < REVEAL_STAR_VERTICES; index++) {
+            double radius = (index % 2 == 0) ? outerRadius : innerRadius;
+            double angle = -Math.PI / 2.0 + index * (2.0 * Math.PI / REVEAL_STAR_VERTICES);
+            vertices.add(center.clone().add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
+        }
+        return vertices;
+    }
+
+    private static List<Location> computeRevealStarSamples(Location station, double outerRadius,
+                                                           double innerRadius) {
+        List<Location> vertices = computeRevealStarVertices(station, outerRadius, innerRadius);
+        List<Location> samples = new ArrayList<>(REVEAL_STAR_VERTICES * REVEAL_EDGE_SAMPLES);
+        for (int edge = 0; edge < REVEAL_STAR_VERTICES; edge++) {
+            Location from = vertices.get(edge);
+            Location to = vertices.get((edge + 1) % REVEAL_STAR_VERTICES);
+            for (int step = 1; step <= REVEAL_EDGE_SAMPLES; step++) {
+                double t = step / (double) (REVEAL_EDGE_SAMPLES + 1);
+                samples.add(new Location(station.getWorld(),
+                    from.getX() + (to.getX() - from.getX()) * t,
+                    from.getY() + (to.getY() - from.getY()) * t,
+                    from.getZ() + (to.getZ() - from.getZ()) * t));
+            }
+        }
+        return samples;
+    }
+
+    private static double clamp01(double progress) {
+        return Math.max(0.0, Math.min(1.0, progress));
+    }
+
     private static double smoothClamp(double progress) {
-        double clamped = Math.max(0.0, Math.min(1.0, progress));
+        double clamped = clamp01(progress);
         return clamped * clamped * (3.0 - 2.0 * clamped);
     }
 

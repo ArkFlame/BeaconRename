@@ -47,13 +47,13 @@ animation:
   interval-ticks: 4
 variants:
   windborne:
-    weight: "50.0"
+    weight: "33.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#a5f3fc:#0284c7><bold>Windborne %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier IV amulet variant"
-      - "<aqua>Speed II for 60 seconds while in inventory"
+      - "<aqua>Speed II for 60 seconds while held in main or off hand"
     enchantments: []
     attributes: []
     powers:
@@ -64,10 +64,15 @@ variants:
           - SPEED
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
-          - INVENTORY
+          - MAIN_HAND
+          - OFF_HAND
   scholars_charm:
-    weight: "50.0"
+    weight: "33.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#fef08a:#22c55e><bold>Scholars Charm %base_name%</bold></gradient>"
@@ -85,5 +90,29 @@ variants:
           - HASTE
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - ENCHANT
+          - CRIT
         activation-slots:
           - INVENTORY
+  leaping_charm:
+    weight: "34.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#38bdf8:#8b5cf6><bold>Leaping Charm %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier IV amulet variant"
+      - "<light_purple>Shift + right click to leap"
+      - "<white>Cooldown: 6s"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: leaping_charm_dash
+        type: SHIFT_RIGHT_CLICK_DASH
+        cooldown-ticks: 120
+        horizontal-strength: "5.75"
+        vertical-strength: "3.0"
+        particle-candidates:
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
+          - CRIT

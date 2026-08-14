@@ -70,6 +70,9 @@ permissions:
   flameforge.command.setup.tier:
     description: Allows setting up tiers
     default: op
+  flameforge.command.testitem:
+    description: Allows spawning test forge items
+    default: op
   flameforge.bypass.cost:
     description: Allows bypassing forge costs
     default: op
@@ -97,3 +100,4 @@ permissions:
       flameforge.command.station.info: true
       flameforge.command.station.teleport: true
       flameforge.command.setup.tier: true
+      flameforge.command.testitem: true

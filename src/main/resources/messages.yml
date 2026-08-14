@@ -1,5 +1,9 @@
 # FlameForge Messages Configuration
-# MMO Forge Theme: dark_gray, purple, white, lime, gold
+# Command/admin messages use the FlameForge palette:
+#   headers: dark_gray separator + orange gradient title
+#   success/error/warning: gradient glyph prefixes
+#   rows: dark_gray bullet + gray label + white value
+#   syntax: aqua command hints
 # All messages use MiniMessage formatting
 # Placeholders: %player_name%, %player%, %display_name%, %world%, %world_name%,
 #               %online%, %online_players%, %max_players%, %health%, %health_points%,
@@ -10,11 +14,11 @@
 # ============================================================
 
 startup:
-  loading: "<yellow>FlameForge is still loading: <white>%pending_components%"
-  failed: "<red>FlameForge startup failed in <white>%component%<red>: <white>%reason% <gray>(reference: %reference%)"
-  failed-retryable: "<yellow>Correct the reported file and run <white>/flameforge reload<yellow> to retry startup."
-  restart-required: "<red>Correct the console error and restart the server."
-  unavailable: "<red>FlameForge is disabled or shutting down."
+  loading: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>FlameForge is still loading: <white>%pending_components%"
+  failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>FlameForge startup failed in <white>%component%<gray>: <white>%reason% <gray>(reference: %reference%)"
+  failed-retryable: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Correct the reported file and run <aqua>/flameforge reload<gray> to retry startup."
+  restart-required: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Correct the console error and restart the server."
+  unavailable: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>FlameForge is disabled or shutting down."
 
 # ============================================================
 # COMMAND MESSAGES
@@ -22,27 +26,31 @@ startup:
 
 # Main command
 command:
-  unknown: "<red>Unknown command. Use <white>/flameforge help <gray>for available commands."
+  unknown: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Unknown command. Use <aqua>/flameforge help <gray>for available commands."
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>FlameForge is unavailable because startup failed: <white>%reason%"
+  loading: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>FlameForge is still loading, try again shortly."
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  unavailable: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>FlameForge is disabled or shutting down."
 
 # Help command
 help:
-  no-permission: "<red>Permission required: <white>%permission%"
-  border: "<dark_gray>========================================"
-  root-header: "<gradient:#ff5f00:#ffd166><bold>%plugin_name% %plugin_version%</bold></gradient> <gray>by <white>%plugin_authors%"
-  group-header: "<gradient:#ff5f00:#ffd166><bold>%plugin_name% %group_name%</bold></gradient>"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  border: "<dark_gray>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  root-header: "<gradient:#ff6a00:#ffd166><bold>%plugin_name% %plugin_version%</bold></gradient> <gray>by <white>%plugin_authors%"
+  group-header: "<gradient:#ff6a00:#ffd166><bold>%plugin_name% — %group_name%</bold></gradient>"
   entry: "<gradient:#ff8a00:#ffe29a>/%label% %usage%</gradient> <dark_gray>- <gray>%description%"
   hover: "<gray>Click to insert <white>/%label% %suggestion%"
-  empty: "<yellow>No commands are available for this path."
-  unknown-path: "<red>Unknown help path: <white>%path%"
+  empty: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>No commands are available for this path."
+  unknown-path: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Unknown help path: <white>%path%"
   descriptions:
     help: "Show this help message"
     open: "Open the forge menu"
-    open-others: "Open forge menu for another player"
     tiers: "List all forge tiers"
     tier-info: "Show tier details"
     preview: "Preview forge outcomes"
+    testitem: "Test forge item mutations"
     history: "View your forge history"
-    history-others: "View another player's forge history"
     station-teleport: "Teleport to a forge station"
     station-add: "Add a new forge station"
     station-remove: "Remove a forge station"
@@ -60,18 +68,19 @@ help:
 
 # Open command
 open:
-  no-permission: "<red>Permission required to open your forge menu: <white>%permission%"
-  no-permission-others: "<red>Permission required to open another player's forge menu: <white>%permission%"
-  player-only: "<red>This command can only be used by a player."
-  player-offline: "<red>Target player is offline."
-  forge-not-found: "<red>No forge found with id: <white>%station_id%"
-  profile-not-found: "<red>Forge '<white>%station_id%<red>' has no valid station profile."
-  station-permission-required: "<red>You do not have permission to use this forge. Required: <white>%permission%"
-  no-allowed-tier: "<red>You do not have an allowed tier for this forge."
-  scheduler-rejected: "<red>The scheduler rejected opening forge '<white>%station_id%<red>': <white>%reason% <gray>(reference: %reference%)"
-  menu-open-failed: "<red>Failed to open forge '<white>%station_id%<red>': <white>%reason% <gray>(reference: %reference%)"
-  player-retired: "<red>The player disconnected before the forge could be opened."
-  menu-opened: "<green>Forge menu opened for <white>%player_name%<green> at station <white>%station_id%<green>."
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required to open your forge menu: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  player-offline: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Target player is offline."
+  no-target: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Target player is not online."
+  no-forge-target: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>No forge found at your target location."
+  forge-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>No forge found with id: <white>%station_id%"
+  profile-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Forge '<white>%station_id%<gray>' has no valid station profile."
+  station-permission-required: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>You do not have permission to use this forge. Required: <white>%permission%"
+  no-allowed-tier: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>You do not have an allowed tier for forge '<white>%station_id%<gray>'."
+  scheduler-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The scheduler rejected opening forge '<white>%station_id%<gray>': <white>%reason% <gray>(reference: %reference%)"
+  menu-open-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Failed to open forge '<white>%station_id%<gray>': <white>%reason% <gray>(reference: %reference%)"
+  player-retired: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The player disconnected before the forge could be opened."
+  menu-opened: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Forge menu opened for <white>%player_name%<gray> at station <white>%station_id%<gray>."
 
 # Forge interact listener
 forge-interact:
@@ -79,171 +88,192 @@ forge-interact:
 
 # Reload command
 reload:
-  no-permission: "<red>Permission required: <white>%permission%"
-  started: "<yellow>Reloading FlameForge configuration..."
-  success: "<green>Configuration applied. Runtime services refreshed."
-  validation-rejected: "<red>Reload rejected because configuration validation found errors. The previous configuration remains active."
-  validation-error-entry: "<red>%path%: %message%"
-  already-running: "<yellow>A FlameForge reload is already running."
-  already-loading: "<yellow>FlameForge startup is already running."
-  startup-retry-started: "<yellow>Retrying FlameForge startup..."
-  startup-already-loading: "<yellow>FlameForge startup is already running."
-  startup-already-ready: "<yellow>FlameForge is already ready."
-  restart-required: "<red>This startup failure requires a full server restart."
-  scheduler-rejected: "<red>The scheduler rejected the reload task. Reference: %reference%"
-  load-failed: "<red>Configuration reload could not read/parse the files: %reason% <gray>(%reference%)"
-  runtime-refresh-failed: "<red>Configuration loaded, but runtime refresh failed: %reason% <gray>(%reference%)"
-  unavailable: "<red>FlameForge is disabled or shutting down."
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  started: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Reloading FlameForge configuration..."
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Configuration applied. Runtime services refreshed."
+  validation-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Reload rejected because configuration validation found errors. The previous configuration remains active."
+  already-running: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>A FlameForge reload is already running."
+  startup-retry-started: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Retrying FlameForge startup..."
+  startup-already-loading: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>FlameForge startup is already running."
+  startup-already-ready: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>FlameForge is already ready."
+  restart-required: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This startup failure requires a full server restart."
+  scheduler-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The scheduler rejected the reload task. Reference: %reference%"
+  load-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Configuration reload could not read/parse the files: <white>%reason%"
+  unavailable: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>FlameForge is disabled or shutting down."
 
 # Validate command
 validate:
-  no-permission: "<red>Permission required: <white>%permission%"
-  started: "<yellow>Validating FlameForge configuration without applying changes..."
-  passed: "<green>Configuration validation passed with no errors."
-  error: "<red>%path%: %message%"
-  warning: "<yellow>%path%: %message%"
-  already-running: "<yellow>A configuration reload or validation is already running."
-  scheduler-rejected: "<red>The scheduler rejected validation. Reference: %reference%"
-  load-failed: "<red>Configuration validation could not run: <white>%reason% <gray>(reference: %reference%)"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  started: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Validating FlameForge configuration without applying changes..."
+  passed: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Configuration validation passed with no errors."
+  error: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>%path%<gray>: <white>%message%"
+  warning: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>%path%<gray>: <white>%message%"
+  already-running: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>A configuration reload or validation is already running."
+  scheduler-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The scheduler rejected validation. Reference: %reference%"
+  load-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Configuration validation could not run: <white>%reason% <gray>(reference: %reference%)"
 
 # Tiers command
 tiers:
-  no-permission: "<red>Permission required: <white>%permission%"
-  header: "<gold>=== <white>Tiers</white></gold> ==="
-  entry: "<yellow>%tier_id% <gray>(Priority: <white>%priority%<gray>)"
-  empty: "<yellow>No tiers configured."
-  footer: "<gray>Use <white>/flameforge tiers <page> <gray>for more pages."
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  header: "<dark_gray>━━━━━━━━ <gradient:#ff6a00:#ffd166><bold>Tiers</bold></gradient> <dark_gray>━━━━━━━━"
+  entry: "<dark_gray>• <white>%tier_id% <gray>(Level: <white>%level%<gray>)"
+  empty: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>No tiers configured."
+  footer: "<gray>Page <white>%page% <dark_gray>/ <white>%total_pages% <gray>— <aqua>/flameforge tiers <page>"
 
 # Tier info command
 tier-info:
-  no-permission: "<red>Permission required: <white>%permission%"
-  usage: "<red>Usage: <white>/flameforge tier info <tier>"
-  header: "<gold>=== <white>Tier: %tier_id% <gold>==="
-  priority: "<white>Priority: <yellow>%priority%"
-  success-animation: "<white>Success Animation: <yellow>%duration% ticks"
-  fail-animation: "<white>Fail Animation: <yellow>%duration% ticks"
-  cost-mode: "<white>Cost Mode: <yellow>%mode%"
-  enabled: "<white>Enabled: <yellow>%enabled%"
-  cooldown: "<white>Cooldown: <yellow>%seconds% seconds"
-  outcomes-header: "<white>Outcomes <gray>(%count%):"
-  outcome-entry: "<yellow>  - %outcome_id% <gray>(<white>%type%<gray>, weight: <white>%weight%<gray>)"
-  not-found: "<red>Tier not found: <white>%tier_id%"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge tier info <tier>"
+  header: "<dark_gray>━━━━━━━━ <gradient:#ff6a00:#ffd166><bold>Tier: %tier_id%</bold></gradient> <dark_gray>━━━━━━━━"
+  level: "<dark_gray>• <gray>Level: <white>%level%"
+  enabled: "<dark_gray>• <gray>Enabled: <white>%enabled%"
+  cooldown: "<dark_gray>• <gray>Cooldown: <white>%seconds% <gray>seconds"
+  requirements-combine: "<dark_gray>• <gray>Requirement mode: <white>%combine%"
+  requirement-xp: "<dark_gray>  • <gray>XP level: <white>%level%"
+  requirement-money: "<dark_gray>  • <gray>Money: <green>$%amount%"
+  requirements-items-header: "<dark_gray>• <gray>Required items:"
+  requirement-item: "<dark_gray>  • <white>%amount%x <gray>%materials% <dark_gray>%name%"
+  chances: "<dark_gray>• <gray>Chances: <green>%success%% <dark_gray>/ <red>%break%% <dark_gray>/ <light_purple>%curse%%"
+  variants-header: "<dark_gray>• <gray>Variants <white>(%count%)"
+  variant-entry: "<dark_gray>  • <white>%variant_id% <dark_gray>— <gray>%name% <dark_gray>(weight <white>%weight%<dark_gray>)"
+  not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier not found: <white>%tier_id%"
 
 # Preview command
 preview:
-  no-permission: "<red>Permission required: <white>%permission%"
-  player-only: "<red>This command can only be used by a player."
-  usage: "<red>Usage: <white>/flameforge preview <tier> [material]"
-  tier-not-found: "<red>Tier not found: <white>%tier_id%"
-  no-item: "<red>You must be holding an item to preview."
-  unknown-material: "<red>Unknown material: <white>%material%"
-  no-outcomes: "<yellow>This tier has no outcomes configured."
-  result: "<green>Preview for tier '<white>%tier_id%<green>':"
-  result-material: "<white>Result material: <yellow>%material%"
-  no-modify: "<yellow>This tier does not modify items."
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge preview <tier> [material]"
+  tier-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier not found: <white>%tier_id%"
+  no-item: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>You must be holding an item to preview."
+  unknown-material: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Unknown material: <white>%material%"
+  no-variants: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>This tier has no variants configured."
+  no-eligible-variant: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>No eligible variant found for the held item."
+  variant: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Preview for tier '<white>%tier_id%<gray>': <white>%variant_name% <gray>(<white>%variant_id%<gray>)"
+  material: "<dark_gray>• <gray>Result material: <white>%material%"
+
+# Test item command
+testitem:
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge testitem <tier> <variant> [material]"
+  tier-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier not found: <white>%tier_id%"
+  variant-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Variant '<white>%variant_id%<gray>' not found in tier '<white>%tier_id%<gray>'."
+  material-unavailable: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Material unavailable: <white>%material%"
+  material-category-mismatch: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Material <white>%material% <gray>(category <white>%category%<gray>) does not match the tier's required category <white>%required_category%<gray>."
+  variant-ineligible: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Variant '<white>%variant_id%<gray>' is not eligible for material <white>%material% <gray>in tier '<white>%tier_id%<gray>'."
+  mutation-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Item mutation failed for <white>%material% <gray>in tier '<white>%tier_id%<gray>' variant '<white>%variant_id%<gray>'."
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Test item created: <white>%material% <gray>for tier <white>%tier_id% <gray>variant <white>%variant_id%<gray>."
 
 # History command
 history:
-  no-permission: "<red>Permission required: <white>%permission%"
-  usage: "<red>Usage: <white>/flameforge history <player>"
-  header: "<gold>History for <white>%player_name%<gold>:"
-  no-history: "<yellow>No history found for <white>%player_name%"
-  current-tier: "<white>Current Tier: <yellow>%tier%"
-  reforges: "<white>Reforges: <yellow>%count%"
-  pity-cooldown: "<white>Pity Cooldown: <yellow>%remaining%ms remaining"
-  not-implemented: "<gray>(Full history log not yet implemented)"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge history <player>"
+  header: "<dark_gray>━━━━━━━━ <gradient:#ff6a00:#ffd166><bold>History: %player_name%</bold></gradient> <dark_gray>━━━━━━━━"
+  no-history: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>No history found for <white>%player_name%"
+  current-tier: "<dark_gray>• <gray>Current Tier: <white>%tier%"
+  not-implemented: "<dark_gray>• <gray>(Full history log not yet implemented)"
 
 # Station command
 station:
-  usage: "<red>Usage: <white>/flameforge station <add|remove|list|info|teleport> [args]"
-  unknown: "<red>Unknown station command. Use <white>/flameforge station list <gray>to see available commands."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge station <add|remove|list|info|teleport> [args]"
+  unknown: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Unknown station command. Use <aqua>/flameforge station list <gray>to see available commands."
 
 # Station add
 station-add:
-  no-permission: "<red>Permission required to register a forge: <white>%permission%"
-  player-only: "<red>This command can only be used by a player."
-  invalid-id: "<red>Invalid forge id '<white>%station_id%<red>'. Use letters, numbers, underscore, and hyphen only."
-  unknown-profile: "<red>Unknown station profile: <white>%profile%"
-  no-block: "<red>You must be looking at a non-air block."
-  target-unavailable: "<red>The targeted block's world/chunk is unavailable. Move closer and retry."
-  duplicate-id: "<red>A forge already uses id: <white>%station_id%"
-  duplicate-location: "<red>A forge is already registered at that block."
-  storage-conflict: "<red>The station file <white>stations/%station_id%.yml<red> already exists but was not loaded. Correct or remove that file before reusing this ID. Reference: %reference%"
-  persistence-failed: "<red>The station could not be saved to <white>stations/%station_id%.yml<red>. No station was registered. Reference: %reference%"
-  id-generation-exhausted: "<red>Could not generate a unique forge id after eight attempts."
-  player-retired: "<red>The player disconnected before the target block could be resolved."
-  success: "<green>Forge registered: <white>%station_id%"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required to register a forge: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge station add [id] [profile]"
+  invalid-id: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Invalid forge id '<white>%station_id%<gray>'. Use letters, numbers, underscore, and hyphen only."
+  unknown-profile: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Unknown station profile: <white>%station_id%"
+  no-block: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>You must be looking at a non-air block."
+  target-unavailable: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The targeted block for '<white>%station_id%<gray>' is unavailable. Move closer and retry."
+  duplicate-id: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>A forge already uses id: <white>%station_id%"
+  duplicate-location: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>A forge is already registered at that block."
+  storage-conflict: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The station file <white>stations/%station_id%.yml<gray> already exists but was not loaded. Correct or remove that file before reusing this ID. Reference: %reference%"
+  persistence-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The station could not be saved to <white>stations/%station_id%.yml<gray>. No station was registered. Reference: %reference%"
+  id-generation-exhausted: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Could not generate a unique forge id after eight attempts."
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Forge registered: <white>%station_id% <gray>(<white>%world% %x%,%y%,%z%<gray>, profile <white>%profile%<gray>)"
 
 # Teleport command alias
 tp:
-  no-permission: "<red>Permission required: <white>%permission%"
-  player-only: "<red>This command can only be used by a player."
-  success: "<green>Teleported to forge: <white>%station_id%"
-  player-offline: "<red>Target player is offline."
-  station-missing: "<red>No forge found with id: <white>%station_id%"
-  world-not-found: "<red>Forge world '<white>%world%<red>' could not be found."
-  world-not-loaded: "<red>Forge world '<white>%world%<red>' is not loaded. Move closer and retry."
-  teleport-rejected: "<red>Teleport was rejected by the server."
-  teleport-exception: "<red>Teleport failed: <white>%reason% <gray>(reference: %reference%)"
-  player-retired: "<red>The player disconnected before teleport could complete."
-  scheduler-rejected: "<red>The scheduler rejected the teleport task. Reference: %reference%"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge tp <id>"
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Teleported to forge: <white>%station_id%"
+  not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>No forge found with id: <white>%station_id%"
+  player-offline: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Target player is offline."
+  world-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Forge world could not be found."
+  world-not-loaded: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Forge world is not loaded. Move closer and retry."
+  teleport-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Teleport was rejected by the server."
+  teleport-exception: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Teleport failed: <white>%reason%"
+  player-retired: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The player disconnected before teleport could complete."
+  scheduler-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The scheduler rejected the teleport task."
 
 # Station remove
 station-remove:
-  no-permission: "<red>Permission required: <white>%permission%"
-  success: "<green>Forge removed: <white>%station_id%"
-  not-found: "<red>No forge found with id: <white>%station_id%"
-  persistence-failed: "<red>Station '<white>%station_id%<red>' remains registered because <white>stations/%station_id%.yml<red> could not be removed. Reference: %reference%"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge station remove <id>"
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Forge removed: <white>%station_id%"
+  not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>No forge found with id: <white>%station_id%"
+  persistence-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Station '<white>%station_id%<gray>' remains registered because <white>stations/%station_id%.yml<gray> could not be removed. Reference: %reference%"
 
 # Station list
 station-list:
-  no-permission: "<red>Permission required: <white>%permission%"
-  header: "<gold>=== <white>Stations</white></gold> ==="
-  entry: "<yellow>%station_id% <gray>[<white>%world% %x%,%y%,%z%<gray>] <gray>(Profile: <white>%profile%<gray>)"
-  empty: "<yellow>No stations configured."
-  footer: "<gray>Use <white>/flameforge station list <page> <gray>for more pages."
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  header: "<dark_gray>━━━━━━━━ <gradient:#ff6a00:#ffd166><bold>Stations</bold></gradient> <dark_gray>━━━━━━━━"
+  entry: "<dark_gray>• <white>%station_id% <dark_gray>[<white>%world% %x%,%y%,%z%<dark_gray>] <gray>(Profile: <white>%profile%<gray>)"
+  empty: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>No stations configured."
+  footer: "<gray>Page <white>%page% <dark_gray>/ <white>%total_pages% <gray>— <aqua>/flameforge station list <page>"
 
 # Station info
 station-info:
-  no-permission: "<red>Permission required: <white>%permission%"
-  usage: "<red>Usage: <white>/flameforge station info <id>"
-  header: "<gold>=== <white>Station: %station_id% <gold>==="
-  world: "<white>World: <yellow>%world%"
-  location: "<white>Location: <yellow>%x%, %y%, %z%"
-  profile: "<white>Profile: <yellow>%profile%"
-  max-tier: "<white>Max Tier: <yellow>%max_tier%"
-  not-found: "<red>Station not found: <white>%station_id%"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge station info <id>"
+  header: "<dark_gray>━━━━━━━━ <gradient:#ff6a00:#ffd166><bold>Station: %station_id%</bold></gradient> <dark_gray>━━━━━━━━"
+  world: "<dark_gray>• <gray>World: <white>%world%"
+  location: "<dark_gray>• <gray>Location: <white>%x%, %y%, %z%"
+  profile: "<dark_gray>• <gray>Profile: <white>%profile%"
+  max-tier: "<dark_gray>• <gray>Max Tier: <white>%max_tier%"
+  not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Station not found: <white>%station_id%"
 
 # Station teleport
 station-teleport:
-  no-permission: "<red>Permission required: <white>%permission%"
-  player-only: "<red>This command can only be used by a player."
-  success: "<green>Teleported to forge: <white>%station_id%"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge station teleport <id>"
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Teleported to forge: <white>%station_id%"
+  not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>No forge found with id: <white>%station_id%"
+  player-offline: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Target player is offline."
+  world-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Forge world could not be found."
+  world-not-loaded: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Forge world is not loaded. Move closer and retry."
+  teleport-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Teleport was rejected by the server."
+  teleport-exception: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Teleport failed: <white>%reason%"
+  player-retired: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The player disconnected before teleport could complete."
+  scheduler-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The scheduler rejected the teleport task."
 
 # Setup tier command
 setup:
-  no-permission: "<red>Permission required: <white>%permission%"
-  usage: "<red>Usage: <white>/flameforge setup tier <create|clone> [args]"
-  unknown: "<red>Unknown setup command. Use <white>/flameforge setup tier create|clone"
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge setup tier <create|clone> [args]"
+  unknown: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Unknown setup command. Use <aqua>/flameforge setup tier create|clone"
 
 # Setup tier create
 setup-tier-create:
-  no-permission: "<red>You don't have permission to create tiers."
-  usage: "<red>Usage: <white>/flameforge setup tier create <id> <priority>"
-  priority-invalid: "<red>Priority must be a number."
-  already-exists: "<red>Tier already exists: <white>%tier_id%"
-  success: "<green>Tier '<white>%tier_id%<green>' created with priority <white>%priority%<green>."
-  note: "<yellow>Note: New tiers are not populated with default outcomes. Edit the tier file manually."
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge setup tier create <id> <level>"
+  level-invalid: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Level must be a number."
+  already-exists: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier already exists: <white>%tier_id%"
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Tier '<white>%tier_id%<gray>' created with level <white>%level%<gray>."
+  note: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Note: New tiers are not populated with default outcomes. Edit the tier file manually."
 
 # Setup tier clone
 setup-tier-clone:
-  source-not-found: "<red>Source tier not found: <white>%source_id%"
-  no-permission: "<red>You don't have permission to clone tiers."
-  usage: "<red>Usage: <white>/flameforge setup tier clone <source> <id> <priority>"
-  priority-invalid: "<red>Priority must be a number."
-  already-exists: "<red>Tier already exists: <white>%new_id%"
-  success: "<green>Tier '<white>%new_id%<green>' cloned from '<white>%source_id%<green>' with priority <white>%priority%<green>."
-  note: "<yellow>Note: Cloned tiers inherit all settings. Edit the tier file manually to adjust."
+  source-not-found: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Source tier not found: <white>%source_id%"
+  usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge setup tier clone <source> <id> <level>"
+  level-invalid: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Level must be a number."
+  already-exists: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier already exists: <white>%new_id%"
+  failure: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The tier could not be cloned. Check the console for details."
+  success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Tier '<white>%new_id%<gray>' cloned from '<white>%source_id%<gray>' with level <white>%level%<gray>."
+  note: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Note: Cloned tiers inherit all settings. Edit the tier file manually to adjust."
 
 # ============================================================
 # SUCCESS / ERROR / TITLE / ACTIONBAR MESSAGES

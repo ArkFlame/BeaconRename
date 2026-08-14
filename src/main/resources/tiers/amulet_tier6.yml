@@ -53,7 +53,7 @@ variants:
     display-name: "<gradient:#67e8f9:#22c55e><bold>Swiftheart %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier VI amulet variant"
-      - "<aqua>Speed II and regeneration for 60 seconds while in inventory"
+      - "<aqua>Speed II and regeneration for 60 seconds while held in main or off hand"
     enchantments: []
     attributes: []
     powers:
@@ -64,8 +64,13 @@ variants:
           - SPEED
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
-          - INVENTORY
+          - MAIN_HAND
+          - OFF_HAND
       - id: swiftheart_regeneration
         type: PASSIVE_POTION
         cooldown-ticks: 0
@@ -73,8 +78,11 @@ variants:
           - REGENERATION
         duration-ticks: 1200
         amplifier: 0
+        particle-candidates:
+          - HEART
         activation-slots:
-          - INVENTORY
+          - MAIN_HAND
+          - OFF_HAND
   unyielding_charm:
     weight: "50.0"
     applicable-groups:
@@ -94,6 +102,9 @@ variants:
           - RESISTANCE
         duration-ticks: 1200
         amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
         activation-slots:
           - INVENTORY
       - id: unyielding_haste
@@ -104,5 +115,8 @@ variants:
           - HASTE
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - ENCHANT
+          - CRIT
         activation-slots:
           - INVENTORY

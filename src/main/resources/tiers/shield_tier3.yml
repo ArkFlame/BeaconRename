@@ -111,8 +111,8 @@ variants:
     lore:
       - "<gray>Shield Tier III forged variant"
       - "<dark_gray>● <white>50% chance to slow attackers"
-      - "<dark_gray>● <white>60 seconds duration"
-      - "<dark_gray>● <white>60 seconds cooldown"
+      - "<dark_gray>● <white>3 seconds duration"
+      - "<dark_gray>● <white>3 seconds cooldown"
     enchantments: []
     attributes: []
     powers:
@@ -125,3 +125,6 @@ variants:
           - SLOWNESS
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - EFFECT
+          - SPELL

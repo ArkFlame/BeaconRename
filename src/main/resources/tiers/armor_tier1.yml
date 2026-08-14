@@ -121,6 +121,10 @@ variants:
           - SPEED
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
           - ARMOR
   guarded:

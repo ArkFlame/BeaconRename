@@ -24,6 +24,7 @@ import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.config.ValidationIssue;
 import com.arkflame.flameforge.config.ValidationReport;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
+import com.arkflame.flameforge.effect.ForgeAnimationThemeResolver;
 import com.arkflame.flameforge.effect.ForgeItemVisualService;
 import com.arkflame.flameforge.forge.ChargeReceipt;
 import com.arkflame.flameforge.forge.CostQuote;
@@ -43,6 +44,7 @@ import com.arkflame.flameforge.hook.PluginConditionService;
 import com.arkflame.flameforge.item.AttributeBridge;
 import com.arkflame.flameforge.item.EnchantmentResolver;
 import com.arkflame.flameforge.item.ItemFactory;
+import com.arkflame.flameforge.item.ItemDisplayNameResolver;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.item.ItemMutationService;
@@ -349,6 +351,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         multiStrikeService = new MultiStrikeService(schedulerBridge, particleBridge);
         SoundResolver soundResolver = SoundResolver.getInstance();
         ForgeItemVisualService forgeItemVisualService = new ForgeItemVisualService(this);
+        ForgeAnimationThemeResolver forgeAnimationThemeResolver = new ForgeAnimationThemeResolver();
         Map<String, Object> emptyMap = new HashMap<>();
         deliveryService = new DeliveryService(
             this,
@@ -366,16 +369,18 @@ public final class FlameForgePlugin extends JavaPlugin {
         teleportBridge = new TeleportBridge(this, schedulerBridge, runtimePlatform);
         forgeStationService = new ForgeStationService(this, schedulerBridge, stationRepository, configService, textRenderer, teleportBridge);
         forgeAnimationService = new ForgeAnimationService(
-            this, schedulerBridge, particleBridge, soundResolver, textBridge, textRenderer, forgeItemVisualService
+            this, schedulerBridge, particleBridge, soundResolver, textBridge, textRenderer, forgeItemVisualService,
+            forgeAnimationThemeResolver
         );
         forgeSessionService = new ForgeSessionService();
 
         itemIdentityService = ItemIdentityService.getInstance();
         itemIdentityCodec = itemIdentityService.getCodec();
         ItemFactory.setTextRenderer(textRenderer);
-        forgeVariantEligibility = new ForgeVariantEligibility(itemIdentityService);
+        ItemDisplayNameResolver itemDisplayNameResolver = new ItemDisplayNameResolver(itemIdentityService, configService);
+        forgeVariantEligibility = new ForgeVariantEligibility(itemIdentityService, tierRepository);
         AttributeBridge attributeBridge = AttributeBridge.getInstance();
-        itemMutationService = new ItemMutationService(itemIdentityService, attributeBridge, new EnchantmentResolver(), textRenderer, configService);
+        itemMutationService = new ItemMutationService(itemIdentityService, attributeBridge, new EnchantmentResolver(), textRenderer, itemDisplayNameResolver);
         ForgeItemInspection forgeItemInspection = new ForgeItemInspection(itemIdentityCodec, itemIdentityService, attributeBridge, tierRepository, forgeVariantEligibility);
         forgeItemPolicy = new ForgeItemPolicy(forgeItemInspection);
         potionEffectResolver = new PotionEffectResolver();
@@ -387,7 +392,8 @@ public final class FlameForgePlugin extends JavaPlugin {
             potionEffectResolver,
             equipmentBridge,
             itemIdentityService,
-            multiStrikeService
+            multiStrikeService,
+            tierRepository
         );
         menuInputReturnService = new MenuInputReturnService(deliveryService);
 
@@ -430,6 +436,7 @@ public final class FlameForgePlugin extends JavaPlugin {
             forgeVariantEligibility,
             outcomeSelector,
             itemIdentityService,
+            itemDisplayNameResolver,
             loreTemplateRenderer,
             forgeItemPolicy,
             textRenderer,
@@ -454,7 +461,8 @@ public final class FlameForgePlugin extends JavaPlugin {
             forgeMenuService,
             schedulerBridge,
             messageService,
-            getLogger()
+            getLogger(),
+            forgePowerService
         );
         forgeAccessService = new ForgeAccessService(
             this,
@@ -486,7 +494,8 @@ public final class FlameForgePlugin extends JavaPlugin {
             equipmentBridge,
             forgePowerService,
             forgeVariantEligibility,
-            menuInputReturnService
+            menuInputReturnService,
+            itemMutationService
         );
 
         updateSuggestionIndex();
@@ -497,7 +506,8 @@ public final class FlameForgePlugin extends JavaPlugin {
             forgeMenuInputService,
             forgeMenuForgeService
         );
-        forgePowerListener = new ForgePowerListener(forgePowerService, equipmentBridge, itemIdentityService, tierRepository, schedulerBridge, AttributeBridge.getInstance());
+        forgePowerListener = new ForgePowerListener(forgePowerService, equipmentBridge, itemIdentityService, tierRepository, schedulerBridge, attributeBridge, handBridge);
+        equipmentBridge.registerOffhandSwapListener(this, forgePowerListener::queuePassiveRefresh);
         playerLifecycleListener = new PlayerLifecycleListener(
             this,
             forgeStationService,
@@ -696,6 +706,9 @@ public final class FlameForgePlugin extends JavaPlugin {
         }
         if (forgeMenuInputService != null) {
             forgeMenuInputService.shutdown();
+        }
+        if (forgePowerListener != null) {
+            forgePowerListener.shutdown();
         }
         if (forgePowerService != null) {
             forgePowerService.clearAll();

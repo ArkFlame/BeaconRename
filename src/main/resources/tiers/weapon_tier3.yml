@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Weapon Tier III forged variant"
       - "<dark_gray>Power: Chain poison"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -124,13 +124,14 @@ variants:
           - POISON
         duration-ticks: 80
         amplifier: 0
-        radius: "4"
-        max-targets: 4
+        radius: "5.0"
+        max-targets: 8
         chain-delay-ticks: 3
         trail-points: 8
         particle-candidates:
-          - SPELL
+          - HAPPY_VILLAGER
           - VILLAGER_HAPPY
+          - SPELL
   stormbound:
     weight: "33.0"
     applicable-groups:
@@ -149,6 +150,10 @@ variants:
         hit-interval: 5
         cooldown-ticks: 0
         chance: "1.0"
+        particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
+          - CRIT
   withered:
     weight: "33.0"
     applicable-groups:
@@ -157,7 +162,7 @@ variants:
     lore:
       - "<gray>Weapon Tier III forged variant"
       - "<dark_gray>Power: Wither on hit"
-      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -170,3 +175,7 @@ variants:
           - WITHER
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - WITCH
+          - LARGE_SMOKE
+          - SMOKE

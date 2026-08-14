@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Shield Tier IV forged variant"
       - "<dark_gray>● <white>35% chance to recover 1.5 health"
-      - "<dark_gray>● <white>80 seconds cooldown"
+      - "<dark_gray>● <white>4 seconds cooldown"
     enchantments: []
     attributes: []
     powers:
@@ -120,3 +120,5 @@ variants:
         cooldown-ticks: 80
         chance: "0.35"
         heal-amount: "1.5"
+        particle-candidates:
+          - HEART

@@ -4,6 +4,8 @@ import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.forge.ForgePlan;
 import com.arkflame.flameforge.forge.ForgePlanResult;
+import com.arkflame.flameforge.forge.ForgePowerService;
+import com.arkflame.flameforge.forge.ForgeResolution;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.text.MessageService;
@@ -14,8 +16,10 @@ import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -29,6 +33,7 @@ class ForgeMenuForgeServiceTest {
     private ForgeMenuService menuService;
     private SchedulerBridge scheduler;
     private MessageService messageService;
+    private ForgePowerService forgePowerService;
     private ForgeMenuForgeService service;
 
     @BeforeEach
@@ -40,6 +45,7 @@ class ForgeMenuForgeServiceTest {
         menuService = mock(ForgeMenuService.class);
         scheduler = mock(SchedulerBridge.class);
         messageService = mock(MessageService.class);
+        forgePowerService = mock(ForgePowerService.class);
 
         when(scheduler.runEntity(any(Player.class), any(Runnable.class), any(Runnable.class)))
                 .thenAnswer(invocation -> {
@@ -49,7 +55,8 @@ class ForgeMenuForgeServiceTest {
                 });
 
         service = new ForgeMenuForgeService(registry, viewResolver, forgeService, settlementService,
-                menuService, scheduler, messageService, Logger.getLogger("ForgeMenuForgeServiceTest"));
+                menuService, scheduler, messageService, Logger.getLogger("ForgeMenuForgeServiceTest"),
+                forgePowerService);
     }
 
     @Test
@@ -105,6 +112,28 @@ class ForgeMenuForgeServiceTest {
                 any(ItemStack.class), eq(plan), any());
         verify(settlementService, atLeastOnce()).settleOnlineOrQueue(fixture.context, fixture.player);
         verify(messageService, atLeastOnce()).send(fixture.player, "menu.forge-start-failed");
+    }
+
+    @Test
+    void successfulForgeRefreshesPassivePowersOnceOnPlayerCallback() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        ForgePlan plan = mock(ForgePlan.class);
+        when(plan.isAffordable()).thenReturn(true);
+        when(forgeService.createPlan(eq(fixture.player), eq(fixture.session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(plan));
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Consumer<ForgeResolution>> callbackCaptor = ArgumentCaptor.forClass(Consumer.class);
+
+        service.requestConfirm(fixture.player, fixture.holder);
+
+        verify(forgeService).confirmAndExecute(eq(fixture.player), eq(fixture.session),
+                any(ItemStack.class), eq(plan), callbackCaptor.capture());
+        callbackCaptor.getValue().accept(resolution);
+
+        verify(forgePowerService, times(1)).refreshPassivePowers(fixture.player);
+        verify(settlementService, never()).settleOnlineOrQueue(any(ForgeMenuContext.class), any(Player.class));
     }
 
     private Fixture fixture(ItemStack input) {

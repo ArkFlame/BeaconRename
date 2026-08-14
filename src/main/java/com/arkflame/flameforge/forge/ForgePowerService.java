@@ -5,8 +5,12 @@ import com.arkflame.flameforge.compat.effect.PotionEffectResolver;
 import com.arkflame.flameforge.compat.equipment.EquipmentBridge;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
+import com.arkflame.flameforge.config.TierRepository;
+import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgePowerDefinition;
+import com.arkflame.flameforge.model.ForgeVariant;
+import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -19,6 +23,7 @@ import org.bukkit.util.Vector;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -44,6 +49,7 @@ public final class ForgePowerService {
     private final PotionEffectResolver potionEffectResolver;
     private final EquipmentBridge equipmentBridge;
     private final ItemIdentityService identityService;
+    private final TierRepository tierRepository;
     private final TimeSource timeSource;
     private final int maxCooldownEntries;
 
@@ -71,7 +77,7 @@ public final class ForgePowerService {
                             ItemIdentityService identityService) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
              ParticleBridge.getInstance(), new MultiStrikeService(schedulerBridge, ParticleBridge.getInstance()),
-             new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
+             new TierRepository(plugin), new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -80,7 +86,8 @@ public final class ForgePowerService {
                              ItemIdentityService identityService,
                              ParticleBridge particleBridge, MultiStrikeService multiStrikeService) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
-             particleBridge, multiStrikeService, new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
+             particleBridge, multiStrikeService, new TierRepository(plugin),
+             new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -89,8 +96,20 @@ public final class ForgePowerService {
                              EquipmentBridge equipmentBridge,
                              ItemIdentityService identityService,
                              MultiStrikeService multiStrikeService) {
+        this(plugin, schedulerBridge, particleBridge, potionEffectResolver, equipmentBridge,
+             identityService, multiStrikeService, new TierRepository(plugin));
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                             ParticleBridge particleBridge,
+                             PotionEffectResolver potionEffectResolver,
+                             EquipmentBridge equipmentBridge,
+                             ItemIdentityService identityService,
+                             MultiStrikeService multiStrikeService,
+                             TierRepository tierRepository) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
-             particleBridge, multiStrikeService, new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
+             particleBridge, multiStrikeService, tierRepository,
+             new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -100,7 +119,8 @@ public final class ForgePowerService {
                             int maxCooldownEntries) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
              ParticleBridge.getInstance(), new MultiStrikeService(schedulerBridge, ParticleBridge.getInstance()),
-             new SystemTimeSource(), maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES);
+             new TierRepository(plugin), new SystemTimeSource(),
+             maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -111,7 +131,8 @@ public final class ForgePowerService {
                              int maxCooldownEntries) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
              ParticleBridge.getInstance(), new MultiStrikeService(schedulerBridge, ParticleBridge.getInstance()),
-             timeSource, maxCooldownEntries);
+             new TierRepository(plugin), timeSource,
+             maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -119,6 +140,7 @@ public final class ForgePowerService {
                               EquipmentBridge equipmentBridge,
                               ItemIdentityService identityService,
                               ParticleBridge particleBridge, MultiStrikeService multiStrikeService,
+                              TierRepository tierRepository,
                               TimeSource timeSource, int maxCooldownEntries) {
         this.plugin = Objects.requireNonNull(plugin);
         this.schedulerBridge = Objects.requireNonNull(schedulerBridge);
@@ -127,6 +149,7 @@ public final class ForgePowerService {
         this.potionEffectResolver = Objects.requireNonNull(potionEffectResolver);
         this.equipmentBridge = Objects.requireNonNull(equipmentBridge);
         this.identityService = Objects.requireNonNull(identityService);
+        this.tierRepository = Objects.requireNonNull(tierRepository);
         this.timeSource = Objects.requireNonNull(timeSource);
         this.maxCooldownEntries = maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES;
     }
@@ -266,6 +289,72 @@ public final class ForgePowerService {
         }
     }
 
+    public void emitArmorReductionParticle(Player player) {
+        if (player == null) {
+            return;
+        }
+        emitPowerParticles(player, player.getLocation(), null, 96, 165, 250,
+            Arrays.asList("ENCHANT", "SPELL", "CRIT"), 1);
+    }
+
+    public void refreshPassivePowers(Player player) {
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+        clearPassiveTasksForPlayer(player);
+        List<ItemStack> items = new ArrayList<>();
+        Collections.addAll(items, equipmentBridge.getInventoryContents(player));
+        Collections.addAll(items, equipmentBridge.getArmorContents(player));
+        items.add(equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND));
+        items.add(equipmentBridge.getItem(player, EquipmentBridge.Slot.OFFHAND));
+        Set<UUID> forgeIds = new HashSet<>();
+        List<ItemIdentityCodec.Identity> validIdentities = new ArrayList<>();
+        for (ItemStack item : items) {
+            if (item == null || !item.hasItemMeta()) {
+                continue;
+            }
+            ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
+            if (read.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID) {
+                forgeIds.add(read.getIdentity().getForgeId());
+                validIdentities.add(read.getIdentity());
+            }
+        }
+        inventoryForgeIdsByPlayer.put(player.getUniqueId(), Collections.unmodifiableSet(forgeIds));
+        for (ItemIdentityCodec.Identity identity : validIdentities) {
+            List<ForgePowerDefinition> powers = resolveActivePowers(identity.getLastTierId(),
+                identity.getLastVariantId(), identity.getActivePowerIds());
+            for (ForgePowerDefinition power : powers) {
+                if (power.getPowerType() == ForgePowerDefinition.PowerType.PASSIVE_POTION) {
+                    activatePassivePower(player, power, identity.getForgeId());
+                }
+            }
+        }
+    }
+
+    private List<ForgePowerDefinition> resolveActivePowers(String lastTierId, String lastVariantId,
+                                                           List<String> activePowerIds) {
+        if (lastTierId == null || lastVariantId == null
+            || activePowerIds == null || activePowerIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Optional<TierDefinition> tier = tierRepository.findById(lastTierId);
+        if (!tier.isPresent()) {
+            return Collections.emptyList();
+        }
+        Set<String> activeSet = new HashSet<>(activePowerIds);
+        List<ForgePowerDefinition> powers = new ArrayList<>();
+        for (ForgeVariant variant : tier.get().getVariants()) {
+            if (lastVariantId.equals(variant.getId())) {
+                for (ForgePowerDefinition power : variant.getPowers()) {
+                    if (activeSet.contains(power.getId())) {
+                        powers.add(power);
+                    }
+                }
+            }
+        }
+        return powers;
+    }
+
     public boolean activatePassivePower(Player player, ForgePowerDefinition power, UUID forgeId) {
         if (power.getPowerType() != ForgePowerDefinition.PowerType.PASSIVE_POTION) {
             return false;
@@ -277,6 +366,7 @@ public final class ForgePowerService {
             return false;
         }
         applyPassivePotionEffect(player, power, forgeId);
+        emitPassiveActivationParticles(player, power);
         return true;
     }
 
@@ -389,6 +479,103 @@ public final class ForgePowerService {
         }
     }
 
+    private void emitPowerParticles(Player viewer, Location location, ForgePowerDefinition power,
+                                    int red, int green, int blue, List<String> semanticFallback, int count) {
+        if (viewer == null || location == null || location.getWorld() == null) {
+            return;
+        }
+        List<String> configured = power != null ? power.getParticleCandidates() : null;
+        List<String> chosen = configured != null && !configured.isEmpty() ? configured : semanticFallback;
+        if (chosen == null || chosen.isEmpty()) {
+            return;
+        }
+        particleBridge.sendToPlayer(viewer, chosen.get(0), location, 0F, 0F, 0F, 0F, count);
+        if (red >= 0 && green >= 0 && blue >= 0) {
+            particleBridge.sendColoredDust(viewer, location, red, green, blue, 1F, count);
+        }
+    }
+
+    private void emitPotionParticles(Player viewer, Location location, ForgePowerDefinition power,
+                                     PotionEffectType effectType) {
+        if (PotionEffectType.POISON.equals(effectType)) {
+            emitPowerParticles(viewer, location, power, 34, 197, 94,
+                Arrays.asList("HAPPY_VILLAGER", "VILLAGER_HAPPY", "SPELL"), 1);
+        } else if (PotionEffectType.WITHER.equals(effectType)) {
+            emitPowerParticles(viewer, location, power, 168, 85, 247,
+                Arrays.asList("WITCH", "LARGE_SMOKE", "SMOKE"), 1);
+        } else {
+            emitPowerParticles(viewer, location, power, -1, -1, -1,
+                Arrays.asList("EFFECT", "SPELL"), 1);
+        }
+    }
+
+    private void emitPassiveActivationParticles(Player player, ForgePowerDefinition power) {
+        if (player == null || power == null) {
+            return;
+        }
+        List<int[]> colors = new ArrayList<>();
+        List<String> candidates = new ArrayList<>();
+        for (String effectCandidate : power.getEffectCandidates()) {
+            if (effectCandidate == null) {
+                continue;
+            }
+            int[] rgb;
+            List<String> family;
+            switch (effectCandidate.toUpperCase()) {
+                case "REGENERATION":
+                    rgb = new int[] {244, 114, 182};
+                    family = Arrays.asList("HEART");
+                    break;
+                case "SPEED":
+                    rgb = new int[] {96, 165, 250};
+                    family = Arrays.asList("CLOUD", "INSTANT_EFFECT", "SPELL_INSTANT");
+                    break;
+                case "FAST_DIGGING":
+                case "HASTE":
+                    rgb = new int[] {250, 204, 21};
+                    family = Arrays.asList("ENCHANT", "CRIT");
+                    break;
+                case "DAMAGE_RESISTANCE":
+                case "RESISTANCE":
+                    rgb = new int[] {34, 211, 238};
+                    family = Arrays.asList("ENCHANT", "SPELL");
+                    break;
+                default:
+                    continue;
+            }
+            if (!containsRgb(colors, rgb)) {
+                colors.add(rgb);
+            }
+            for (String particle : family) {
+                if (!candidates.contains(particle)) {
+                    candidates.add(particle);
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            return;
+        }
+        if (colors.isEmpty()) {
+            emitPowerParticles(player, player.getLocation(), power, -1, -1, -1, candidates, 1);
+        } else {
+            emitPowerParticles(player, player.getLocation(), power,
+                colors.get(0)[0], colors.get(0)[1], colors.get(0)[2], candidates, 1);
+            for (int i = 1; i < colors.size(); i++) {
+                particleBridge.sendColoredDust(player, player.getLocation(),
+                    colors.get(i)[0], colors.get(i)[1], colors.get(i)[2], 1F, 1);
+            }
+        }
+    }
+
+    private static boolean containsRgb(List<int[]> colors, int[] rgb) {
+        for (int[] existing : colors) {
+            if (existing[0] == rgb[0] && existing[1] == rgb[1] && existing[2] == rgb[2]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean triggerOnHitPower(Player attacker, LivingEntity victim, ForgePowerDefinition power, UUID forgeId) {
         ForgePowerDefinition.PowerType type = power.getPowerType();
         if (type == ForgePowerDefinition.PowerType.EVERY_N_HIT_LIGHTNING
@@ -425,7 +612,7 @@ public final class ForgePowerService {
                 applyAoeFire(attacker, victim, power);
                 break;
             case ON_HIT_BLEED:
-                applyBleed(victim, power);
+                applyBleed(attacker, victim, power);
                 break;
             case ON_HIT_EXPLOSIVE:
                 applyExplosive(attacker, victim, power);
@@ -484,7 +671,7 @@ public final class ForgePowerService {
         }
         switch (type) {
             case EVERY_N_HIT_LIGHTNING:
-                applyLightning(victim.getLocation().clone());
+                applyLightning(attacker, victim.getLocation().clone(), power);
                 break;
             case EVERY_N_HIT_KNOCKBACK:
                 applyKnockback(attacker, victim, power);
@@ -495,14 +682,16 @@ public final class ForgePowerService {
         return true;
     }
 
-    private void applyLightning(Location location) {
+    private void applyLightning(Player attacker, Location location, ForgePowerDefinition power) {
         if (location == null || location.getWorld() == null) {
             return;
         }
+        emitPowerParticles(attacker, location, power, 250, 204, 21,
+            Arrays.asList("ELECTRIC_SPARK", "NOTE", "CRIT"), 1);
         schedulerBridge.runRegion(location, () -> location.getWorld().strikeLightning(location));
     }
 
-    private void applyKnockback(LivingEntity attacker, LivingEntity victim, ForgePowerDefinition power) {
+    private void applyKnockback(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
         BigDecimal horizontal = power.getHorizontalStrength();
         BigDecimal vertical = power.getVerticalStrength();
         double horizontalStrength = horizontal != null ? horizontal.doubleValue() : 1.0;
@@ -530,6 +719,8 @@ public final class ForgePowerService {
         double knockX = normX * horizontalStrength;
         double knockZ = normZ * horizontalStrength;
         Vector vector = new Vector(knockX, verticalStrength, knockZ);
+        emitPowerParticles(attacker, victim.getLocation(), power, 96, 165, 250,
+            Arrays.asList("CLOUD", "CRIT"), 1);
         schedulerBridge.runEntity(victim, () -> victim.setVelocity(vector), () -> {});
     }
 
@@ -557,6 +748,7 @@ public final class ForgePowerService {
         int amplifier = power.getAmplifier();
         LivingEntity entity = victim;
         entity.addPotionEffect(new PotionEffect(effectType.get(), duration, amplifier, false, false));
+        emitPotionParticles(attacker, victim.getLocation(), power, effectType.get());
     }
 
     private void applyOnHitFire(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
@@ -566,6 +758,8 @@ public final class ForgePowerService {
         }
         LivingEntity entity = victim;
         entity.setFireTicks(fireTicks);
+        emitPowerParticles(attacker, victim.getLocation(), power, 249, 115, 22,
+            Arrays.asList("FLAME", "LAVA"), 1);
     }
 
     private void applyOnHitHeal(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
@@ -577,26 +771,37 @@ public final class ForgePowerService {
         double maxHealth = attacker.getMaxHealth();
         double newHealth = Math.min(attacker.getHealth() + heal, maxHealth);
         attacker.setHealth(newHealth);
+        emitPowerParticles(attacker, attacker.getLocation(), power, 244, 114, 182,
+            Arrays.asList("HEART"), 1);
     }
 
-    private void applyAoeFire(Player attacker, LivingEntity victim, ForgePowerDefinition power) {
+    private void applyAoeFire(final Player attacker, final LivingEntity victim, final ForgePowerDefinition power) {
         final int fireTicks = power.getFireTicks();
         if (fireTicks <= 0) {
             return;
         }
-        multiStrikeService.execute(attacker, victim, power, true, new MultiStrikeService.StrikeAction() {
+        emitPowerParticles(attacker, victim.getLocation(), power, 249, 115, 22,
+            Arrays.asList("FLAME", "LAVA"), 1);
+        multiStrikeService.executeRadial(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
             @Override
             public void apply(LivingEntity target) {
                 target.setFireTicks(fireTicks);
+                if (target != victim) {
+                    emitPowerParticles(attacker, target.getLocation(), power, 249, 115, 22,
+                        Arrays.asList("FLAME", "LAVA"), 1);
+                }
             }
         });
     }
 
-    private void applyBleed(final LivingEntity victim, final ForgePowerDefinition power) {
-        scheduleBleedPulse(victim, power, power.getPulseCount());
+    private void applyBleed(final Player attacker, final LivingEntity victim, final ForgePowerDefinition power) {
+        emitPowerParticles(attacker, victim.getLocation(), power, 220, 38, 38,
+            Arrays.asList("CRIT", "HEART"), 1);
+        scheduleBleedPulse(attacker, victim, power, power.getPulseCount());
     }
 
-    private void scheduleBleedPulse(final LivingEntity victim, final ForgePowerDefinition power, final int remaining) {
+    private void scheduleBleedPulse(final Player attacker, final LivingEntity victim,
+                                    final ForgePowerDefinition power, final int remaining) {
         if (remaining <= 0) {
             return;
         }
@@ -607,16 +812,19 @@ public final class ForgePowerService {
                     return;
                 }
                 victim.damage(power.getDamageAmount().doubleValue());
-                scheduleBleedPulse(victim, power, remaining - 1);
+                emitPowerParticles(attacker, victim.getLocation(), power, 220, 38, 38,
+                    Arrays.asList("CRIT", "HEART"), 1);
+                scheduleBleedPulse(attacker, victim, power, remaining - 1);
             }
         }, () -> {}, power.getPulseIntervalTicks());
     }
 
     private void applyExplosive(final Player attacker, final LivingEntity victim,
                                 final ForgePowerDefinition power) {
-        particleBridge.sendToPlayer(attacker, "EXPLOSION_LARGE", victim.getLocation(), 0F, 0F, 0F, 0F, 1);
+        emitPowerParticles(attacker, victim.getLocation(), power, 249, 115, 22,
+            Arrays.asList("EXPLOSION", "EXPLOSION_NORMAL", "EXPLOSION_EMITTER", "FLAME"), 1);
         final AtomicBoolean primary = new AtomicBoolean(true);
-        multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
+        multiStrikeService.executeRadial(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
             @Override
             public void apply(LivingEntity target) {
                 double multiplier = primary.getAndSet(false) ? 1.0
@@ -624,6 +832,10 @@ public final class ForgePowerService {
                 double damage = power.getDamageAmount().doubleValue() * multiplier;
                 if (damage > 0) {
                     target.damage(damage);
+                }
+                if (target != victim) {
+                    emitPowerParticles(attacker, target.getLocation(), power, 249, 115, 22,
+                        Arrays.asList("EXPLOSION", "EXPLOSION_NORMAL", "EXPLOSION_EMITTER", "FLAME"), 1);
                 }
                 if (power.getPrimaryKnockbackMultiplier().signum() > 0) {
                     schedulerBridge.runEntityLater(target, new Runnable() {
@@ -647,21 +859,31 @@ public final class ForgePowerService {
         }
         final PotionEffect effect = new PotionEffect(effectType.get(), power.getDurationTicks(),
             power.getAmplifier(), false, false);
-        multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
+        emitPotionParticles(attacker, victim.getLocation(), power, effectType.get());
+        multiStrikeService.executeChain(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
             @Override
             public void apply(LivingEntity target) {
                 target.addPotionEffect(effect);
+                if (target != victim) {
+                    emitPotionParticles(attacker, target.getLocation(), power, effectType.get());
+                }
             }
         });
     }
 
     private void applyChainDamage(Player attacker, LivingEntity victim, final ForgePowerDefinition power) {
-        multiStrikeService.execute(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
+        emitPowerParticles(attacker, victim.getLocation(), power, 250, 204, 21,
+            Arrays.asList("ELECTRIC_SPARK", "NOTE", "CRIT"), 1);
+        multiStrikeService.executeChain(attacker, victim, power, false, new MultiStrikeService.StrikeAction() {
             @Override
             public void apply(LivingEntity target) {
                 double damage = power.getDamageAmount().doubleValue();
                 if (damage > 0) {
                     target.damage(damage);
+                }
+                if (target != victim) {
+                    emitPowerParticles(attacker, target.getLocation(), power, 250, 204, 21,
+                        Arrays.asList("ELECTRIC_SPARK", "NOTE", "CRIT"), 1);
                 }
             }
         });
@@ -684,6 +906,8 @@ public final class ForgePowerService {
         double horiz = horizontal != null ? horizontal.doubleValue() : 1.0;
         double vert = vertical != null ? vertical.doubleValue() : 0.0;
         applyVelocity(player, horiz, vert);
+        emitPowerParticles(player, player.getLocation(), power, 56, 189, 248,
+            Arrays.asList("INSTANT_EFFECT", "SPELL_INSTANT", "CRIT"), 1);
     }
 
     private void applyVelocity(Player player, double horizontalStrength, double verticalStrength) {
@@ -718,6 +942,8 @@ public final class ForgePowerService {
         double maxHealth = player.getMaxHealth();
         double newHealth = Math.min(player.getHealth() + heal, maxHealth);
         player.setHealth(newHealth);
+        emitPowerParticles(player, player.getLocation(), power, 244, 114, 182,
+            Arrays.asList("HEART"), 1);
     }
 
     public boolean isCooldownExpired(Player player, ForgePowerDefinition power, UUID forgeId) {

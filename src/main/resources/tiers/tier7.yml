@@ -124,6 +124,10 @@ variants:
           - WITHER
         duration-ticks: 80
         amplifier: 1
+        particle-candidates:
+          - WITCH
+          - LARGE_SMOKE
+          - SMOKE
       - id: void_bleed
         type: ON_HIT_BLEED
         cooldown-ticks: 60
@@ -132,8 +136,8 @@ variants:
         pulse-count: 4
         pulse-interval-ticks: 12
         particle-candidates:
+          - CRIT
           - HEART
-          - SMOKE
   annihilator:
     weight: "40.0"
     applicable-groups:
@@ -157,18 +161,22 @@ variants:
         chance: "1.0"
         horizontal-strength: "1.75"
         vertical-strength: "0.45"
+        particle-candidates:
+          - CLOUD
+          - CRIT
       - id: annihilator_electric
         type: ON_HIT_CHAIN_DAMAGE
         cooldown-ticks: 80
         chance: "0.30"
         damage-amount: "2"
         radius: "6"
-        max-targets: 5
+        max-targets: 10
         chain-delay-ticks: 2
         trail-points: 14
         particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
           - CRIT
-          - SPELL_INSTANT
   eternal:
     weight: "30.0"
     applicable-groups:
@@ -198,6 +206,8 @@ variants:
           - REGENERATION
         duration-ticks: 40
         amplifier: 1
+        particle-candidates:
+          - HEART
         activation-slots:
           - MAIN_HAND
           - OFF_HAND
@@ -207,3 +217,5 @@ variants:
         cooldown-ticks: 80
         chance: "0.15"
         heal-amount: "1.5"
+        particle-candidates:
+          - HEART

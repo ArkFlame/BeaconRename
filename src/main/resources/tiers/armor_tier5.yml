@@ -121,6 +121,8 @@ variants:
           - REGENERATION
         duration-ticks: 60
         amplifier: 1
+        particle-candidates:
+          - HEART
         activation-slots:
           - ARMOR
   featherfall_ii:

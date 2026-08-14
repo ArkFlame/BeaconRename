@@ -6,10 +6,13 @@ import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TeleportBridge;
 import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.EquipmentCatalog;
 import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.config.ValidationIssue;
 import com.arkflame.flameforge.config.ValidationReport;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
+import com.arkflame.flameforge.item.ItemIdentityCodec;
+import com.arkflame.flameforge.item.ItemMutationService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
@@ -127,6 +130,8 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                 return commandTierInfo(sender, args);
             case "preview":
                 return commandPreview(sender, args);
+            case "testitem":
+                return commandTestItem(sender, args);
             case "history":
                 return commandHistory(sender, args);
             case "tp":
@@ -181,6 +186,8 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                     return filterPrefixMaterial(prefix);
                 }
                 return Collections.emptyList();
+            case "testitem":
+                return tabCompleteTestItem(sender, args, prefix);
             case "history":
                 if (args.length == 2 && permitted(sender, "flameforge.command.history.others")) {
                     return suggestionIndex.getOnlinePlayerSuggestions(prefix);
@@ -685,6 +692,147 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean commandTestItem(CommandSender sender, String[] args) {
+        if (!requirePermission(sender, "testitem.no-permission", "flameforge.command.testitem")) {
+            return true;
+        }
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
+            return true;
+        }
+        if (!(sender instanceof Player)) {
+            send(sender, "testitem.player-only");
+            return true;
+        }
+        if (args.length < 3) {
+            send(sender, "testitem.usage");
+            return true;
+        }
+        String tierId = args[1];
+        String variantId = args[2];
+        Optional<TierDefinition> optTier = tierRepository.findById(tierId);
+        if (!optTier.isPresent()) {
+            send(sender, "testitem.tier-not-found", messageArguments("tier_id", tierId));
+            return true;
+        }
+        TierDefinition tier = optTier.get();
+        ForgeVariant variant = findVariantById(tier, variantId);
+        if (variant == null) {
+            send(sender, "testitem.variant-not-found",
+                messageArguments("tier_id", tierId, "variant_id", variantId));
+            return true;
+        }
+        Material material;
+        if (args.length >= 4) {
+            material = materialResolver.resolve(args[3]).orElse(null);
+            if (material == null || material == Material.AIR) {
+                send(sender, "testitem.material-unavailable", messageArguments("material", args[3]));
+                return true;
+            }
+        } else {
+            Optional<Material> fallback = resolveFallbackMaterial(tier.getId());
+            if (!fallback.isPresent() || fallback.get() == Material.AIR) {
+                send(sender, "testitem.material-unavailable", messageArguments("material", "auto"));
+                return true;
+            }
+            material = fallback.get();
+        }
+        Optional<String> tierCategoryId = tierRepository.getEquipmentCatalog().categoryIdForTier(tier.getId());
+        if (tierCategoryId.isPresent()) {
+            String materialCategoryId = tierRepository.getEquipmentCatalog()
+                .categoryForMaterial(material.name()).getId();
+            if (!tierCategoryId.get().equalsIgnoreCase(materialCategoryId)) {
+                send(sender, "testitem.material-category-mismatch",
+                    messageArguments("tier_id", tierId, "variant_id", variantId,
+                        "material", material.name(), "category", materialCategoryId,
+                        "required_category", tierCategoryId.get()));
+                return true;
+            }
+        }
+        ReadyServices ready = ctx.getReadyServices();
+        ItemStack item = new ItemStack(material, 1);
+        if (!ready.getForgeVariantEligibility().isEligible(item, variant)) {
+            send(sender, "testitem.variant-ineligible",
+                messageArguments("tier_id", tierId, "variant_id", variantId,
+                    "material", material.name()));
+            return true;
+        }
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
+            .withForgeId(UUID.randomUUID())
+            .withBaseMaterial(material.name())
+            .withBaseDisplayName(ready.getItemIdentityService().defaultBaseDisplayName(material));
+        ItemMutationService.MutationResult mutation = ready.getItemMutationService()
+            .mutateSuccess(item, tier, variant, identity, identity.getForgeId());
+        if (!mutation.isSuccess() || mutation.getResult() == null) {
+            send(sender, "testitem.mutation-failed",
+                messageArguments("tier_id", tierId, "variant_id", variantId,
+                    "material", material.name()));
+            return true;
+        }
+        Player player = (Player) sender;
+        ready.getMenuInputReturnService().returnToPlayer(mutation.getResult(), player);
+        ready.getForgePowerService().refreshPassivePowers(player);
+        send(sender, "testitem.success",
+            messageArguments("tier_id", tierId, "variant_id", variantId,
+                "material", material.name()));
+        return true;
+    }
+
+    private ForgeVariant findVariantById(TierDefinition tier, String variantId) {
+        List<ForgeVariant> variants = tier.getVariants();
+        if (variants != null) {
+            for (ForgeVariant variant : variants) {
+                if (variant.getId().equalsIgnoreCase(variantId)) {
+                    return variant;
+                }
+            }
+        }
+        return null;
+    }
+
+    private Optional<Material> resolveFallbackMaterial(String tierId) {
+        String[] candidates;
+        Optional<String> categoryId = tierRepository.getEquipmentCatalog().categoryIdForTier(tierId);
+        if (!categoryId.isPresent()) {
+            candidates = new String[]{"NETHERITE_SWORD", "DIAMOND_SWORD", "IRON_SWORD"};
+        } else if ("weapon".equalsIgnoreCase(categoryId.get())) {
+            candidates = new String[]{"NETHERITE_SWORD", "DIAMOND_SWORD", "IRON_SWORD"};
+        } else if ("armor".equalsIgnoreCase(categoryId.get())) {
+            candidates = new String[]{"NETHERITE_CHESTPLATE", "DIAMOND_CHESTPLATE", "IRON_CHESTPLATE"};
+        } else if ("shield".equalsIgnoreCase(categoryId.get())) {
+            candidates = new String[]{"SHIELD"};
+        } else {
+            candidates = new String[]{"NETHERITE_INGOT", "DIAMOND", "EMERALD", "WOOL"};
+        }
+        return materialResolver.get(candidates)
+            .map(MaterialResolver.ResolvedMaterial::getMaterial);
+    }
+
+    private List<String> tabCompleteTestItem(CommandSender sender, String[] args, String prefix) {
+        if (!permitted(sender, "flameforge.command.testitem")) {
+            return Collections.emptyList();
+        }
+        if (args.length == 2) {
+            return filterPrefixTierIds(prefix);
+        }
+        if (args.length == 3) {
+            Optional<TierDefinition> optTier = tierRepository.findById(args[1]);
+            if (!optTier.isPresent()) {
+                return Collections.emptyList();
+            }
+            List<String> variantIds = new ArrayList<>();
+            for (ForgeVariant variant : optTier.get().getVariants()) {
+                variantIds.add(variant.getId());
+            }
+            return filterPrefix(variantIds, prefix);
+        }
+        if (args.length == 4) {
+            return filterPrefixMaterial(prefix);
+        }
+        return Collections.emptyList();
+    }
+
     private boolean commandHistory(CommandSender sender, String[] args) {
         UUID targetUuid;
         String targetName;
@@ -1172,7 +1320,7 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                 return filterPrefix(Collections.singletonList("<id>"), prefix);
             }
             if (args.length == 5) {
-                return filterPrefix(Collections.singletonList("<priority>"), prefix);
+                return filterPrefix(Collections.singletonList("<level>"), prefix);
             }
         }
         if ("clone".equals(tierCommand)) {
@@ -1183,7 +1331,7 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                 return filterPrefix(Collections.singletonList("<id>"), prefix);
             }
             if (args.length == 6) {
-                return filterPrefix(Collections.singletonList("<priority>"), prefix);
+                return filterPrefix(Collections.singletonList("<level>"), prefix);
             }
         }
         return Collections.emptyList();

@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Weapon Tier II forged variant"
       - "<dark_gray>Power: Heal on hit"
-      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -121,6 +121,8 @@ variants:
         cooldown-ticks: 60
         chance: "0.15"
         heal-amount: "2"
+        particle-candidates:
+          - HEART
   scorching:
     weight: "33.0"
     applicable-groups:
@@ -129,7 +131,7 @@ variants:
     lore:
       - "<gray>Weapon Tier II forged variant"
       - "<dark_gray>Power: Area fire on hit"
-      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -141,6 +143,9 @@ variants:
         fire-ticks: 60
         radius: "3.5"
         max-targets: 4
+        particle-candidates:
+          - FLAME
+          - LAVA
   detonating:
     weight: "33.0"
     applicable-groups:
@@ -149,7 +154,7 @@ variants:
     lore:
       - "<gray>Weapon Tier II forged variant"
       - "<dark_gray>Power: Explosive strike"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -164,5 +169,7 @@ variants:
         max-targets: 5
         primary-knockback-multiplier: "1.35"
         particle-candidates:
+          - EXPLOSION
           - EXPLOSION_NORMAL
+          - EXPLOSION_EMITTER
           - FLAME

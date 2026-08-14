@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Weapon Tier VII forged variant"
       - "<dark_gray>Power: Chain damage and lightning"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -122,12 +122,20 @@ variants:
         chance: "0.30"
         damage-amount: "2.5"
         radius: "6"
-        max-targets: 6
+        max-targets: 10
+        particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
+          - CRIT
       - id: tempest_lightning
         type: EVERY_N_HIT_LIGHTNING
         hit-interval: 3
         cooldown-ticks: 0
         chance: "1.0"
+        particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
+          - CRIT
   plague_lord:
     weight: "33.0"
     applicable-groups:
@@ -136,7 +144,8 @@ variants:
     lore:
       - "<gray>Weapon Tier VII forged variant"
       - "<dark_gray>Power: Chain poison and bleed"
-      - "<dark_gray>Cooldowns: 80 and 60 seconds"
+      - "<dark_gray>Chain Cooldown: 4s"
+      - "<dark_gray>Bleed Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -150,13 +159,20 @@ variants:
         duration-ticks: 120
         amplifier: 1
         radius: "6"
-        max-targets: 6
+        max-targets: 10
+        particle-candidates:
+          - HAPPY_VILLAGER
+          - VILLAGER_HAPPY
+          - SPELL
       - id: plague_lord_bleed
         type: ON_HIT_BLEED
         cooldown-ticks: 60
         chance: "0.20"
         damage-amount: "1"
         pulse-count: 4
+        particle-candidates:
+          - CRIT
+          - HEART
   bloodstorm:
     weight: "33.0"
     applicable-groups:
@@ -165,7 +181,8 @@ variants:
     lore:
       - "<gray>Weapon Tier VII forged variant"
       - "<dark_gray>Power: Bleed and dash"
-      - "<dark_gray>Cooldowns: 60 and 100 seconds"
+      - "<dark_gray>Bleed Cooldown: 3s"
+      - "<dark_gray>Dash Cooldown: 5s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -176,8 +193,15 @@ variants:
         chance: "0.28"
         damage-amount: "1.25"
         pulse-count: 4
+        particle-candidates:
+          - CRIT
+          - HEART
       - id: bloodstorm_dash
         type: SHIFT_RIGHT_CLICK_DASH
         cooldown-ticks: 100
         horizontal-strength: "1.6"
         vertical-strength: "0.4"
+        particle-candidates:
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
+          - CRIT

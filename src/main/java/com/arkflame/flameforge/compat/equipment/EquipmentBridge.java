@@ -2,9 +2,15 @@ package com.arkflame.flameforge.compat.equipment;
 
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.EventExecutor;
+import org.bukkit.plugin.java.JavaPlugin;
 
 import java.lang.reflect.Method;
+import java.util.function.Consumer;
 
 public final class EquipmentBridge {
     public enum Slot {
@@ -138,5 +144,53 @@ public final class EquipmentBridge {
 
     public boolean isOffhandSupported() {
         return offhandSupported;
+    }
+
+    public boolean registerOffhandSwapListener(JavaPlugin plugin, Consumer<Player> callback) {
+        if (plugin == null || callback == null) {
+            return false;
+        }
+        final Class<?> eventClass;
+        try {
+            eventClass = Class.forName("org.bukkit.event.player.PlayerSwapHandItemsEvent",
+                false, plugin.getClass().getClassLoader());
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+        if (!Event.class.isAssignableFrom(eventClass)) {
+            return false;
+        }
+        final Method getPlayer;
+        try {
+            getPlayer = eventClass.getMethod("getPlayer");
+        } catch (NoSuchMethodException e) {
+            return false;
+        }
+        final Class<?> resolvedEventClass = eventClass;
+        final Consumer<Player> resolvedCallback = callback;
+        try {
+            plugin.getServer().getPluginManager().registerEvent(
+                (Class) resolvedEventClass,
+                new Listener() {
+                },
+                EventPriority.MONITOR,
+                new EventExecutor() {
+                    @Override
+                    public void execute(Listener listener, Event event) {
+                        try {
+                            Object player = getPlayer.invoke(event);
+                            if (player instanceof Player) {
+                                resolvedCallback.accept((Player) player);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                },
+                plugin
+            );
+            return true;
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 }

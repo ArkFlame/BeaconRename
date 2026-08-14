@@ -4,8 +4,10 @@ import com.arkflame.flameforge.chance.OutcomeSelector;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.config.ConfigSnapshot;
+import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.effect.AnimationHandle;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
+import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
@@ -29,6 +31,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.math.BigDecimal;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -168,6 +171,54 @@ class ForgeServiceTest {
         verify(f.cost, never()).refund(any(), any());
     }
 
+    @Test
+    void createPlanResolvesMaterialAwareNextTier() {
+        Fixture f = fixture();
+        TierDefinition swordNext = tier("tier1", f.variant);
+        TierDefinition chestNext = tier("chestplate-tier", f.variant);
+        when(f.tierRepo.findExactNext(Material.DIAMOND_SWORD, 0)).thenReturn(Optional.of(swordNext));
+        when(f.tierRepo.findExactNext(Material.DIAMOND_CHESTPLATE, 0)).thenReturn(Optional.of(chestNext));
+
+        ForgePlanResult swordPlan = f.service.createPlan(f.player, PlayerForgeState.of(f.playerId.toString()),
+            new ItemStack(Material.DIAMOND_SWORD));
+        ForgePlanResult chestPlan = f.service.createPlan(f.player, PlayerForgeState.of(f.playerId.toString()),
+            new ItemStack(Material.DIAMOND_CHESTPLATE));
+
+        assertTrue(swordPlan.isReady());
+        assertTrue(chestPlan.isReady());
+        assertNotEquals(swordPlan.plan.getTargetTier().getId(), chestPlan.plan.getTargetTier().getId());
+    }
+
+    @Test
+    void createPlanFailsWhenMaterialAwareNextTierAbsent() {
+        Fixture f = fixture();
+        when(f.tierRepo.findExactNext(any(Material.class), anyInt())).thenReturn(Optional.empty());
+
+        ForgePlanResult result = f.service.createPlan(f.player, PlayerForgeState.of(f.playerId.toString()), f.input);
+
+        assertFalse(result.isReady());
+        assertEquals(ForgePlanResult.Status.NEXT_TIER_MISSING, result.status);
+    }
+
+    @Test
+    void planRevalidationRejectsMismatchedMaterialAwareTarget() {
+        Fixture f = fixture();
+        TierDefinition differentNext = tier("other-tier", f.variant);
+        when(f.tierRepo.findExactNext(any(Material.class), anyInt())).thenReturn(Optional.of(differentNext));
+        when(f.delivery.deliverItem(any(), eq(f.player), any(), isNull())).thenReturn(true);
+        ForgeResolution[] resolution = new ForgeResolution[1];
+
+        f.service.confirmAndExecute(f.player, PlayerForgeState.of(f.playerId.toString()), f.input, f.plan,
+            value -> resolution[0] = value);
+
+        assertNotNull(resolution[0]);
+        assertFalse(resolution[0].isSuccess());
+        assertTrue(resolution[0].isPreRollFailure());
+        verify(f.cost, never()).charge(any(), any(), any());
+        verify(f.animation, never()).playAnimation(anyString(), any(), any(), any(), any(), any(ForgeOutcomeCategory.class),
+            any(ForgeVariant.class), any(), any());
+    }
+
     private static Fixture fixture() {
         Fixture f = new Fixture();
         f.playerId = UUID.randomUUID();
@@ -197,7 +248,7 @@ class ForgeServiceTest {
         f.identity = mock(ItemIdentityService.class);
         f.input = new ItemStack(Material.DIAMOND_SWORD);
         f.variant = variant();
-        f.tier = tier(f.variant);
+        f.tier = tier("tier1", f.variant);
         f.quote = mock(CostQuote.class);
         when(f.quote.isAffordable()).thenReturn(true);
         f.plan = ForgePlan.createWithTier(f.input, 0, f.tier, f.tier.getCost(), f.tier.getChances(),
@@ -205,6 +256,12 @@ class ForgeServiceTest {
         when(f.eligibility.eligibleVariants(any(), any())).thenReturn(Collections.singletonList(f.variant));
         when(f.selector.selectVariant(anyList())).thenReturn(f.variant);
         when(f.selector.rollCategory(any())).thenReturn(ForgeOutcomeCategory.SUCCESS);
+        f.tierRepo = mock(TierRepository.class);
+        when(f.config.getTierRepository()).thenReturn(f.tierRepo);
+        when(f.tierRepo.findExactNext(any(Material.class), anyInt())).thenReturn(Optional.of(f.tier));
+        when(f.identity.readForgeIdentity(any())).thenReturn(new ItemIdentityService.ForgeIdentityRead(
+            ItemIdentityService.ForgeIdentityStatus.NONE, ItemIdentityCodec.Identity.empty()));
+        when(f.cost.quote(any(), any())).thenReturn(f.quote);
         f.service = new ForgeService(f.plugin, f.scheduler, f.config, f.sessions, f.station, f.cost,
             f.animation, f.outcome, f.delivery, f.playerStates, mock(PendingDeliveryRepository.class),
             f.audit, f.selector, f.eligibility, f.identity);
@@ -217,11 +274,15 @@ class ForgeServiceTest {
     }
 
     private static TierDefinition tier(ForgeVariant variant) {
+        return tier("tier1", variant);
+    }
+
+    private static TierDefinition tier(String id, ForgeVariant variant) {
         TierRequirements requirements = new TierRequirements(TierRequirements.Combine.ALL,
             new TierRequirements.XpRequirement(false, 0),
             new TierRequirements.MoneyRequirement(false, BigDecimal.ZERO),
             new TierRequirements.ItemsRequirement(false, Collections.emptyList()));
-        return new TierDefinition("tier1", 1, true, "", null, 0L, Collections.emptyList(),
+        return new TierDefinition(id, 1, true, "", null, 0L, Collections.emptyList(),
             Collections.emptyList(), requirements, new TierChances(BigDecimal.valueOf(100), BigDecimal.ZERO, BigDecimal.ZERO),
             null, null, null, Collections.singletonList(variant));
     }
@@ -241,6 +302,7 @@ class ForgeServiceTest {
         private OutcomeSelector selector;
         private ForgeVariantEligibility eligibility;
         private ItemIdentityService identity;
+        private TierRepository tierRepo;
         private ForgeService service;
         private ForgeSession session;
         private Player player;

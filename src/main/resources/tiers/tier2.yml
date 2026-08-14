@@ -145,6 +145,7 @@ variants:
         radius: "3.5"
         particle-candidates:
           - FLAME
+          - LAVA
   restorative:
     weight: "25.0"
     applicable-groups:
@@ -161,3 +162,5 @@ variants:
         type: SHIFT_RIGHT_CLICK_HEAL
         cooldown-ticks: 160
         heal-amount: "2.0"
+        particle-candidates:
+          - HEART

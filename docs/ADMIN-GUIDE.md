@@ -1,327 +1,160 @@
 # FlameForge Administrator Guide
 
-## Initial Setup
+## Build and Install
 
-### 1. Install and First Run
+Requirements: JDK 8+ and Maven 3.x.
 
-Place the JAR in your server's `plugins/` directory and start the server. On first run, FlameForge will:
-
-- Create `plugins/FlameForge/config.yml` with defaults
-- Create `plugins/FlameForge/tiers/` directory
-- Copy seven default tier files (`tier1.yml` through `tier7.yml`) into the tiers directory
-
-### 2. Register Forge Stations
-
-Players must right-click a registered forge to open the forge menu.
-
-To register a forge:
-1. Target any non-air block; no specific material is required
-2. Stand within 6 blocks of it
-3. Run: `/flameforge station add [station-id] [profile]`
-
-Example:
-```
-/flameforge station add main_forge default
+```bash
+mvn clean install
 ```
 
-The ID is optional. Any non-air block can be registered as a forge. In `REGISTERED_ONLY` mode, players open the menu by right-clicking the registered forge, not an arbitrary unregistered block.
+The shaded JAR is written to `target/FlameForge-1.0.2.jar`.
 
-To remove a station:
-```
-/flameforge station remove main_forge
-```
+Installation:
 
-### 3. Configure Tiers
+1. Stop the server.
+2. Place `FlameForge-1.0.2.jar` into `plugins/`. **PacketEvents is a hard
+   dependency** — the PacketEvents plugin must also be installed or FlameForge
+   will not load.
+3. Start the server. On first run FlameForge creates `plugins/FlameForge/`
+   and copies the bundled `config.yml`, `equipment.yml`, `menus.yml`,
+   `messages.yml`, `station-profiles.yml` and the default tier files into
+   `tiers/`.
+4. Register forge stations with `/flameforge station add <id> [profile]` while
+   looking at a non-air block (default `station-mode` is `REGISTERED_ONLY`).
 
-Edit the YAML files in `plugins/FlameForge/tiers/`. Each file defines one tier with outcomes, costs, and display options. Tiers use schema v2 with `level` instead of `priority`.
+## Runtime Commands
 
-After editing, either:
-- Restart the server, or
-- Run `/flameforge reload`
+| Command                                | Purpose                                              |
+|----------------------------------------|------------------------------------------------------|
+| `/flameforge validate`                 | Parse/validate all configuration without applying    |
+| `/flameforge reload`                   | Re-load configuration; rejected if validation fails  |
+| `/flameforge tiers [page]`             | List loaded tiers                                    |
+| `/flameforge tier info <tier>`         | Tier details (level, enabled, cooldown, requirements, chances, variants) |
+| `/flameforge station list|info|tp`     | Manage and navigate stations                         |
+| `/flameforge testitem <tier> <variant> [material]` | Spawn a forged test item                 |
+| `/flameforge setup tier create|clone`  | Scaffold new tier files                              |
 
-### 4. Test the Forge
+All admin commands require their `flameforge.command.*` permission (op by
+default) or `flameforge.admin`. See
+[COMMANDS-AND-PERMISSIONS.md](COMMANDS-AND-PERMISSIONS.md) for the full table.
 
-1. Right-click the registered forge
-2. Place an item in the input slot (slot 22, center)
-3. View tier, requirements, chances, and variants in confirm button lore
-4. Click the confirm button (slot 31, bottom-center)
-5. Observe the animation and outcome
+### reload vs validate
 
-## Menu Flow
+- `validate` parses and validates without changing anything; it reports per
+  file/field errors and warnings.
+- `reload` re-runs the whole load. If validation reports errors, the reload is
+  rejected and the previous configuration stays active. After a retryable
+  startup failure (bad file), fix the reported file and run `/flameforge
+  reload` to retry startup; non-retryable failures require a restart.
 
-The 54-slot forge menu has these key slots:
+## Editing Tiers and Equipment
 
-```
-┌─────────────────────────────────────┐
-│  [Fill]              [Fill]         │
-│  [Fill]              [Fill]         │
-│  [Fill]  [INPUT]     [Fill]         │
-│  [Fill]              [Fill]         │
-│  [Fill]  [CONFIRM]   [Fill]         │
-└─────────────────────────────────────┘
-```
+Tier files live in `plugins/FlameForge/tiers/` (schema-version 2). Key rules:
 
-**Flow:**
-1. Player places item in input slot (slot 22, center)
-2. Current item identity determines current tier
-3. Forge automatically targets exact next configured tier
-4. Confirm button lore shows tier/requirements/chances/variants
-5. Clicking confirm executes the forge
-6. Animation plays, outcome is applied
+- Operator files **override by id**: a file whose `id` matches a bundled tier
+  replaces it; a new id is added. Files that fail parsing are skipped with a
+  warning and do not replace anything.
+- A tier is **forgeable only when its id appears in an equipment.yml category
+  `progression`**. Custom tiers must be added to a progression to be usable.
+- Each category progression must contain exactly 7 tiers. Validation errors:
+  incomplete progression size, unknown tier id in progression, tier `level`
+  not matching its progression position, tier id shared by multiple
+  categories, more than one fallback category, fallback not `amulet`, or
+  material listed in multiple non-fallback categories.
+- `legacy-tier-ids` in the operator `equipment.yml` is ignored (warning); it
+  exists only to keep old forged identities readable during migration.
+- Tier-level cooldown is `cooldown-seconds`; power cooldowns are
+  `cooldown-ticks` (ticks). Shipped variant lore shows seconds (40 ticks = 2s).
+- `enabled: false` disables a tier while keeping it in the progression.
 
-**Removed slots:** Catalyst slot, ward slot, pity counter, tier selection buttons
+After editing, run `/flameforge validate`, then `/flameforge reload`.
 
-## Configuration Validation
+## The testitem Workflow
 
-Run `/flameforge validate` to check for configuration errors without reloading.
+`/flameforge testitem <tier> <variant> [material]` creates a fresh forged test
+item (new forge id) and returns it to the player — no forge station, no costs,
+no cooldown, no history. Material fallbacks per category: weapon →
+NETHERITE_SWORD/DIAMOND_SWORD/IRON_SWORD, armor →
+NETHERITE_CHESTPLATE/DIAMOND_CHESTPLATE/IRON_CHESTPLATE, shield → SHIELD,
+amulet/uncategorized → NETHERITE_INGOT/DIAMOND/EMERALD/WOOL (first material
+present on the running server). The material must match the tier's category and
+the variant must be eligible for it. Passive powers on the new item activate
+immediately (passive refresh runs after delivery).
 
-Validation checks:
-- Schema version mismatches (v2 required)
-- Missing required fields (`id`, `type`, `level`)
-- Invalid material or enchantment names
-- Duplicate tier IDs
-- Weight values that are zero or negative
-- Tier requirement validation
+This is the fastest way to verify a new variant/power/attribute combination
+before players can roll it.
 
-Errors will prevent the tier from loading. Warnings indicate non-fatal issues.
+## Customizing Messages
 
-## Backup
+Edit `plugins/FlameForge/messages.yml`. Operator values override the bundled
+defaults per key; unset keys fall back to the bundled message. All strings are
+MiniMessage. Command-specific keys (e.g. `testitem.*`, `tier-info.*`,
+`station-add.*`, `help.descriptions.*`) are documented in the source file
+itself. Unknown placeholders render empty and are logged once.
 
-### What to Back Up
+## Holograms
 
-| Data                    | Location                                    |
-|-------------------------|---------------------------------------------|
-| Plugin config           | `plugins/FlameForge/config.yml`             |
-| Station registry        | `plugins/FlameForge/stations/*.yml`         |
-| Tier definitions        | `plugins/FlameForge/tiers/*.yml`            |
-| Player state            | `plugins/FlameForge/player-data/*.yml`      |
-| Pending deliveries      | `plugins/FlameForge/pending-deliveries.yml` |
-| Custom messages         | `plugins/FlameForge/messages.yml`           |
+`holograms.enabled`, `provider-order` (FancyHolograms, DecentHolograms),
+`offset-y`, `transparent-background` and `lines` are configured in config.yml.
+If neither hologram plugin is installed, FlameForge logs
+"no supported provider" and skips station holograms — the forge still works.
 
-### Audit Logs
+## Compatibility Boundary
 
-Daily JSONL files in `plugins/FlameForge/audit/` are not critical path but can be archived for compliance.
+- Compiled for Java 8 bytecode (`maven.compiler.release=8`).
+- Built against the Spigot 1.8.8 API (`spigot-api 1.8.8-R0.1-SNAPSHOT`,
+  provided). The plugin.yml declares `api-version: 1.13` and
+  `folia-supported: true`.
+- Modern server capabilities are isolated behind compatibility bridges and
+  resolved at runtime, never compiled in:
+  - `EquipmentBridge` — offhand read via reflective
+    `Player.getItemInOffhand()` (AIR fallback on 1.8); `PlayerSwapHandItemsEvent`
+    registered reflectively only when the class exists.
+  - `MaterialResolver` — alias tables (e.g. `golden_sword` →
+    `GOLDEN_SWORD`/`GOLD_SWORD`) pick the first material present at runtime;
+    NETHERITE materials simply resolve to nothing on old servers.
+  - `AttributeBridge` — modern attribute APIs only when available; otherwise
+    `ATTACK_DAMAGE_FLAT` is applied event-side.
+  - Particles/sounds — per-server candidate lists (modern name first, legacy
+    fallback second); unresolved cosmetics are skipped, never fatal.
+- **This compatibility boundary does not claim that every runtime/version has
+  been manually executed** — smoke-test your server version after deploying
+  (see below).
 
-### Backup Strategy
+## User-Owned Runtime Smoke Test
 
-Stop the server before copying plugin data for consistent snapshots. The audit log writer will flush and close cleanly on `onDisable()`.
+These checks are executed by the server owner on their own runtime; the
+plugin's automated tests do not cover live server execution:
+
+1. Start the server, confirm "FlameForge" enables and the startup summary
+   shows the expected tier counts and hologram/provider state.
+2. `/flameforge validate` — expect no errors.
+3. `/flameforge station add myforge default` at a block, then right-click it —
+   the forge GUI opens.
+4. Place a forgeable item in slot 22 and confirm the forge executes (or
+   shows a requirements/chances panel).
+5. `/flameforge testitem weapon_tier1 bloodletter` — the returned item should
+   show the Bloodletter name/lore and bleed on hit.
+6. Equip a passive-power item (e.g. `amulet_tier1` Curative) and confirm the
+   potion effect appears; sneak + right-click a dash item to test
+   shift-right-click powers.
+7. Test on your lowest supported server version (e.g. 1.8.8) and your newest
+   one, including Folia if used, because cosmetics and offhand behavior differ
+   per version.
 
 ## Troubleshooting
 
-### Plugin Will Not Start
-
-**Symptom:** No "FlameForge ready" message in console.
-
-**Causes:**
-- Missing dependency (Vault if using money costs)
-- Java version too old (requires Java 8+)
-- Corrupt config.yml
-
-**Resolution:** Check server logs for specific errors. Run `/flameforge validate` after fixing.
-
-### Forge Does Not Open Menu
-
-**Symptom:** Right-clicking a registered forge does nothing.
-
-**Causes:**
-- Station not registered (station mode is `REGISTERED_ONLY`)
-- Player lacks required permission for the station's profile
-- Tier selection not allowed (max-tier exceeded)
-- Input item does not match tier requirements
-
-**Resolution:**
-1. Verify station is registered: `/flameforge station list`
-2. Check player permissions for the station profile
-3. Verify the selected tier is within the profile's `max-tier`
-4. Ensure input item matches tier requirements
-
-### Items Not Delivered
-
-**Symptom:** Forge succeeds but player does not receive the new item.
-
-**Causes:**
-- Player inventory full
-- Player disconnected during animation
-- Delivery queued for offline player
-
-**Resolution:**
-- Pending deliveries are delivered on next player join
-- Check `plugins/FlameForge/pending-deliveries.yml`
-- Verify `DeliveryService` is processing on join
-
-### Money/XP Not Deducted
-
-**Symptom:** Forge succeeds without cost being charged.
-
-**Causes:**
-- Player has `flameforge.bypass.cost` permission
-- Economy plugin not detected (no Vault)
-- XP mode but player has insufficient levels
-
-**Resolution:**
-- Check player permissions
-- Verify Vault is installed and an economy provider is active
-- Check `config.yml` cost mode
-
-### Duplicate Item Duplication (Anti-Dupe)
-
-**Symptom:** Players report gaining items without losing the original.
-
-**Resolution:** This should not occur. FlameForge uses a custody model:
-1. Items are removed from input slots on confirm
-2. Cost is charged immediately
-3. If player disconnects, pending delivery is queued
-4. On rejoin, pending deliveries are processed
-
-If duplication occurs:
-1. Stop the server immediately
-2. Check `plugins/FlameForge/pending-deliveries.yml` for orphaned entries
-3. Check audit logs for transaction anomalies
-4. Report the issue with steps to reproduce
-
-### Tier Not Appearing in Menu
-
-**Symptom:** Created a tier file but it does not appear in the forge menu.
-
-**Causes:**
-- Tier file has a validation error (skipped during load)
-- Tier ID conflict with another tier
-- Input item does not match tier requirements
-- Plugin not reloaded after file creation
-
-**Resolution:**
-1. Run `/flameforge validate` and check for errors
-2. Verify tier file is in `plugins/FlameForge/tiers/`
-3. Ensure file extension is `.yml`
-4. Reload the plugin
-
-### Configuration Reload Fails
-
-**Symptom:** `/flameforge reload` does not complete.
-
-**Causes:**
-- Invalid YAML in a config file
-- Tier file has critical errors
-
-**Resolution:** Check server logs for parse errors. The previous configuration remains active if reload fails.
-
-### Holograms Not Appearing
-
-**Symptom:** Forge stations exist but no floating text displays appear above them.
-
-**Causes:**
-- No hologram provider plugin installed (FancyHolograms or DecentHolograms)
-- `holograms.enabled` is `false` in config
-- Provider plugin is disabled
-- World not found for forge station
-
-**Resolution:**
-1. Verify a hologram provider is installed: FancyHolograms (v2+) or DecentHolograms
-2. Check `plugins/FlameForge/config.yml` has `holograms.enabled: true`
-3. Check server logs for `[FlameForge] Hologram provider:` message at startup
-4. Verify forge station world exists and is loaded
-
-**Provider detection log example:**
-```
-[FlameForge] Hologram provider: FancyHolograms v2.4.0
-```
-
-If you see `Hologram provider: disabled by configuration`, set `holograms.enabled: true`.
-
-### Runtime Proof and Reload Behavior
-
-FlameForge has two runtime proof mechanisms:
-
-1. **Full server restart** — Primary proof. All state (station registry, hologram state, player sessions, pending deliveries) is fully reinitialized from disk on startup.
-2. **PlugManX reload** — Secondary only. PlugManX `reload` calls the plugin's `onDisable()` and `onEnable()` which triggers internal reload. However:
-   - Hologram provider re-detection may behave inconsistently if the provider plugin was also reloaded by PlugManX
-   - Pending deliveries are reprocessed on join
-   - Station registry is reloaded from disk
-
-For guaranteed consistent state, prefer a full server restart over plugin manager reload.
-
-### FancyHolograms API Integration
-
-FlameForge integrates with FancyHolograms via reflection without a compile-time dependency:
-
-- **Supported versions**: FancyHolograms v2+
-- **API class**: `de.oliver.fancyholograms.api.FancyHologramsPlugin`
-- **Fallback class**: `de.oliver.fancyholograms.FancyHolograms` (v1 compatibility)
-- **Text format**: MiniMessage (supports gradients, rainbow, custom hex colors)
-- **Transparent background**: Uses `Hologram.TRANSPARENT` color constant
-
-FancyHolograms is resolved through its own plugin classloader to avoid class-not-found errors when the plugin is absent.
-
-### Hologram Provider Selection
-
-The `holograms.provider-order` list controls which library is used:
-
-```yaml
-holograms:
-  provider-order:
-    - FancyHolograms   # checked first
-    - DecentHolograms   # fallback
-```
-
-Selection is first-match:
-1. If `FancyHolograms` plugin is enabled and its API is available → FancyHolograms is used
-2. Else if `DecentHolograms` plugin is enabled and its API is available → DecentHolograms is used
-3. Else no holograms are created (no-op mode)
-
-Unknown provider names in the list are skipped.
-
-## Performance
-
-### Large Player Counts
-
-FlameForge uses:
-- `ConcurrentHashMap` for station and player state caches
-- Async file I/O for saves
-- Dedicated daemon thread for audit log writing
-
-For servers with 100+ concurrent players, ensure:
-- Audit queue capacity is sufficient (default 1024)
-- Tier file count is reasonable (each tier requires menu rendering time)
-- Station count is reasonable (station lookup is O(n) on the snapshot)
-
-### Folia Considerations
-
-On Folia servers:
-- Teleportation uses entity schedulers
-- Player join processing uses entity schedulers
-- Chunk access is region-aware
-
-## Log Interpretation
-
-### Startup Log
-
-```
-[FlameForge] v1.0.0 ready
-  Tiers: 7 | Stations: 3 | Folia: yes | Vault/Economy: available | Mode: normal
-```
-
-- `Mode: DEGRADED` indicates validation errors; features may not work correctly.
-
-### Audit Log Format
-
-Each entry in `audit/YYYY-MM-DD.jsonl`:
-
-```json
-{"timestamp":1234567890,"action":"FORGE_COMPLETE","actor":"PlayerName","target":"tx-id","details":"Outcome: legendary_sword, Type: MODIFY_INPUT, Category: SUCCESS"}
-```
-
-Actions include: `FORGE_COMPLETE`, `ITEM_DELIVERED`, `COMMAND_DISPATCH`, `DELIVERY_QUEUED`, `ANNOUNCEMENT_GLOBAL`.
-
-## Upgrade Notes
-
-### From Pre-1.0 Builds
-
-- Tier schema version is now `2`. Existing tier files will be validated against this schema.
-- `priority` field replaced by `level` for automatic tier progression.
-- Catalyst and ward configuration removed; use tier requirements instead.
-- Pity system removed from UI; configured per-tier if needed.
-- If validation errors appear, compare your tier files against the schema in `CONFIGURATION.md`.
-- Tier files in `tiers/` are never overwritten on upgrade. Default tiers are only bootstrapped when the directory does not exist.
-### Deleting Tiers
-
-Deleting a tier file removes that tier from active configuration. Players currently in the menu may see the tier disappear on next render. Deleting all tiers results in an empty tier list; the plugin remains enabled.
+- **Plugin does not enable / hard depend error** — PacketEvents is not
+  installed. Install PacketEvents (Spigot 2.13.0) first.
+- **Reload rejected with validation errors** — fix the reported file/field;
+  the previous configuration is still active.
+- **Startup failed (retryable)** — correct the reported file, run
+  `/flameforge reload`; non-retryable failures need a restart.
+- **Station holograms missing** — install FancyHolograms or DecentHolograms,
+  or check the console line "Hologram provider: …".
+- **Money requirements never met** — Vault is missing or has no registered
+  economy provider; the menu reports "economy unavailable".
+- **Legacy items no longer forge** — they are readable for migration, but only
+  category-progression tiers are forgeable; reforge them through the current
+  progression.

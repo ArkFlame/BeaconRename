@@ -104,20 +104,17 @@ public final class ForgeItemInspection {
         }
 
         int currentTier = identity.getCurrentTier();
-        String categoryMaterial = identity.getBaseMaterial() != null
-            ? identity.getBaseMaterial() : item.getType().name();
-        String categoryId = tierRepository.categoryForMaterial(categoryMaterial).getId();
-        TierDefinition currentTierDef = findTier(categoryId, currentTier).orElse(null);
+        Material material = resolveForgeMaterial(identity, item);
+        TierDefinition currentTierDef = tierRepository.findForMaterialAndLevel(material, currentTier).orElse(null);
 
         if (currentTierDef != null && !currentTierDef.isEnabled()) {
             return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
         }
 
-        int targetTier = currentTier + 1;
-        TierDefinition targetTierDef = tierRepository.findExactNext(categoryId, currentTier).orElse(null);
+        TierDefinition targetTierDef = tierRepository.findExactNext(material, currentTier).orElse(null);
 
         if (targetTierDef == null) {
-            if (isMaxReachableTier(categoryId, currentTier)) {
+            if (currentTier >= tierRepository.maxLevelFor(material)) {
                 return new InspectionResult(Status.MAX_TIER, identity);
             }
             return new InspectionResult(Status.NEXT_TIER_MISSING, identity);
@@ -306,23 +303,15 @@ public final class ForgeItemInspection {
         }
     }
 
-    private Optional<TierDefinition> findTier(String categoryId, int level) {
-        Optional<TierDefinition> categoryTier = tierRepository.findByCategory(categoryId, level);
-        return categoryTier.isPresent() ? categoryTier : tierRepository.findByLevel(level);
-    }
-
-    private boolean isMaxReachableTier(String categoryId, int currentTier) {
-        int maxDefined = tierRepository.getEquipmentCatalog().findCategory(categoryId)
-            .map(category -> category.getProgression().stream()
-                .map(tierRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .mapToInt(TierDefinition::getLevel)
-                .max().orElse(0))
-            .orElseGet(() -> tierRepository.all().stream()
-            .mapToInt(TierDefinition::getLevel)
-            .max().orElse(0));
-        return currentTier >= maxDefined;
+    private Material resolveForgeMaterial(ItemIdentityCodec.Identity identity, ItemStack item) {
+        String baseMaterial = identity != null ? identity.getBaseMaterial() : null;
+        if (baseMaterial != null && !baseMaterial.isEmpty()) {
+            Material resolved = Material.matchMaterial(baseMaterial);
+            if (resolved != null) {
+                return resolved;
+            }
+        }
+        return item.getType();
     }
 
     private Optional<StationProfile> resolveStationProfile(String stationId) {

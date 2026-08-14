@@ -50,10 +50,13 @@ public enum CommandNode {
         "help.descriptions.reload", Category.ADMINISTRATION, true, false, AccessClass.ADMIN),
     VALIDATE("validate", "validate", "validate", "flameforge.command.validate",
         "help.descriptions.validate", Category.ADMINISTRATION, true, false, AccessClass.ADMIN),
-    SETUP_TIER_CREATE("setup", "setup tier create <id> <priority>", "setup tier create",
+    TEST_ITEM("testitem", "testitem <tier> <variant> [material]", "testitem",
+        "flameforge.command.testitem", "help.descriptions.testitem",
+        Category.ADMINISTRATION, true, false, AccessClass.ADMIN),
+    SETUP_TIER_CREATE("setup", "setup tier create <id> <level>", "setup tier create",
         "flameforge.command.setup.tier", "help.descriptions.setup-tier-create",
         Category.ADMINISTRATION, true, false, AccessClass.ADMIN),
-    SETUP_TIER_CLONE("setup", "setup tier clone <source> <id> <priority>", "setup tier clone",
+    SETUP_TIER_CLONE("setup", "setup tier clone <source> <id> <level>", "setup tier clone",
         "flameforge.command.setup.tier", "help.descriptions.setup-tier-clone",
         Category.ADMINISTRATION, true, false, AccessClass.ADMIN);
 

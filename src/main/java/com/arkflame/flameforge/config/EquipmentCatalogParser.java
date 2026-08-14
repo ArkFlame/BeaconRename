@@ -66,7 +66,7 @@ public final class EquipmentCatalogParser {
 
         List<EquipmentCatalog.Category> categories = new ArrayList<>();
         Set<String> progressionIds = new LinkedHashSet<>();
-        Set<String> materials = new LinkedHashSet<>();
+        Map<String, String> materialOwners = new LinkedHashMap<>();
         String fallbackId = null;
         Set<String> categoryIds = new LinkedHashSet<>();
         Map<?, ?> categoryMap = (Map<?, ?>) rawCategories;
@@ -96,9 +96,13 @@ public final class EquipmentCatalogParser {
                     continue;
                 }
                 String normalized = MaterialResolver.getInstance().resolve(materialName).get().name();
-                if (!fallback && !materials.add(normalized)) {
-                    report.addError("equipment.yml.categories." + id, "materials", "Material appears in multiple non-fallback categories: " + materialName);
-                    continue;
+                if (!fallback) {
+                    String ownerId = materialOwners.get(normalized);
+                    if (ownerId != null && !ownerId.equals(id)) {
+                        report.addError("equipment.yml.categories." + id, "materials", "Material appears in multiple non-fallback categories: " + materialName);
+                        continue;
+                    }
+                    materialOwners.put(normalized, id);
                 }
                 resolvedMaterials.add(normalized);
             }

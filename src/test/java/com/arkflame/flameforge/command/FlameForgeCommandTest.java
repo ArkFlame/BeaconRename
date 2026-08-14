@@ -4,19 +4,31 @@ import com.arkflame.flameforge.FlameForgePlugin;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.EquipmentCatalog;
 import com.arkflame.flameforge.config.TierRepository;
+import com.arkflame.flameforge.forge.ForgePowerService;
+import com.arkflame.flameforge.forge.ForgeVariantEligibility;
+import com.arkflame.flameforge.item.ItemIdentityService;
+import com.arkflame.flameforge.item.ItemMutationService;
+import com.arkflame.flameforge.menu.MenuInputReturnService;
+import com.arkflame.flameforge.model.ForgeVariant;
+import com.arkflame.flameforge.model.TierDefinition;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.station.ForgeStationService;
 import net.kyori.adventure.text.Component;
+import org.bukkit.Material;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -104,10 +116,154 @@ class FlameForgeCommandTest {
         assertTrue(messages.keys.contains("open.no-forge-target"));
     }
 
+    @Test
+    void testItemDeliversExactForgedVariantOnce() {
+        ForgeVariant crit = variant("crit_variant", "ANY");
+        TierDefinition tier = tierWithVariants("weapon_tier3", crit);
+        ItemMutationService mutation = mock(ItemMutationService.class);
+        MenuInputReturnService returns = mock(MenuInputReturnService.class);
+        ForgePowerService powers = mock(ForgePowerService.class);
+        ReadyServices ready = readyWith(weaponCatalog(), tier, mutation, returns, powers);
+
+        ItemStack resultItem = new ItemStack(Material.IRON_SWORD, 1);
+        when(mutation.mutateSuccess(any(ItemStack.class), eq(tier), eq(crit),
+            any(com.arkflame.flameforge.item.ItemIdentityCodec.Identity.class), any(UUID.class)))
+            .thenReturn(ItemMutationService.MutationResult.success(resultItem));
+
+        Player player = mock(Player.class);
+        when(player.hasPermission(anyString())).thenReturn(true);
+        command.onCommand(player, mock(Command.class), "flameforge",
+            new String[]{"testitem", "weapon_tier3", "crit_variant", "iron_sword"});
+
+        verify(mutation).mutateSuccess(any(ItemStack.class), eq(tier), eq(crit),
+            any(com.arkflame.flameforge.item.ItemIdentityCodec.Identity.class), any(UUID.class));
+        ArgumentCaptor<ItemStack> delivered = ArgumentCaptor.forClass(ItemStack.class);
+        verify(returns).returnToPlayer(delivered.capture(), eq(player));
+        assertSame(resultItem, delivered.getValue());
+        verify(powers).refreshPassivePowers(player);
+        verify(ready, never()).getForgeService();
+        assertTrue(messages.keys.contains("testitem.success"));
+    }
+
+    @Test
+    void testItemFallsBackToCategorySafeMaterial() {
+        ForgeVariant crit = variant("crit_variant", "ANY");
+        TierDefinition tier = tierWithVariants("weapon_tier3", crit);
+        ItemMutationService mutation = mock(ItemMutationService.class);
+        MenuInputReturnService returns = mock(MenuInputReturnService.class);
+        ForgePowerService powers = mock(ForgePowerService.class);
+        readyWith(weaponCatalog(), tier, mutation, returns, powers);
+
+        when(mutation.mutateSuccess(any(ItemStack.class), eq(tier), eq(crit),
+            any(com.arkflame.flameforge.item.ItemIdentityCodec.Identity.class), any(UUID.class)))
+            .thenReturn(ItemMutationService.MutationResult.success(new ItemStack(Material.IRON_SWORD, 1)));
+
+        Player player = mock(Player.class);
+        when(player.hasPermission(anyString())).thenReturn(true);
+        command.onCommand(player, mock(Command.class), "flameforge",
+            new String[]{"testitem", "weapon_tier3", "crit_variant"});
+
+        ArgumentCaptor<ItemStack> input = ArgumentCaptor.forClass(ItemStack.class);
+        verify(mutation).mutateSuccess(input.capture(), eq(tier), eq(crit),
+            any(com.arkflame.flameforge.item.ItemIdentityCodec.Identity.class), any(UUID.class));
+        Material chosen = input.getValue().getType();
+        assertTrue(chosen == Material.DIAMOND_SWORD || chosen == Material.IRON_SWORD,
+            "fallback must be a runtime-present weapon material, was " + chosen);
+        verify(returns).returnToPlayer(any(ItemStack.class), eq(player));
+        assertTrue(messages.keys.contains("testitem.success"));
+    }
+
+    @Test
+    void testItemRequiresReadyServices() {
+        Player player = mock(Player.class);
+        when(player.hasPermission(anyString())).thenReturn(true);
+        command.onCommand(player, mock(Command.class), "flameforge",
+            new String[]{"testitem", "weapon_tier3", "crit_variant"});
+        assertTrue(messages.keys.contains("startup.loading"));
+    }
+
+    @Test
+    void testItemRequiresPlayer() {
+        ReadyServices ready = mock(ReadyServices.class);
+        command.markReady(ready);
+        command.onCommand(permittedSender(), mock(Command.class), "flameforge",
+            new String[]{"testitem", "weapon_tier3", "crit_variant"});
+        assertTrue(messages.keys.contains("testitem.player-only"));
+    }
+
+    @Test
+    void testItemRejectsIneligibleVariant() {
+        ForgeVariant helmetOnly = variant("helmet_only", "helmet");
+        TierDefinition tier = tierWithVariants("weapon_tier3", helmetOnly);
+        ItemMutationService mutation = mock(ItemMutationService.class);
+        readyWith(weaponCatalog(), tier, mutation,
+            mock(MenuInputReturnService.class), mock(ForgePowerService.class));
+
+        Player player = mock(Player.class);
+        when(player.hasPermission(anyString())).thenReturn(true);
+        command.onCommand(player, mock(Command.class), "flameforge",
+            new String[]{"testitem", "weapon_tier3", "helmet_only", "iron_sword"});
+        assertTrue(messages.keys.contains("testitem.variant-ineligible"));
+        verifyNoInteractions(mutation);
+    }
+
+    @Test
+    void testItemRejectsMaterialCategoryMismatch() {
+        ForgeVariant crit = variant("crit_variant", "ANY");
+        TierDefinition tier = tierWithVariants("weapon_tier3", crit);
+        ItemMutationService mutation = mock(ItemMutationService.class);
+        readyWith(weaponCatalog(), tier, mutation,
+            mock(MenuInputReturnService.class), mock(ForgePowerService.class));
+
+        Player player = mock(Player.class);
+        when(player.hasPermission(anyString())).thenReturn(true);
+        command.onCommand(player, mock(Command.class), "flameforge",
+            new String[]{"testitem", "weapon_tier3", "crit_variant", "iron_chestplate"});
+        assertTrue(messages.keys.contains("testitem.material-category-mismatch"));
+        verifyNoInteractions(mutation);
+    }
+
     private CommandSender permittedSender() {
         CommandSender sender = mock(CommandSender.class);
         when(sender.hasPermission(anyString())).thenReturn(true);
         return sender;
+    }
+
+    private EquipmentCatalog weaponCatalog() {
+        return new EquipmentCatalog(Collections.singletonList(new EquipmentCatalog.Category(
+            "weapon", false,
+            Arrays.asList("IRON_SWORD", "DIAMOND_SWORD", "NETHERITE_SWORD"),
+            Collections.singletonList("weapon_tier3"))));
+    }
+
+    private TierDefinition tierWithVariants(String id, ForgeVariant... variants) {
+        return new TierDefinition(id, 3, true, "",
+            new TierDefinition.TierDisplay("", Collections.emptyList(), false, "AIR"), 0L,
+            Collections.singletonList("ANY"), Collections.emptyList(),
+            null, null, null, null, null, Arrays.asList(variants));
+    }
+
+    private ForgeVariant variant(String id, String... groups) {
+        return new ForgeVariant(id, id, Collections.emptyList(), 1.0, "STICK",
+            Arrays.asList(groups), Collections.emptyList(),
+            Collections.emptyList(), Collections.emptyList());
+    }
+
+    private ReadyServices readyWith(EquipmentCatalog catalog, TierDefinition tier,
+                                    ItemMutationService mutation, MenuInputReturnService returns,
+                                    ForgePowerService powers) {
+        when(tierRepository.getEquipmentCatalog()).thenReturn(catalog);
+        when(tierRepository.findById(tier.getId())).thenReturn(Optional.of(tier));
+        when(tierRepository.findEquipmentCategory(any(Material.class))).thenReturn(Optional.of("weapon"));
+        ReadyServices ready = mock(ReadyServices.class);
+        when(ready.getForgeVariantEligibility())
+            .thenReturn(new ForgeVariantEligibility(ItemIdentityService.getInstance(), tierRepository));
+        when(ready.getItemIdentityService()).thenReturn(ItemIdentityService.getInstance());
+        when(ready.getItemMutationService()).thenReturn(mutation);
+        when(ready.getMenuInputReturnService()).thenReturn(returns);
+        when(ready.getForgePowerService()).thenReturn(powers);
+        command.markReady(ready);
+        return ready;
     }
 
     private void runCallbacksImmediately() {

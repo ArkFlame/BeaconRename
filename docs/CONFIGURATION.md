@@ -1,617 +1,253 @@
 # FlameForge Configuration Reference
 
+This document describes the configuration files shipped with FlameForge 1.0.2
+and how the runtime loads them. Every file described below is real and shipped
+in the JAR; the operator copy lives in `plugins/FlameForge/`.
+
 ## File Overview
 
-| File                  | Auto-generated | Purpose                                      |
-|-----------------------|----------------|----------------------------------------------|
-| `config.yml`          | Yes (first run)| Root settings, announcements                 |
-| `station-profiles.yml`| No             | Forge station profiles                       |
-| `tiers/*.yml`         | On bootstrap   | Tier definitions (schema v2)                   |
-| `messages.yml`        | No             | Custom message strings                       |
-| `menus.yml`           | No             | GUI layout and styling                       |
+| File                      | Bundled | Operator copy                  | Purpose                                        |
+|---------------------------|---------|--------------------------------|------------------------------------------------|
+| `config.yml`              | Yes     | `plugins/FlameForge/config.yml`  | Root plugin settings (schema-version 2)        |
+| `equipment.yml`           | Yes     | `plugins/FlameForge/equipment.yml` | Equipment categories and tier progression   |
+| `tiers/*.yml`             | Yes     | `plugins/FlameForge/tiers/`    | Tier definitions (schema-version 2)            |
+| `messages.yml`            | Yes     | `plugins/FlameForge/messages.yml` | MiniMessage strings for commands and menus  |
+| `menus.yml`               | Yes     | `plugins/FlameForge/menus.yml` | GUI layout and styling                         |
+| `station-profiles.yml`    | Yes     | `plugins/FlameForge/station-profiles.yml` | Forge station behavior profiles      |
+| `stations/<id>.yml`       | No      | runtime-created                | One file per registered forge station          |
 
-## config.yml
+`config.yml`, `menus.yml`, and `equipment.yml` are merged over their bundled
+baseline with a recursive merge: operator values replace leaf values and
+override whole maps only when the corresponding baseline key is not itself a
+map. Unknown or malformed operator content is reported through validation.
 
-Root configuration file. Located at `plugins/FlameForge/config.yml`.
+## config.yml (root settings)
 
-### Schema
+Bundled defaults (schema-version 2):
+
+- `enabled` — plugin on/off switch.
+- `station-mode` — `REGISTERED_ONLY` (only registered forges open) or
+  `ANY_BLOCK` (any non-air block is a forge). Default `REGISTERED_ONLY`.
+- `audit-queue-capacity`, `audit.enabled`, `audit.folder`, `audit.max-file-age-days` — audit log settings.
+- `chance-decimals`, `chance-display-decimals` — chance precision.
+- `unsafe-enchants` — enchantments that cannot be forged (e.g. `CURSE_OF_VOIDING`).
+- `item-groups` — named material lists for filtering.
+- `item-display-names` — display-name overrides per material.
+- `announcements.global` / `announcements.station` — title/subtitle broadcasts for forge results.
+- `animation-profile`, `menu-profile` — default profile names.
+- `cost-display`, `cost-colors` — cost formatting.
+- `forge.passive-refresh-ticks`, `forge.power-cooldown-max-entries` (default 4096),
+  `forge.reject-foreign-persistent-data`, `forge.menu.profile` — power/cooldown and menu runtime settings.
+- `holograms` — `enabled`, `provider-order` (default `FancyHolograms`,
+  `DecentHolograms`), `offset-y`, `transparent-background`, `lines` (MiniMessage
+  lines with `%forge_id%` placeholder).
+
+## equipment.yml (categories and progression)
+
+`schema-version: 1`. The bundled file defines four categories:
+
+| Category | ID      | Fallback | Progression                                  | Materials                          |
+|----------|---------|----------|----------------------------------------------|------------------------------------|
+| Weapon   | `weapon`| no       | `weapon_tier1` … `weapon_tier7`              | swords, axes, bow, crossbow, trident, mace |
+| Armor    | `armor` | no       | `armor_tier1` … `armor_tier7`                | helmets, chestplates, leggings, boots, turtle helmet, elytra |
+| Shield   | `shield`| no       | `shield_tier1` … `shield_tier7`              | `SHIELD`                           |
+| Amulet   | `amulet`| yes      | `amulet_tier1` … `amulet_tier7`              | none (fallback)                    |
+
+### Amulet fallback
+
+Exactly one category must be the fallback and it must be `amulet`. Materials
+that do not match any non-fallback category resolve to the fallback category,
+so an amulet progression applies to any item the other categories do not claim.
+The fallback category has an empty `materials` list.
+
+### legacy-tier-ids
+
+`legacy-tier-ids: [tier1 … tier7]` lists the pre-category tier identities. They
+remain readable so old forged items (whose stored identity references a legacy
+tier id) still resolve during migration. They are not part of any category
+progression; new forging uses the category tier ids. If an operator overlay
+contains `legacy-tier-ids`, validation reports a warning that legacy tier IDs
+are ignored in operator files (the bundled list is used).
+
+### Operator overlay and tier resolution
+
+- The bundled `equipment.yml` is the baseline; `plugins/FlameForge/equipment.yml`
+  (if present) is merged over it.
+- Tiers load in order: bundled legacy `tier1…tier7`, then bundled category
+  tiers referenced by progression (`weapon_tier1…`, `armor_tier1…`,
+  `shield_tier1…`, `amulet_tier1…`), then operator files from
+  `plugins/FlameForge/tiers/` (sorted by file name).
+- **Operator tier override by ID**: an operator tier file whose `id` matches an
+  already-loaded tier replaces that tier entirely. A file with a new id is
+  added. A tier file that fails parsing is skipped with a warning and does not
+  replace anything.
+- **Forgeability**: a tier participates in forging only when its id appears in
+  a category `progression`. Custom tiers must be referenced by progression to
+  be forgeable.
+- **Incomplete progression is a validation error**: each category must list
+  exactly 7 tiers. Validation rejects a category whose progression has the
+  wrong size, references an unknown tier id, has a tier whose `level` does not
+  match its position (position 1 = level 1), or shares a tier id with another
+  category.
+
+### First-run bootstrap
+
+If `plugins/FlameForge/tiers/` does not exist on startup, the plugin creates it
+and copies the bundled tier files and `equipment.yml` into the data folder.
+Existing files are never overwritten.
+
+## tiers/*.yml (tier definitions)
+
+Schema-version 2. Structure of a tier file:
 
 ```yaml
-# Schema version — do not modify
 schema-version: 2
-
-# Plugin enabled state
+id: weapon_tier1          # tier identity (referenced by category progression)
+level: 1                  # progression position (1-based)
 enabled: true
-
-# Station behavior mode
-# REGISTERED_ONLY: only registered forges work
-# ANY_BLOCK: any non-air block is a forge station
-station-mode: REGISTERED_ONLY
-
-# Audit log settings
-audit-queue-capacity: 1024
-audit:
-  enabled: true
-  folder: audit
-  max-file-age-days: 30
-
-# Chance display precision
-chance-decimals: 4
-chance-display-decimals: 1
-
-# Enchantments blocked from forging
-unsafe-enchants:
-  - CURSE_OF_VOIDING
-  - CURSE_OF_TERRIBLE_DEATH
-
-# Material group aliases for matching
-item-groups:
-  <group-name>:
-    materials:
-      - <material>
-      - <material>
-
-# Announcement settings
-announcements:
-  global:
-    enabled: true
-    radius: 0  # 0 = worldwide
-    title:
-      success: "<MiniMessage>"
-      fail: "<MiniMessage>"
-    subtitle:
-      success:
-        - "<MiniMessage>"
-      fail:
-        - "<MiniMessage>"
-  station:
-    enabled: true
-    radius: 16
-    title:
-      success: "<MiniMessage>"
-      fail: "<MiniMessage>"
-    subtitle:
-      success:
-        - "<MiniMessage>"
-      fail:
-        - "<MiniMessage>"
-
-# Animation and menu profile defaults
-animation-profile: default
-menu-profile: default
-
-# Cost display formatting
-cost-colors:
-  xp: "<light_purple>"
-  money: "<green>"
-  xp-label: "<light_purple>XP Cost:"
-  money-label: "<green>Money Cost:"
-
-cost-display:
-  xp-format: "{value} XP"
-  money-format: "${value}"
-  show-zero-xp: false
-  show-zero-money: false
-
-# Hologram settings
-holograms:
-  enabled: true
-  provider-order:
-    - FancyHolograms  # v2+
-    - DecentHolograms
-  offset-y: 1.75
-  transparent-background: true
-  lines:
-    - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
-    - "<gray>%forge_id%"
-
-```
-
-### Config Overlay Behavior
-
-FlameForge uses a bundled-default overlay strategy for `config.yml`. The bundled `config.yml` inside the JAR is loaded first as defaults. The operator's `config.yml` is then overlaid, with operator values taking precedence for leaf keys. This means:
-
-- An operator `config.yml` without a `holograms` section inherits the full bundled defaults for holograms.
-- Only explicitly set leaf keys are overridden; absent sections are filled from bundled defaults.
-- This applies to all root-level leaf keys including holograms settings.
-
-### Hologram `enabled: false`
-
-Setting `holograms.enabled: false` disables hologram creation entirely. The plugin logs `disabled by configuration` and uses a no-op provider. Existing holograms from prior sessions are not automatically removed unless the plugin is reloaded or restarted.
-
-### Hologram Provider Order
-
-The `provider-order` list specifies the priority for hologram library selection. Default order:
-
-```yaml
-holograms:
-  provider-order:
-    - FancyHolograms
-    - DecentHolograms
-```
-
-Selection iterates through the list in order. Each entry must match a known provider name (`FancyHolograms` or `DecentHolograms`) and the corresponding plugin must be enabled. The first available provider is used. If the list is empty or no provider is available, no holograms are created.
-
-### Supported Hologram Providers
-
-FlameForge supports two hologram libraries via soft-depend:
-
-- **FancyHolograms** (v2+) — preferred; uses MiniMessage text formatting
-- **DecentHolograms** — fallback; uses legacy color code formatting
-
-If `holograms.enabled` is `true`, the plugin queries the server for available hologram providers in the order specified by `provider-order` and creates floating text displays at forge stations.
-
-### Material Candidate Syntax
-
-Materials in configuration accept two forms:
-
-| Syntax | Example | Behavior |
-|--------|---------|----------|
-| `MATERIAL_NAME` | `DIAMOND_SWORD` | Resolves to the modern Bukkit material |
-| `MATERIAL_NAME:legacyData` | `STAINED_GLASS_PANE:15` | Resolves material with legacy data value (for version-specific variants) |
-
-The colon syntax is used for legacy data values. Example aliases in `MaterialResolver`:
-
-```yaml
-black_stained_glass_pane:
-  - BLACK_STAINED_GLASS_PANE
-  - STAINED_GLASS_PANE:15
-```
-
-When multiple candidates are specified (e.g., menu filler items), FlameForge uses the first valid material from the candidate list.
-
-### Menu Icon Material Resolution
-
-Menu icons use fallback material chains via `MaterialResolver.itemOrThrow()`. The first valid material in the candidate list is used. If no candidate resolves, an exception is thrown and the menu fails to open.
-
-Example filler resolution:
-```java
-MATERIAL_RESOLVER.itemOrThrow(1, "GRAY_STAINED_GLASS_PANE", "STAINED_GLASS_PANE:7", "GLASS_PANE");
-```
-
-### Example: Announcement Configuration
-
-```yaml
-announcements:
-  global:
-    enabled: true
-    radius: 0
-    title:
-      success: "<gold><bold>FORGE SUCCESS!"
-      fail: "<red><bold>FORGE FAILED"
-    subtitle:
-      success:
-        - "<white>%player_name% <green>received a powerful item!"
-        - "<gray>%item_name%"
-      fail:
-        - "<white>%player_name% <red>lost their item"
-```
-
-## Station Files (stations/*.yml)
-
-Each station is stored in its own file under `plugins/FlameForge/stations/`. The filename stem (without `.yml`) is the authoritative station ID.
-
-### Schema
-
-```yaml
-schema-version: 1
-world:
-  name: world
-  uuid: "uuid-string"
-location:
-  x: integer
-  y: integer
-  z: integer
-profile: profile-id
-```
-
-### Example
-
-`plugins/FlameForge/stations/main_forge.yml`:
-
-```yaml
-schema-version: 1
-world:
-  name: world
-  uuid: "uuid-string"
-location:
-  x: 100
-  y: 64
-  z: -200
-profile: default
-```
-
-### Per-File Failure Isolation
-
-A malformed, invalid, or unreadable station file disables only that station. Valid sibling stations load normally.
-
-### Duplicate Location Deterministic Skip
-
-When two station files specify the same world and block location, the file sorted first by filename wins. The other is skipped.
-
-### No stations.yml Support
-
-The legacy monolithic `stations.yml` format is not supported. There is no migration path.
-
-### Station Profiles
-
-Station profiles remain in `station-profiles.yml` in the plugin data folder.
-
-## Tier Files (tiers/*.yml)
-
-Each tier is defined in its own YAML file under `plugins/FlameForge/tiers/`.
-
-### Schema v2
-
-```yaml
-# Schema version — must be 2
-schema-version: 2
-
-# Unique tier identifier
-id: <string>
-
-# Tier level for automatic progression (replaces priority)
-level: <integer>
-
-# Tier requirements for input items
-requirements:
-  allowed-groups:           # Weapon compatibility groups (default: [ANY])
-    - <group-name>          # ANY, WEAPON, ARMOR, or custom group name
-  combine: ALL|ANY          # ALL requires all groups match; ANY requires one match
-  items:
-    - material: <material>
-      required: true|false
-  strict-match: false
-
 display:
-  name: "<MiniMessage>"
-  lore:
-    - "<MiniMessage>"
-  material: <material>
-  custom-model-data: <integer>
-
-# Cost configuration
-cost:
-  mode: XP_ONLY|XP_AND_MONEY|XP_OR_MONEY|MONEY_ONLY
-  xp: <decimal>
-  money: <decimal>
-
-# Cooldown in seconds (0 = no cooldown)
-cooldown-seconds: 0
-
-# Animation durations (in ticks)
-animation:
-  success-duration: 40
-  fail-duration: 20
-  success-steps:
-    <step-id>:
-      delay: 0
-      type: <step-type>
-      data: <string>
-  fail-steps:
-    <step-id>:
-      delay: 0
-      type: <step-type>
-      data: <string>
-
-# Powers definitions
-powers:
-  <power-id>:
-    enchants:
-      <enchant-id>:
-        name: <enchantment>
-        min-level: <integer>
-        max-level: <integer>
-    attributes:
-      <attr-id>:
-        name: <attribute>
-        min-value: <double>
-        max-value: <double>
-        operation: ADD_NUMBER|ADD_SCALAR_1|ADD_SCALAR_2
-
-# Outcomes
-outcomes:
-  <outcome-id>:
-    type: MODIFY_INPUT|BREAK|CURSE
-    category: SUCCESS|BREAK|CURSE
-    weight: <decimal>
-    power: <power-id>
-    mutation:
-      same-material: true|false
-      material: <material>
-      name: "<MiniMessage>"
-      amount: <integer>
-      enchants:
-        <enchant-id>:
-          name: <enchantment>
-          min-level: <integer>
-          max-level: <integer>
-      attributes:
-        <attr-id>:
-          name: <attribute>
-          min-value: <double>
-          max-value: <double>
-          operation: ADD_NUMBER|ADD_SCALAR_1|ADD_SCALAR_2
-    curse:
-      type: VOID|DECAY|DRAIN
-      description: "<MiniMessage>"
-```
-
-### Outcome Types
-
-| Type             | Category | Description                                           |
-|------------------|----------|-------------------------------------------------------|
-| `MODIFY_INPUT`   | SUCCESS  | Original item mutated and returned                    |
-| `BREAK`          | BREAK    | Item is destroyed                                     |
-| `CURSE`          | CURSE    | Negative effect applied                               |
-
-### CURSE Variants
-
-| Variant | Effect |
-|---------|--------|
-| `VOID`  | Marks item with void curse |
-| `DECAY` | Reduces item durability on each reforge |
-| `DRAIN` | Reduces item stats |
-
-### Example: Simple Tier
-
-```yaml
-schema-version: 2
-id: common
-level: 1
+  name: "..."             # MiniMessage
+  lore: [...]             # MiniMessage
+cooldown-seconds: 5       # station cooldown in SECONDS
+input:
+  allowed-groups: [WEAPON]  # WEAPON | ARMOR | SHIELD | AMULET
+  denied-materials: []
 requirements:
-  items:
-    - material: DIAMOND_SWORD
-      required: true
-display:
-  name: "<white>Common Forge"
-  lore:
-    - "<gray>Basic reforge"
-  material: IRON_INGOT
-cost:
-  mode: XP_ONLY
-  xp: 10
-cooldown-seconds: 60
-outcomes:
-  success_modify:
-    type: MODIFY_INPUT
-    category: SUCCESS
-    weight: 70
-    mutation:
-      same_material: true
-      enchants:
-        sharpness_1:
-          name: DAMAGE_ALL
-          min-level: 1
-  break_item:
-    type: BREAK
-    category: BREAK
-    weight: 25
-  curse_drain:
-    type: CURSE
-    category: CURSE
-    weight: 5
-    curse:
-      type: DRAIN
-      description: "<red>Stats drained"
-```
-
-### Example: Tier with Powers
-
-```yaml
-schema-version: 2
-id: legendary
-level: 100
-requirements:
-  items:
-    - material: DIAMOND_SWORD
-      required: true
-powers:
-  blazing:
-    enchants:
-      fire_aspect_boost:
-        name: FIRE_ASPECT
-        min-level: 2
-    attributes:
-      damage:
-        name: GENERIC_ATTACK_DAMAGE
-        min-value: 3.0
-        max-value: 5.0
-        operation: ADD_NUMBER
-display:
-  name: "<gold>Legendary Forge"
-  lore:
-    - "<yellow>Chance at legendary rewards"
-  material: NETHER_STAR
-cost:
-  mode: XP_AND_MONEY
-  xp: 500
-  money: 1000
-cooldown-seconds: 3600
-outcomes:
-  legendary_blazing:
-    type: MODIFY_INPUT
-    category: SUCCESS
-    weight: 10
-    power: blazing
-  break_item:
-    type: BREAK
-    category: BREAK
-    weight: 90
-```
-
-## Variant Effects
-
-Variants are defined as a list-of-map under the `variants` key in tier files. Each variant specifies enchantments, attributes, and powers that can be applied when the variant is selected.
-
-### Variant Schema
-
-```yaml
-variants:
-  - id: <variant-id>
-    display-name: "<MiniMessage>"
-    icon: <material>
-    weight: <decimal>
-    applicable-groups:       # Limits which items can receive this variant
-      - <group-name>        # ANY, WEAPON, ARMOR, or custom group
-    lore:
-      - "<MiniMessage>"
-    enchantments:            # List-of-map enchantment specs
-      - candidates:         # List of enchantment names to try
-          - <enchantment>
-        min-level: <integer>
-        max-level: <integer>
-        unsafe: true|false
-    attributes:             # List-of-map attribute specs
-      - id: <attribute-id>
-        type: PASSIVE|ACTIVE|ON_HIT
-        value: <double>
-    powers:                 # List-of-map power specs
-      - id: <power-id>
-        type: <power-type>  # See Power Types below
-        cooldown-ticks: <integer>
-        hit-interval: <integer>  # For EVERY_N_HIT types
-        chance: <decimal>
-        duration-ticks: <integer>
-        amplifier: <integer>
-        effect-candidates:
-          - <potion-effect>
-```
-
-### Power Types
-
-| Type                  | Activation              | Description |
-|-----------------------|------------------------|-------------|
-| `ON_HIT_POTION`       | On hit                 | Applies potion effect on hit |
-| `ON_HIT_FIRE`         | On hit                 | Sets target on fire |
-| `ON_HIT_HEAL`         | On hit                 | Heals attacker on hit |
-| `PASSIVE_POTION`      | Passive                | Always active potion effect |
-| `SHIFT_RIGHT_CLICK_DASH` | Active (shift+right) | Dash ability |
-| `SHIFT_RIGHT_CLICK_HEAL` | Active (shift+right) | Heal ability |
-| `EVERY_N_HIT_LIGHTNING` | Every N hits          | Strikes lightning every N hits |
-| `EVERY_N_HIT_KNOCKBACK` | Every N hits          | Knockback every N hits |
-
-### Activation Semantics
-
-- **Passive**: Effect is always active while the item is equipped
-- **Active**: Effect triggers on right-click (shift+right-click for slot-specific abilities)
-- **On-hit**: Effect triggers each time the item hits a target
-
-### Variant Eligibility
-
-The `applicable-groups` field limits which items can receive a variant. If not specified, defaults to `ANY`. Groups are checked against the item's equipped slot or type.
-
-### Example: Variant with Powers
-
-```yaml
-variants:
-  - id: blazing_strike
-    display-name: "<gradient:#ff5f00:#ffd166>Blazing Strike</gradient>"
-    icon: FIRE_CHARGE
-    weight: 15
-    applicable-groups:
-      - WEAPON
-    enchantments:
-      - candidates:
-          - FIRE_ASPECT
-        min-level: 1
-        max-level: 3
-    powers:
-      - id: burn_effect
-        type: ON_HIT_FIRE
-        cooldown-ticks: 100
-        hit-interval: 3
-        fire-ticks: 40
-```
-
-## Weapon Compatibility
-
-Tier requirements support name-based weapon group compatibility through the `allowed-groups` field.
-
-### Composite Groups
-
-| Group   | Description |
-|---------|-------------|
-| `ANY`   | Matches any item (default) |
-| `WEAPON`| Matches swords, axes, and other weapons |
-| `ARMOR` | Matches helmets, chestplates, leggings, boots |
-
-### Custom Groups
-
-Custom groups are defined by item material name patterns. For example, `_SWORD` materials match the WEAPON composite group.
-
-### Example: Tier with Weapon Compatibility
-
-```yaml
-requirements:
-  allowed-groups:
-    - WEAPON
   combine: ALL
-  items:
-    - material: DIAMOND_SWORD
-      required: true
+  xp:      { enabled: true,  amount: 10 }
+  money:   { enabled: false, amount: 1000.00 }
+  items:   { enabled: false, required: [...] }
+chances:
+  success: "90.0"         # percent
+  break: "5.0"
+  curse: "5.0"
+break:                    # break outcome behavior
+  reset-tier: true
+  target-tier: 0
+  destroy-item: false     # amulet tier 1 ships with true
+  result-display-name: "..."
+  result-lore: [...]
+  reset-display-name: true
+  reset-lore: true
+  reset-enchantments: true
+  reset-attributes: true
+  reset-powers: true
+  reset-custom-model-data: true
+curse:                    # curse outcome behavior
+  display-name: "..."
+  lore: [...]
+  enchantment-candidates: [VANISHING_CURSE, CURSE_OF_VANISHING]
+animation:
+  duration-ticks: 20
+  interval-ticks: 4
+  charge-sound: { candidates: [...], volume: 1.0, start-pitch: 0.50, end-pitch: 2.00 }
+  charge-particle: { candidates: [FLAME], count: 12, radius: 1.20 }
+  impact-particle: { candidates: [CRIT, FLAME], material-candidates: [ANVIL] }
+  success: { sound-candidates: [...], particle-candidates: [...], title: "...", subtitle: "..." }
+  break:   { sound-candidates: [...], particle-candidates: [...], title: "...", subtitle: "..." }
+  curse:   { sound-candidates: [...], particle-candidates: [...], title: "...", subtitle: "..." }
+variants:
+  variant_id:
+    weight: "34.0"
+    applicable-groups: [WEAPON]
+    display-name: "..."     # MiniMessage, supports %base_name%
+    lore: [...]
+    enchantments: []
+    attributes: []
+    powers: [ ... ]         # see below
 ```
 
-## Station Profiles (station-profiles.yml)
+### Cooldown units
 
-Station profiles are defined in `station-profiles.yml`.
+- Tier-level `cooldown-seconds` is authored in seconds; `/flameforge tier info`
+  displays it as seconds.
+- Power-level `cooldown-ticks` is authored in ticks (20 ticks = 1 second) and
+  enforced internally as ticks. The shipped tier files pair the two: a variant
+  lore line such as `Cooldown: 2s` corresponds to `cooldown-ticks: 40`.
 
-### Schema
+### Power definitions (inside `variants.<id>.powers`)
 
 ```yaml
-stations:
-  <profile-id>:
-    station-id: <string>
-    max-tier: <integer>  # -1 = no limit
-    permissions:
-      - <permission-node>
-    menu: <menu-profile-id>
-    animation: <animation-profile-id>
-    announcement-radius: <integer>
+- id: bloodletter_bleed
+  type: ON_HIT_BLEED
+  cooldown-ticks: 40
+  chance: "0.12"
+  damage-amount: "0.5"
+  pulse-count: 2
+  pulse-interval-ticks: 12
+  particle-candidates: [CRIT, HEART]
 ```
 
-### Example
+Supported `type` values and their key fields:
 
-```yaml
-stations:
-  default:
-    max-tier: -1
-    permissions: []
-  donor_only:
-    max-tier: 100
-    permissions:
-      - flameforge.tier.donor
-    menu: donor_menu
-  low_tier:
-    max-tier: 10
-    permissions: []
-```
+| Type                      | Fields used                                    |
+|---------------------------|------------------------------------------------|
+| `ON_HIT_POTION`           | effect-candidates, duration-ticks, amplifier, chance, cooldown-ticks |
+| `ON_HIT_FIRE`             | fire-ticks, chance, cooldown-ticks             |
+| `ON_HIT_HEAL`             | heal-amount, chance, cooldown-ticks            |
+| `PASSIVE_POTION`          | effect-candidates, duration-ticks, amplifier, activation-slots |
+| `SHIFT_RIGHT_CLICK_DASH`  | horizontal-strength, vertical-strength, cooldown-ticks |
+| `SHIFT_RIGHT_CLICK_HEAL`  | heal-amount, cooldown-ticks                    |
+| `EVERY_N_HIT_LIGHTNING`   | hit-interval, chance, cooldown-ticks           |
+| `EVERY_N_HIT_KNOCKBACK`   | hit-interval, chance, horizontal/vertical-strength, cooldown-ticks |
+| `ON_HIT_AOE_FIRE`         | fire-ticks, radius, max-targets, chance, cooldown-ticks |
+| `ON_HIT_BLEED`            | damage-amount, pulse-count, pulse-interval-ticks, chance, cooldown-ticks |
+| `ON_HIT_EXPLOSIVE`        | damage-amount, radius, max-targets, primary-knockback-multiplier, secondary-damage-multiplier, chance, cooldown-ticks |
+| `ON_HIT_CHAIN_POTION`     | effect-candidates, duration-ticks, amplifier, radius, max-targets, chain-delay-ticks, trail-points, chance, cooldown-ticks |
+| `ON_HIT_CHAIN_DAMAGE`     | damage-amount, radius, max-targets, chain-delay-ticks, trail-points, chance, cooldown-ticks |
+| `ON_BLOCK_POTION`         | effect-candidates, duration-ticks, amplifier, chance, cooldown-ticks |
+| `ON_BLOCK_KNOCKBACK`      | horizontal/vertical-strength, chance, cooldown-ticks |
+| `ON_BLOCK_HEAL`           | heal-amount, chance, cooldown-ticks            |
 
-## messages.yml
+`activation-slots` accepts `MAIN_HAND`, `OFF_HAND`, `HEAD`, `CHEST`, `LEGS`,
+`FEET`, `INVENTORY`. `max-targets` is validated to 1..16; shipped chain powers
+use caps of 8 and 10 (e.g. `weapon_tier3` chain potion at 8, `weapon_tier7`
+chain damage at 10), radial powers ship at 4–6. All power values are validated
+at load time; invalid values fail the tier file.
 
-Custom messages. Keys are arbitrary identifiers.
+## messages.yml (layered defaults)
 
-### Example
+All strings use MiniMessage. Key groups: `startup`, `command`, `help`, `open`,
+`forge-interact`, `reload`, `validate`, `tiers`, `tier-info`, `preview`,
+`testitem`, `history`, `station*`, `tp`, `setup*`, `forge` (outcome titles),
+`cooldown`, `cost`, `validation`, `announcements`, `menu`, `delivery`.
 
-```yaml
-forge_success:
-  text: "<gold>Forge complete!</gold>"
-  whisper: false
-item_break:
-  text: "<red>Your item was destroyed!</red>"
-  whisper: true
-```
+Layering: the bundled `messages.yml` inside the JAR is the default. Operator
+overrides in `plugins/FlameForge/messages.yml` take precedence per key; any key
+missing from the operator file falls back to the bundled value. Unknown
+placeholders in messages are logged once and rendered empty.
 
-## menus.yml
+Supported global placeholders: `%player_name%`, `%player%`, `%display_name%`,
+`%world%`, `%world_name%`, `%online%`, `%online_players%`, `%max_players%`,
+`%health%`, `%health_points%`, `%food%`, `%xp_level%`, `%item_name%`,
+`%item_in_hand%`. Command-specific placeholders (`%tier_id%`, `%station_id%`,
+`%permission%`, etc.) are documented per command in
+[COMMANDS-AND-PERMISSIONS.md](COMMANDS-AND-PERMISSIONS.md).
 
-GUI styling configuration.
+## menus.yml (GUI layout)
 
-### Example
+Schema-version 2. The `default` profile is a 54-slot menu with `input` at slot
+22 and `confirm` at slot 31. `confirm.items` defines empty / blocked / ready
+states (materials with version fallbacks, glow, name, lore with `%tier_line%`,
+`%requirements%`, `%chances%`, `%variants%`). `dynamic-lines` renders tier and
+requirement rows. Additional profiles can be added and referenced from station
+profiles or `config.yml` `menu-profile`.
 
-```yaml
-default:
-  title: "FlameForge"
-  fill:
-    enabled: true
-    material: BLACK_STAINED_GLASS_PANE
-```
+## station-profiles.yml
+
+Each profile defines `station-id`, `max-tier` (-1 = unlimited), `permissions`
+(player permission requirements), `menu`, `animation`, `announcement-radius`.
+Bundled profiles: `default` (max-tier -1), `basic` (max-tier 3), `premium`
+(requires `flameforge.premium`), `admin` (requires `flameforge.admin`),
+`compact-profile` (max-tier 5, `compact` menu). `flameforge.premium` is a
+station profile permission, not a plugin.yml permission node.
+
+## Validation and reload behavior
+
+- `/flameforge validate` parses everything without applying; it reports errors
+  and warnings per file and field.
+- `/flameforge reload` re-runs the full load; if validation finds errors the
+  reload is rejected and the previous configuration stays active
+  (`reload.validation-rejected`).
+- A failed startup is retryable when the failure component is file-based:
+  correct the reported file and run `/flameforge reload`.

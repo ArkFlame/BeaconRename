@@ -1,237 +1,214 @@
 # FlameForge Outcomes and Hooks
 
-## Outcome Categories
+This document describes forge outcomes, item power semantics, particles,
+armor reduction, and the optional integrations FlameForge actually uses.
 
-All outcomes fall into three categories based on their effect on the input item:
+## Forge Outcomes
 
-| Category | Description |
-|----------|-------------|
-| **SUCCESS** | Item is returned in modified form |
-| **BREAK** | Input item is destroyed |
-| **CURSE** | Negative effect applied to item |
+Every forge attempt resolves to exactly one of three outcome categories:
 
-## Outcome Types
+| Category | Meaning                                             |
+|----------|-----------------------------------------------------|
+| SUCCESS  | Input item returned in mutated form (variant applied) |
+| BREAK    | Break policy applied (reset/strip; may destroy the item) |
+| CURSE    | Item permanently cursed and can no longer be forged  |
 
-### SUCCESS — Modify Input
+Break/curse behavior is configured per tier (`break` / `curse` sections of the
+tier file). Chances are configured per tier (`chances.success/break/curse`).
+Forge costs and station cooldowns apply to the attempt itself; variants are
+selected from eligible variants by weight.
 
-The input item is mutated and returned.
+### Result themes (animation palettes)
 
-```yaml
-upgrade_sharpness:
-  type: MODIFY_INPUT
-  weight: 40
-  mutation:
-    enchants:
-      sharpness_boost:
-        name: DAMAGE_ALL
-        min-level: 1
-```
+`ForgeAnimationThemeResolver` picks the animation theme from the outcome
+category and the used variant's powers/attributes:
 
-**Effect:** The input item has enchantments, attributes, name, lore, or material changed per the mutation spec, then returned. If `same_material` is true, the material is preserved.
+| Theme      | Triggering power/attribute                                      | Primary color | Particle |
+|------------|-----------------------------------------------------------------|---------------|----------|
+| electric   | `ON_HIT_CHAIN_DAMAGE`, `EVERY_N_HIT_LIGHTNING`                  | yellow (250,204,21) | flame / firework |
+| explosive  | `ON_HIT_EXPLOSIVE`                                              | orange (249,115,22) | flame / firework |
+| contagion  | `ON_HIT_CHAIN_POTION`                                           | lime (132,204,22)  | flame / firework |
+| poison     | `ON_HIT_POTION` with POISON effect candidate                    | green (34,197,94)  | flame / firework |
+| bleed      | `ON_HIT_BLEED`                                                  | red (220,38,38)    | flame / firework |
+| swift      | `SHIFT_RIGHT_CLICK_DASH`, `PASSIVE_POTION` SPEED                | blue (56,189,248)  | flame / firework |
+| heal       | `ON_HIT_HEAL`, `SHIFT_RIGHT_CLICK_HEAL`, `ON_BLOCK_HEAL`, `PASSIVE_POTION` REGENERATION | pink (244,114,182) | flame / firework |
+| defensive  | `ON_BLOCK_POTION`, `ON_BLOCK_KNOCKBACK`, `ON_BLOCK_HEAL`, any DAMAGE_REDUCTION_* attribute | blue (96,165,250) | flame / firework |
+| break      | BREAK outcome                                                   | red (239,68,68)    | smoke / crit |
+| curse      | CURSE outcome                                                   | purple (168,85,247)| portal / spell |
+| success    | no matching special theme                                       | amber (245,158,11)| flame / firework |
 
-#### Mutation Spec Fields
+## Power Semantics
 
-| Field          | Type             | Description                                      |
-|----------------|------------------|--------------------------------------------------|
-| `same_material` | Boolean          | If true, material is preserved (default: false) |
-| `material`     | Material key     | Changes the item's material type                 |
-| `name`         | MiniMessage      | Sets the display name                            |
-| `amount`       | Integer          | Sets stack size (default: 1)                    |
-| `enchants`     | Map              | Enchantments to add/remove                       |
-| `attributes`   | Map              | Attribute modifiers to add                       |
+Powers are defined per variant (`variants.<id>.powers`) and stored on the item
+identity as active power ids. Activation is restricted to the power's
+`activation-slots` (MAIN_HAND, OFF_HAND, HEAD, CHEST, LEGS, FEET, INVENTORY).
+An empty slot list means "held in either hand".
 
-#### Enchantment Spec
+### Power types
 
-```yaml
-enchants:
-  <key>:
-    name: <enchantment-id>     # e.g., DAMAGE_ALL, PROTECTION_ENVIRONMENTAL
-    min-level: <integer>       # level to set
-    max-level: <integer>       # max allowed level (for clamping)
-```
+- **ON_HIT_POTION / ON_HIT_FIRE / ON_HIT_HEAL** — trigger on attack against any
+  LivingEntity when the chance roll passes and the per-player power cooldown
+  (per forge id) has expired. Potion applies to the victim; fire sets the
+  victim's fire ticks; heal heals the attacker.
+- **EVERY_N_HIT_LIGHTNING / EVERY_N_HIT_KNOCKBACK** — a per-player/per-forge
+  hit counter increments on each eligible hit; on the `hit-interval`-th hit the
+  counter resets, the chance is rolled, and lightning strikes the victim's
+  location (region-scheduled, no terrain damage) or the victim is knocked back
+  away from the attacker.
+- **ON_HIT_AOE_FIRE** — radial hop: the primary victim and every nearby
+  LivingEntity inside `radius` get fire ticks (see Radial vs chain below).
+- **ON_HIT_BLEED** — damage pulses: `pulse-count` hits of `damage-amount` on
+  the victim at `pulse-interval-ticks` spacing (entity-scheduled; stops on
+  death).
+- **ON_HIT_EXPLOSIVE** — radial damage: primary target takes full
+  `damage-amount`, each additional target takes
+  `damage-amount × secondary-damage-multiplier`; targets receive an upward
+  velocity of `primary-knockback-multiplier` one tick later. **No terrain
+  damage** — no block explosion is created.
+- **ON_HIT_CHAIN_POTION / ON_HIT_CHAIN_DAMAGE** — true chain hops (see below).
+- **ON_BLOCK_POTION / ON_BLOCK_KNOCKBACK / ON_BLOCK_HEAL** — trigger when the
+  defender is blocking (`Player.isBlocking`) and the equipped forged item is in
+  an activation slot. Potion is applied to the attacker, knockback pushes the
+  attacker away, heal heals the defender.
+- **PASSIVE_POTION** — while a forged item with this power is in an activation
+  slot (INVENTORY counts via the cached inventory forge ids), the potion effect
+  is re-applied every `duration-ticks`.
+- **SHIFT_RIGHT_CLICK_DASH / SHIFT_RIGHT_CLICK_HEAL** — activated by
+  sneak + right-click (air or block) with the forged item in the interacted
+  hand; dash launches the player along their facing direction
+  (`horizontal-strength`, `vertical-strength`), heal restores
+  `heal-amount` up to max health.
 
-#### Attribute Spec
+### Radial vs true chain hops
 
-```yaml
-attributes:
-  <key>:
-    name: <attribute-id>       # e.g., GENERIC_ATTACK_DAMAGE
-    min-value: <double>
-    max-value: <double>
-    operation: ADD_NUMBER|ADD_SCALAR_1|ADD_SCALAR_2
-```
+- **Radial** (`executeRadial`, used by Scorching/AOE-fire and Explosive): the
+  initial target is struck, then all nearby LivingEntities within `radius` are
+  collected, distance-sorted, and each struck once — geometry is a fan-out
+  from the impact point, not a hop sequence.
+- **True chain** (`executeChain`, used by contagion/electric chain powers):
+  hop semantics A→B→C: after the current target is struck, candidates near the
+  current target are discovered and the *next* target is scheduled with a
+  `chain-delay-ticks` delay; the trail is rendered between the parent hop
+  location and the child target (a connected segment chain).
+- **Deduplication**: the attacker's uuid and every visited target uuid are
+  tracked in a shared visited set; no entity is struck twice and the attacker
+  is never a target.
+- **Caps**: `maxTargets` is validated to 1..16. Shipped chain powers use caps
+  of 8 (`weapon_tier3`/`tier5` chain potion, `weapon_tier4`/`tier5` chain
+  damage, `tier6` legacy contagion) and 10 (`weapon_tier6`/`weapon_tier7` chain
+  damage and chain potion, `tier7` legacy chain damage). Radial powers ship at
+  4–6 targets (AOE fire 4–5, explosive 5–6). `radius` caps at 16.
+- Direct poison (`ON_HIT_POTION` with POISON candidate) applies to any
+  LivingEntity victim — no hop involved.
 
-### BREAK
+### Particle semantics
 
-The input item is consumed and no output is returned.
+- Every shipped power carries `particle-candidates`; the first candidate is
+  used (e.g. `FLAME`/`LAVA` for fire, `HAPPY_VILLAGER`/`VILLAGER_HAPPY`/`SPELL`
+  for poison, `ELECTRIC_SPARK`/`NOTE`/`CRIT` for lightning, `CRIT`/`HEART` for
+  bleed, `EXPLOSION*` for explosive, `HEART` for heal, `CLOUD`/`INSTANT_EFFECT`
+  for speed, `ENCHANT`/`SPELL` for resistance, `WITCH`/`LARGE_SMOKE` for
+  wither).
+- Semantic fallbacks exist per power family (HEART/green/WITCH/yellow/flame/
+  red/electric/etc.) and colored dust is used when the runtime particle name is
+  unavailable.
+- **Cosmetic failure never aborts a power**: particle/colored-dust errors are
+  caught per-effect and only logged; the power effect itself still executes.
+- Passive potions emit particles only on activation and on each scheduled
+  refresh; there is no continuous particle loop.
 
-```yaml
-break_item:
-  type: BREAK
-  weight: 10
-```
+### Passive activation and reconciliation
 
-**Effect:** Input slot items are removed. No item is returned.
+- Passive powers are resolved from the tier/variant definitions at activation
+  time (`refreshPassivePowers`): inventory contents, armor contents, main hand
+  and off hand are scanned once, valid forge identities collected, and
+  PASSIVE_POTION powers started.
+- Re-scanning is **event-driven, not periodic**: join, respawn, item-held,
+  inventory click/drag/close, item drop/pickup, consume and item-break events
+  queue a single delayed refresh per player (deduplicated by cancelling the
+  prior queued task). There is no recurring full-scan task.
+- An INVENTORY activation slot is satisfied by the cached set of forge ids
+  currently in the player's inventory (`hasCachedInventoryForgeId`), refreshed
+  by the same event pipeline.
+- Quit clears cooldowns, passive tasks, the inventory cache and hit counters
+  for that player.
 
-### CURSE — Apply Curse
+### Cooldown display vs internal units
 
-Negative effects applied to the input item.
+Power cooldowns are authored and enforced in `cooldown-ticks` (ticks); the
+cooldown check is `cooldownTicks × 50ms` against a monotonic clock, keyed by
+player + forge id + power id, with a 4096-entry eviction cap (configurable via
+`forge.power-cooldown-max-entries`). Tier cooldowns use `cooldown-seconds`
+and are displayed in seconds (e.g. `/flameforge tier info`). Variant lore
+cooldown text uses the seconds convention (e.g. 40 ticks → "Cooldown: 2s").
 
-```yaml
-curse_void:
-  type: CURSE
-  weight: 5
-  curse:
-    type: VOID
-    description: "<red>Void corruption"
-```
+## Armor Reduction Composition
 
-**CURSE variants:**
+Identity records carry semantic reduction attributes:
+`DAMAGE_REDUCTION_PERCENT` (generic), `POISON_DAMAGE_REDUCTION_PERCENT`,
+`MAGIC_DAMAGE_REDUCTION_PERCENT`, `FALL_DAMAGE_REDUCTION_PERCENT`, and
+`ATTACK_DAMAGE_FLAT` (flat bonus).
 
-| Type    | Effect |
-|---------|--------|
-| `VOID`  | Marks item with void curse |
-| `DECAY` | Reduces item durability on each reforge |
-| `DRAIN` | Reduces item stats |
+- On non-entity damage (`EntityDamageEvent` not caused by an entity), the
+  listener computes the best generic reduction across all six equipment slots
+  plus the best cause-specific reduction matching the damage cause
+  (POISON → poison %, MAGIC / DRAGON_BREATH → magic %, FALL → fall %), and
+  composes them with a **hard cap of 80%**:
+  `min(genericMax + specificMax, 0.80)`.
+- The attack bonus path (`ATTACK_DAMAGE_FLAT`) is applied event-side only when
+  modern attribute APIs are unavailable; on servers with modern attributes the
+  native `AttributeBridge` receives only `ATTACK_DAMAGE_FLAT` and the event
+  path is skipped, avoiding double application.
+- A blue enchant/aura particle (`emitArmorReductionParticle`) is shown on the
+  victim when any reduction applies.
 
-### Same-Material Variants
+## Offhand Support
 
-When `same_material: true` is set, the item's material is preserved through the mutation. This allows enchantment upgrades without changing the base item type.
+The offhand is read through `EquipmentBridge`: it probes
+`Player.getItemInOffhand()` at runtime; on 1.8.x (no offhand API) it falls back
+to AIR, so offhand-slot powers simply never activate there. On servers with
+`PlayerSwapHandItemsEvent`, the bridge registers a reflective MONITOR listener
+so offhand swaps also trigger the event-driven passive reconciliation.
+Interaction-hand detection (`InteractionHandBridge`) resolves whether a
+sneak-right-click used the main or off hand.
 
-```yaml
-preserve_diamond:
-  type: MODIFY_INPUT
-  weight: 30
-  mutation:
-    same_material: true
-    enchants:
-      sharpness_boost:
-        name: DAMAGE_ALL
-        min-level: 1
-```
+## Hooks
 
-## Powers
+### Vault (real integration)
 
-Powers are named stat bundles applied via outcomes. A power is a collection of enchantments, attributes, and display modifications.
+Vault is a soft dependency (`plugin.yml`) and the VaultAPI is a provided
+compile dependency. `EconomyServiceFactory` returns `VaultEconomyService` when
+Vault is enabled **and** a registered `net.milkbowl.vault.economy.Economy`
+provider exists; otherwise `NoEconomyService` is used. Vault money
+withdrawals/deposits/formatting flow through `CostService` for money
+requirements and money-based forge costs. Without Vault (or without an economy
+provider) money requirements are reported unavailable and money costs cannot
+be charged.
 
-```yaml
-powers:
-  blazing:
-    enchants:
-      fire_aspect_boost:
-        name: FIRE_ASPECT
-        min-level: 2
-    attributes:
-      damage:
-        name: GENERIC_ATTACK_DAMAGE
-        min-value: 3.0
-        max-value: 5.0
-        operation: ADD_NUMBER
+### Holograms — FancyHolograms / DecentHolograms
 
-outcomes:
-  apply_blazing:
-    type: MODIFY_INPUT
-    weight: 25
-    power: blazing
-```
+Hologram provider selection (`HologramProviderSelector`) reads
+`holograms.provider-order` from config.yml (default: FancyHolograms,
+DecentHolograms) and instantiates `FancyHologramsProvider` (reflective
+FancyHolograms API bindings) or `DecentHologramsProvider` (reflective
+DecentHolograms bindings) for the first plugin that is actually installed.
+Both are soft dependencies. If none is installed, a `NoOpHologramProvider`
+logs the reason and station holograms are skipped. Holograms are upserted per
+station id, reconciled after load/reload, and cleaned up on disable.
 
-## Variant Effects
+### PacketEvents (hard dependency, external)
 
-Variants are defined as a list-of-map in tier files. Each variant can specify enchantments, attributes, and powers with eligibility constraints.
+PacketEvents Spigot 2.13.0 is a **provided** (external) dependency and a hard
+`depend` in plugin.yml — the server must run PacketEvents. FlameForge uses it
+only for the forge animation: a fake item entity is spawned per viewer
+(spawn + metadata packets), orbited/raised along a 6-rotation rising path with
+a 1080° yaw sweep, then held and destroyed. Double spiral strands + trail +
+connector + colored aura particles accompany the flight; a five-point star
+(with halo) reveal renders the outcome. No real item entity is spawned and no
+item is dropped; the actual item is delivered through the menu session.
 
-### Variant Structure
+### PlaceholderAPI
 
-Each variant entry in the `variants` list contains:
-
-- `id`: Unique variant identifier
-- `display-name`: MiniMessage display name
-- `weight`: Selection weight
-- `applicable-groups`: List of groups that can receive this variant (ANY, WEAPON, ARMOR, or custom)
-- `enchantments`: List-of-map enchantment specs with `candidates`, `min-level`, `max-level`, `unsafe`
-- `attributes`: List-of-map attribute specs with `id`, `type` (PASSIVE|ACTIVE|ON_HIT), `value`
-- `powers`: List-of-map power specs with `id`, `type`, `cooldown-ticks`, `hit-interval`, `chance`
-
-### Power Types and Activation
-
-| Type                  | Activation     | Description |
-|-----------------------|----------------|-------------|
-| `ON_HIT_POTION`       | On hit         | Potion effect applied to target on hit |
-| `ON_HIT_FIRE`         | On hit         | Sets target on fire |
-| `ON_HIT_HEAL`         | On hit         | Heals attacker on hit |
-| `PASSIVE_POTION`      | Passive        | Always active while equipped |
-| `SHIFT_RIGHT_CLICK_DASH` | Active      | Dash on shift+right-click |
-| `SHIFT_RIGHT_CLICK_HEAL` | Active      | Heal on shift+right-click |
-| `EVERY_N_HIT_LIGHTNING` | Every N hits | Lightning strikes every Nth hit |
-| `EVERY_N_HIT_KNOCKBACK` | Every N hits | Knockback every Nth hit |
-
-### Activation Semantics
-
-- **Passive**: Effect is always active while the item is equipped
-- **Active**: Effect triggers on player action (e.g., shift+right-click)
-- **On-hit**: Effect triggers each time the item lands a hit on a target
-
-### Hit Interval
-
-For `EVERY_N_HIT_*` power types, `hit-interval` specifies how many hits must occur before the effect triggers. For example, `hit-interval: 3` means the effect triggers on every 3rd hit.
-
-### Variant Eligibility
-
-The `applicable-groups` field controls which items can receive a variant. If not specified, defaults to `ANY`. Group matching is done against the item's material name pattern or equipped slot type.
-
-## Hook System
-
-### Vault Economy
-
-FlameForge integrates with Vault for economy-based costs when Vault and a compatible economy plugin are installed.
-
-**Detection:** Soft-depend on Vault. If Vault is not present, money costs are unavailable.
-
-**Supported cost modes:**
-- `MONEY_ONLY` — deducts from player's economy balance
-- `XP_AND_MONEY` — deducts both XP levels and money
-- `XP_OR_MONEY` — player chooses which to use
-
-**Cost service interface:**
-```java
-public interface EconomyService {
-    boolean available();
-    BigDecimal balance(OfflinePlayer player);
-    boolean withdraw(OfflinePlayer player, BigDecimal amount);
-    boolean deposit(OfflinePlayer player, BigDecimal amount);
-    String format(BigDecimal amount);
-}
-```
-
-**NoEconomyService** is the fallback when Vault is absent; `available()` returns false and all withdraw calls fail.
-
-### Command-Based Reward Hooks
-
-External plugins can register custom commands via the `COMMANDS` outcome type for reward integration.
-
-**Example: Integration with a custom reward plugin**
-
-```yaml
-outcomes:
-  mmo_reward:
-    type: COMMANDS
-    weight: 10
-    commands:
-      - "mmorewards give %player_name% common_box"
-      - "playsound %player_name% entity.player.levelup master"
-```
-
-**Placeholder substitution:**
-- `%player_name%` — player display name
-- `%player%` — same as `%player_name%`
-- `%player_uuid%` — player's UUID string
-
-### Plugin Condition Hooks
-
-The `PluginConditionService` provides runtime detection of server plugins:
-
-```java
-public boolean isPluginEnabled(String pluginName);
-public boolean isVaultEnabled();
-```
-
-This allows FlameForge to adapt behavior based on available plugins without hard dependencies.
+FlameForge does **not** hook PlaceholderAPI. All placeholders are the plugin's
+own MiniMessage template variables (`%player_name%`, `%tier_id%`, …) resolved
+by its internal `TextRenderer`.

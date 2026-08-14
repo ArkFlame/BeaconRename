@@ -6,6 +6,7 @@ import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.model.ForgeAnimationProfile;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.model.ForgePowerDefinition;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.text.TextBridge;
 import com.arkflame.flameforge.text.TextRenderer;
@@ -53,7 +54,8 @@ class ForgeAnimationServiceTest {
         textRenderer = mock(TextRenderer.class);
         itemVisuals = mock(ForgeItemVisualService.class);
 
-        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer, itemVisuals);
+        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer,
+            itemVisuals, new ForgeAnimationThemeResolver());
 
         owner = mock(Player.class);
         when(owner.getUniqueId()).thenReturn(UUID.randomUUID());
@@ -101,7 +103,8 @@ class ForgeAnimationServiceTest {
     @Test
     void cancelOrShutdownCleansForgeVisuals() {
         scheduler = new TestSchedulerBridge(false);
-        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer, itemVisuals);
+        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer,
+            itemVisuals, new ForgeAnimationThemeResolver());
         when(itemVisuals.spawn(any(), any(), any(), any())).thenReturn(true);
 
         service.playAnimation("tx-complete", owner, stationLocation, visualItem,
@@ -153,6 +156,76 @@ class ForgeAnimationServiceTest {
         assertTrue(handle.isCompleted());
     }
 
+    @Test
+    void forgingItemFollowsExactOrbitAndRisePath() {
+        Location start = ForgeAnimationService.computeForgingItemLocation(stationLocation, 0f);
+        assertEquals(0.24, start.getX() - stationLocation.getX(), 1e-6);
+        assertEquals(1.15, start.getY() - stationLocation.getY(), 1e-6);
+        assertEquals(0.0, start.getZ() - stationLocation.getZ(), 1e-6);
+        assertEquals(0.0f, start.getYaw(), 1e-6f);
+
+        Location firstCircle = ForgeAnimationService.computeForgingItemLocation(stationLocation, 1f / 6f);
+        assertEquals(-0.24 + 0.08 / 6.0, firstCircle.getX() - stationLocation.getX(), 1e-6);
+
+        Location half = ForgeAnimationService.computeForgingItemLocation(stationLocation, 0.5f);
+        assertEquals(-0.20, half.getX() - stationLocation.getX(), 1e-6);
+        assertEquals(1.15 + 0.85 * 0.5, half.getY() - stationLocation.getY(), 1e-6);
+
+        Location end = ForgeAnimationService.computeForgingItemLocation(stationLocation, 1f);
+        assertEquals(0.16, end.getX() - stationLocation.getX(), 1e-6);
+        assertEquals(2.0, end.getY() - stationLocation.getY(), 1e-6);
+        assertEquals(0.0, end.getZ() - stationLocation.getZ(), 1e-6);
+        assertEquals(1080.0f, end.getYaw(), 1e-6f);
+    }
+
+    @Test
+    void revealStarOccursBeforeCompletionAndCleanupDestroysVisual() {
+        scheduler = new TestSchedulerBridge(false);
+        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer,
+            itemVisuals, new ForgeAnimationThemeResolver());
+        when(itemVisuals.spawn(any(), any(), any(), any())).thenReturn(true);
+
+        List<String> events = new ArrayList<>();
+        doAnswer(invocation -> {
+            events.add("dust:" + invocation.getArgument(2) + "," + invocation.getArgument(3)
+                + "," + invocation.getArgument(4));
+            return null;
+        }).when(particles).sendColoredDust(any(), any(Location.class), anyInt(), anyInt(), anyInt(),
+            anyFloat(), anyInt());
+
+        service.playAnimation("tx-star", owner, stationLocation, visualItem, profile(),
+            tx -> events.add("complete"), null);
+        scheduler.runAll();
+
+        assertTrue(events.contains("dust:254,214,130"));
+        assertTrue(events.indexOf("dust:254,214,130") < events.indexOf("complete"));
+        verify(itemVisuals).destroy("tx-star");
+    }
+
+    @Test
+    void completionCallbackDelayedByTenRevealTicks() {
+        scheduler = new TestSchedulerBridge(false);
+        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer,
+            itemVisuals, new ForgeAnimationThemeResolver());
+        when(itemVisuals.spawn(any(), any(), any(), any())).thenReturn(true);
+
+        service.playAnimation("tx-delay", owner, stationLocation, visualItem, profile(), null, null);
+
+        assertFalse(scheduler.entityLaterDelays.isEmpty());
+        long completionDelay = scheduler.entityLaterDelays.get(scheduler.entityLaterDelays.size() - 1);
+        assertEquals(profile().getDurationTicks() + 10L, completionDelay);
+    }
+
+    @Test
+    void themeAuraDustUsesResultPalette() {
+        ForgeVariant electric = variantWithPower(ForgePowerDefinition.PowerType.ON_HIT_CHAIN_DAMAGE);
+        service.playAnimation("tx-electric", owner, stationLocation, visualItem, profile(),
+            ForgeOutcomeCategory.SUCCESS, electric, null, null);
+
+        verify(particles, atLeastOnce()).sendColoredDust(eq(owner), any(Location.class),
+            eq(250), eq(204), eq(21), anyFloat(), anyInt());
+    }
+
     private ForgeAnimationProfile profile() {
         return new ForgeAnimationProfile(
             8, 4, null,
@@ -163,6 +236,14 @@ class ForgeAnimationServiceTest {
     private ForgeVariant variant() {
         return new ForgeVariant("variant", "Variant", Collections.emptyList(), 1.0, null,
             Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+    }
+
+    private ForgeVariant variantWithPower(ForgePowerDefinition.PowerType type) {
+        return new ForgeVariant("electric-variant", "Electric", Collections.emptyList(), 1.0, null,
+            Collections.emptyList(), Collections.emptyList(), Collections.emptyList(),
+            Collections.singletonList(new ForgePowerDefinition("p1", type, 0, 0, BigDecimal.ONE,
+                Collections.emptyList(), 0, 0, 0, BigDecimal.ZERO, BigDecimal.ONE, BigDecimal.ZERO,
+                Collections.singletonList(ForgePowerDefinition.ActivationSlot.MAINHAND))));
     }
 
     private static final class PendingTask {
@@ -193,6 +274,7 @@ class ForgeAnimationServiceTest {
         private final boolean executeImmediately;
         private final List<PendingTask> pendingTasks = new ArrayList<>();
         private final List<TrackingTaskHandle> issuedTaskHandles = new ArrayList<>();
+        private final List<Long> entityLaterDelays = new ArrayList<>();
         private boolean usedRunEntityLater;
         private boolean usedRunRegionLater;
 
@@ -218,6 +300,7 @@ class ForgeAnimationServiceTest {
         @Override
         public TaskHandle runEntityLater(Entity entity, Runnable task, Runnable retireCallback, long delay) {
             usedRunEntityLater = true;
+            entityLaterDelays.add(delay);
             return issue(task);
         }
 

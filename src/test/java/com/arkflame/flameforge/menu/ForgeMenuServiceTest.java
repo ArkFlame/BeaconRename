@@ -10,6 +10,7 @@ import com.arkflame.flameforge.forge.ForgePlan;
 import com.arkflame.flameforge.forge.ForgePlanResult;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
+import com.arkflame.flameforge.item.ItemDisplayNameResolver;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.PlayerForgeState;
@@ -47,6 +48,7 @@ class ForgeMenuServiceTest {
     private ForgeService forgeService;
     private ForgeVariantEligibility variantEligibility;
     private ConfigService configService;
+    private ItemDisplayNameResolver displayNameResolver;
     private Inventory inventory;
     private Map<Integer, ItemStack> visibleSlots;
     private Player player;
@@ -93,6 +95,8 @@ class ForgeMenuServiceTest {
         when(session.getActiveTierLevel()).thenReturn(1);
 
         TextRenderer textRenderer = new TextRenderer();
+        displayNameResolver = mock(ItemDisplayNameResolver.class);
+        when(displayNameResolver.resolve(any(), any())).thenReturn("Diamond Sword");
         MenuItemFactory menuItemFactory = mock(MenuItemFactory.class);
         when(menuItemFactory.background(anyList(), anyString())).thenAnswer(invocation -> menuItem(Collections.emptyList()));
         when(menuItemFactory.build(anyList(), anyString(), anyList(), any(), anyBoolean(), nullable(String.class)))
@@ -102,6 +106,7 @@ class ForgeMenuServiceTest {
                 inventoryFactory, registry, mock(ForgeMenuSettlementService.class), configService,
                 forgeService, variantEligibility,
                 new OutcomeSelector(ThreadLocalRandomSource.getInstance()), mock(ItemIdentityService.class),
+                displayNameResolver,
                 new LoreTemplateRenderer(), mock(ForgeItemPolicy.class), textRenderer, menuItemFactory,
                 Logger.getLogger("ForgeMenuServiceTest"));
     }
@@ -236,6 +241,35 @@ class ForgeMenuServiceTest {
         assertEquals(1, lines.size());
         assertTrue(lines.get(0).contains("Rich Variant"));
         assertTrue(lines.get(0).contains("80.0%"));
+    }
+
+    @Test
+    void variantEntryKeepsUntrustedBaseNameAsEscapedLiteralInsideColoredComponent() {
+        List<ForgeVariant> variants = Collections.singletonList(
+                variant("<gold>Shiny %base_name%</gold>", 100.0));
+        when(displayNameResolver.resolve(any(), any())).thenReturn("Inherited <red>Sword</red>");
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, variants);
+        when(forgeService.createPlan(eq(player), eq(session), any(ItemStack.class)))
+                .thenReturn(ForgePlanResult.ready(plan));
+        when(variantEligibility.eligibleVariants(any(ItemStack.class), anyList())).thenReturn(variants);
+
+        ForgeMenuService.MenuResult opened = menuService.open(player, session);
+        ForgeMenuContext context = registry.get(player.getUniqueId()).get();
+        context.tryInsert(new ItemStack(Material.DIAMOND, 1));
+        ForgeMenuService.MenuResult rendered = menuService.rerender(player);
+
+        assertTrue(opened.isOpened());
+        assertTrue(rendered.isOpened());
+        List<String> lore = inventory.getItem(MenuLayout.SLOT_CONFIRM).getItemMeta().getLore();
+        assertNotNull(lore);
+        String renderedLore = String.join("\n", lore);
+        assertTrue(renderedLore.contains("Shiny"));
+        assertTrue(renderedLore.contains("Inherited"));
+        assertTrue(renderedLore.contains("<red>Sword</red>"));
+        assertTrue(renderedLore.contains("\u00A76"));
+        assertTrue(renderedLore.contains("80.0%"));
+        assertFalse(renderedLore.contains("%base_name%"));
+        assertFalse(renderedLore.matches("(?s).*%[A-Za-z0-9_-]+%.*"));
     }
 
     private Map<String, Object> menuConfig() {

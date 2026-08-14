@@ -1,9 +1,9 @@
 package com.arkflame.flameforge.item;
 
-import com.arkflame.flameforge.config.ConfigService;
-import com.arkflame.flameforge.config.ConfigSnapshot;
+import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
+import com.arkflame.flameforge.model.ForgeAttributeDefinition;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.Material;
@@ -40,8 +40,7 @@ class ItemMutationServiceTest {
     private AttributeBridge attributeBridge;
     private EnchantmentResolver enchantmentResolver;
     private com.arkflame.flameforge.text.TextRenderer textRenderer;
-    private ConfigService configService;
-    private ConfigSnapshot configSnapshot;
+    private ItemDisplayNameResolver displayNameResolver;
 
     @BeforeEach
     void setUp() {
@@ -49,16 +48,15 @@ class ItemMutationServiceTest {
         attributeBridge = mock(AttributeBridge.class);
         enchantmentResolver = mock(EnchantmentResolver.class);
         textRenderer = mock(com.arkflame.flameforge.text.TextRenderer.class);
-        configService = mock(ConfigService.class);
-        configSnapshot = mock(ConfigSnapshot.class);
-        when(configService.getCurrentSnapshot()).thenReturn(configSnapshot);
+        displayNameResolver = mock(ItemDisplayNameResolver.class);
         when(identityService.defaultBaseDisplayName(any(Material.class))).thenReturn("Diamond Sword");
+        when(displayNameResolver.resolve(any(), any())).thenReturn("Diamond Sword");
         when(textRenderer.renderItemLegacyInheritedLiteral(anyString(), any(), anyString(), isNull()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(identityService.writeForgeIdentity(any(), any())).thenAnswer(invocation ->
                 java.util.Optional.of((ItemStack) invocation.getArgument(0)));
         mutationService = new ItemMutationService(
-                identityService, attributeBridge, enchantmentResolver, textRenderer, configService);
+                identityService, attributeBridge, enchantmentResolver, textRenderer, displayNameResolver);
     }
 
     @Test
@@ -94,6 +92,52 @@ class ItemMutationServiceTest {
                         && "DIAMOND_SWORD".equals(identity.getBaseMaterial())
                         && "Diamond Sword".equals(identity.getBaseDisplayName())
                         && identity.getActivePowerIds().equals(Collections.singletonList("flame"))));
+    }
+
+    @Test
+    void successMutationPersistsAllAttributeIdsButAppliesOnlyNativeAttackDamageToBukkit() {
+        ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
+        ItemStack cloned = input.clone();
+        ItemMeta meta = createMockMeta(cloned, "Old name", Collections.singletonList("Old lore"));
+        List<ForgeAttributeDefinition> attributes = Arrays.asList(
+                new ForgeAttributeDefinition("attack_damage_flat",
+                        ForgeAttributeDefinition.AttributeType.ATTACK_DAMAGE_FLAT, 2.0),
+                new ForgeAttributeDefinition("damage_reduction_percent",
+                        ForgeAttributeDefinition.AttributeType.DAMAGE_REDUCTION_PERCENT, 0.1),
+                new ForgeAttributeDefinition("poison_damage_reduction_percent",
+                        ForgeAttributeDefinition.AttributeType.POISON_DAMAGE_REDUCTION_PERCENT, 0.2),
+                new ForgeAttributeDefinition("magic_damage_reduction_percent",
+                        ForgeAttributeDefinition.AttributeType.MAGIC_DAMAGE_REDUCTION_PERCENT, 0.3),
+                new ForgeAttributeDefinition("fall_damage_reduction_percent",
+                        ForgeAttributeDefinition.AttributeType.FALL_DAMAGE_REDUCTION_PERCENT, 0.4));
+        ForgeVariant variant = mock(ForgeVariant.class);
+        when(variant.getName()).thenReturn("Forged Sword");
+        when(variant.getLore()).thenReturn(Collections.singletonList("Forged lore"));
+        when(variant.getPowerIds()).thenReturn(Collections.singletonList("flame"));
+        when(variant.getAttributes()).thenReturn(attributes);
+        when(variant.getEnchantments()).thenReturn(Collections.emptyList());
+        when(variant.getId()).thenReturn("variant");
+        TierDefinition tier = mock(TierDefinition.class);
+        when(tier.getLevel()).thenReturn(3);
+        when(tier.getId()).thenReturn("tier3");
+        UUID forgeId = UUID.randomUUID();
+
+        ItemMutationService.MutationResult result = mutationService.mutateSuccess(
+                input, tier, variant, ItemIdentityCodec.Identity.empty(), forgeId);
+
+        assertTrue(result.isSuccess());
+        verify(identityService).writeForgeIdentity(any(), org.mockito.ArgumentMatchers.argThat(identity ->
+                identity.getActiveAttributeIds().containsAll(Arrays.asList(
+                        "attack_damage_flat", "damage_reduction_percent",
+                        "poison_damage_reduction_percent", "magic_damage_reduction_percent",
+                        "fall_damage_reduction_percent"))
+                        && identity.getActiveAttributeIds().size() == 5));
+        org.mockito.ArgumentCaptor<List<AttributeSpec>> captor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(attributeBridge).applyAttributes(eq(cloned), captor.capture());
+        List<AttributeSpec> nativeSpecs = captor.getValue();
+        assertEquals(1, nativeSpecs.size());
+        assertEquals("attack_damage_flat", nativeSpecs.get(0).getAttribute());
     }
 
     @Test

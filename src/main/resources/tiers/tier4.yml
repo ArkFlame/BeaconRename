@@ -123,6 +123,10 @@ variants:
           - WITHER
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - WITCH
+          - LARGE_SMOKE
+          - SMOKE
   berserker:
     weight: "40.0"
     applicable-groups:
@@ -150,8 +154,10 @@ variants:
         horizontal-strength: "0.40"
         vertical-strength: "0.15"
         particle-candidates:
+          - EXPLOSION
           - EXPLOSION_NORMAL
-          - CRIT
+          - EXPLOSION_EMITTER
+          - FLAME
   leaping:
     weight: "30.0"
     applicable-groups:
@@ -167,5 +173,9 @@ variants:
       - id: leaping_dash
         type: SHIFT_RIGHT_CLICK_DASH
         cooldown-ticks: 120
-        horizontal-strength: "1.15"
-        vertical-strength: "0.35"
+        horizontal-strength: "5.75"
+        vertical-strength: "3.0"
+        particle-candidates:
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
+          - CRIT

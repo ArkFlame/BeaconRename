@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.forge;
 
+import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import org.bukkit.Material;
@@ -8,13 +9,15 @@ import org.bukkit.inventory.ItemStack;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
+import java.util.Optional;
 
 public final class ForgeVariantEligibility {
     private final ItemIdentityService identityService;
+    private final TierRepository tierRepository;
 
-    public ForgeVariantEligibility(ItemIdentityService identityService) {
+    public ForgeVariantEligibility(ItemIdentityService identityService, TierRepository tierRepository) {
         this.identityService = identityService;
+        this.tierRepository = tierRepository;
     }
 
     public boolean isEligible(ItemStack item, ForgeVariant variant) {
@@ -26,10 +29,15 @@ public final class ForgeVariantEligibility {
             return true;
         }
         Material material = item.getType();
+        Optional<String> equipmentCategory = tierRepository.findEquipmentCategory(material);
         for (String group : applicableGroups) {
-            if ("ANY".equalsIgnoreCase(group)
-                || identityService.matchesMaterialGroup(material, group)
-                || identityService.matchesMaterialGroupName(material.name(), group.toLowerCase(Locale.ROOT))) {
+            if ("ANY".equalsIgnoreCase(group)) {
+                return true;
+            }
+            if (equipmentCategory.isPresent() && equipmentCategory.get().equalsIgnoreCase(group)) {
+                return true;
+            }
+            if (identityService.matchesMaterialGroup(material, group)) {
                 return true;
             }
         }

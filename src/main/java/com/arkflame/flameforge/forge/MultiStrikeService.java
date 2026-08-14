@@ -55,6 +55,48 @@ public final class MultiStrikeService {
             new AtomicInteger(1), targetLimit, false);
     }
 
+    public void executeRadial(final Player viewer, final LivingEntity initialTarget,
+                              final ForgePowerDefinition power, final boolean playersOnly,
+                              final StrikeAction action) {
+        if (viewer == null || initialTarget == null || power == null || action == null) {
+            return;
+        }
+        final Set<UUID> visited = new HashSet<>();
+        visited.add(viewer.getUniqueId());
+        final int maxTargets = power.getMaxTargets();
+        final int targetLimit = maxTargets < 1 ? 1 : maxTargets;
+        visited.add(initialTarget.getUniqueId());
+        final AtomicInteger targetCount = new AtomicInteger(1);
+        scheduler.runEntity(initialTarget, new Runnable() {
+            @Override
+            public void run() {
+                strikeRadial(viewer, initialTarget, power, action);
+            }
+        }, RETIRED);
+        Location initialLocation = snapshot(initialTarget.getLocation());
+        if (initialLocation == null || initialLocation.getWorld() == null) {
+            return;
+        }
+        discoverRadial(viewer, initialLocation, power, playersOnly, action, visited,
+            targetCount, targetLimit);
+    }
+
+    public void executeChain(final Player viewer, final LivingEntity initialTarget,
+                             final ForgePowerDefinition power, final boolean playersOnly,
+                             final StrikeAction action) {
+        if (viewer == null || initialTarget == null || power == null || action == null) {
+            return;
+        }
+        final Set<UUID> visited = new HashSet<>();
+        visited.add(viewer.getUniqueId());
+        final int maxTargets = power.getMaxTargets();
+        final int targetLimit = maxTargets < 1 ? 1 : maxTargets;
+        visited.add(initialTarget.getUniqueId());
+        final AtomicInteger targetCount = new AtomicInteger(1);
+        scheduleStrikeChain(viewer, initialTarget, null, power, playersOnly, action,
+            visited, targetCount, targetLimit);
+    }
+
     private void scheduleStrike(final Player viewer, final LivingEntity target,
                                  final ForgePowerDefinition power, final boolean playersOnly,
                                  final StrikeAction action, final Set<UUID> visited,
@@ -72,6 +114,42 @@ public final class MultiStrikeService {
                 @Override
                 public void run() {
                     strike(viewer, target, power, playersOnly, action, visited, targetCount, targetLimit);
+                }
+            }, RETIRED, delay);
+        }
+    }
+
+    private void scheduleStrikeRadial(final Player viewer, final LivingEntity target,
+                                      final ForgePowerDefinition power,
+                                      final StrikeAction action) {
+        scheduler.runEntity(target, new Runnable() {
+            @Override
+            public void run() {
+                strikeRadial(viewer, target, power, action);
+            }
+        }, RETIRED);
+    }
+
+    private void scheduleStrikeChain(final Player viewer, final LivingEntity target,
+                                     final Location parentHopLocation,
+                                     final ForgePowerDefinition power, final boolean playersOnly,
+                                     final StrikeAction action, final Set<UUID> visited,
+                                     final AtomicInteger targetCount, final int targetLimit) {
+        long delay = Math.max(0, power.getChainDelayTicks());
+        if (delay == 0L) {
+            scheduler.runEntity(target, new Runnable() {
+                @Override
+                public void run() {
+                    strikeChain(viewer, target, parentHopLocation, power, playersOnly, action,
+                        visited, targetCount, targetLimit);
+                }
+            }, RETIRED);
+        } else {
+            scheduler.runEntityLater(target, new Runnable() {
+                @Override
+                public void run() {
+                    strikeChain(viewer, target, parentHopLocation, power, playersOnly, action,
+                        visited, targetCount, targetLimit);
                 }
             }, RETIRED, delay);
         }
@@ -96,6 +174,44 @@ public final class MultiStrikeService {
         discover(viewer, targetLocation, power, playersOnly, action, visited, targetCount, targetLimit);
     }
 
+    private void strikeRadial(final Player viewer, final LivingEntity target,
+                              final ForgePowerDefinition power, final StrikeAction action) {
+        if (target.isDead()) {
+            return;
+        }
+        Location targetLocation = snapshot(target.getLocation());
+        if (targetLocation == null || targetLocation.getWorld() == null) {
+            return;
+        }
+        action.apply(target);
+        renderTrail(viewer, target, targetLocation, power);
+    }
+
+    private void strikeChain(final Player viewer, final LivingEntity target,
+                             final Location parentHopLocation,
+                             final ForgePowerDefinition power, final boolean playersOnly,
+                             final StrikeAction action, final Set<UUID> visited,
+                             final AtomicInteger targetCount, final int targetLimit) {
+        if (target.isDead()) {
+            return;
+        }
+        Location childLocation = snapshot(target.getLocation());
+        if (childLocation == null || childLocation.getWorld() == null) {
+            return;
+        }
+        action.apply(target);
+        if (parentHopLocation == null) {
+            renderTrail(viewer, target, childLocation, power);
+        } else {
+            renderChainTrail(viewer, parentHopLocation, target, childLocation, power);
+        }
+        if (targetCount.get() >= targetLimit) {
+            return;
+        }
+        discoverChain(viewer, childLocation, power, playersOnly, action, visited,
+            targetCount, targetLimit);
+    }
+
     private void discover(final Player viewer, final Location center,
                            final ForgePowerDefinition power, final boolean playersOnly,
                            final StrikeAction action, final Set<UUID> visited,
@@ -107,40 +223,7 @@ public final class MultiStrikeService {
         scheduler.runRegion(center, new Runnable() {
             @Override
             public void run() {
-                List<Candidate> candidates = new ArrayList<>();
-                double radius = power.getRadius().doubleValue();
-                for (Entity entity : world.getNearbyEntities(center, radius, radius, radius)) {
-                    if (!(entity instanceof LivingEntity) || entity.getUniqueId() == null
-                        || entity.getUniqueId().equals(viewer.getUniqueId())) {
-                        continue;
-                    }
-                    if (playersOnly && !(entity instanceof Player)) {
-                        continue;
-                    }
-                    Location location = snapshot(entity.getLocation());
-                    if (location == null || location.getWorld() == null
-                        || !location.getWorld().equals(center.getWorld())) {
-                        continue;
-                    }
-                    double distanceSquared = distanceSquared(center, location);
-                    candidates.add(new Candidate((LivingEntity) entity, distanceSquared,
-                        entity.getEntityId(), entity.getUniqueId()));
-                }
-                Collections.sort(candidates, new Comparator<Candidate>() {
-                    @Override
-                    public int compare(Candidate left, Candidate right) {
-                        int distance = Double.compare(left.distanceSquared, right.distanceSquared);
-                        if (distance != 0) {
-                            return distance;
-                        }
-                        int entityId = Integer.compare(left.entityId, right.entityId);
-                        if (entityId != 0) {
-                            return entityId;
-                        }
-                        return left.uuid.toString().compareTo(right.uuid.toString());
-                    }
-                });
-                for (Candidate candidate : candidates) {
+                for (Candidate candidate : collectCandidates(viewer, center, power, playersOnly)) {
                     synchronized (visited) {
                         if (targetCount.get() >= targetLimit || !visited.add(candidate.uuid)) {
                             continue;
@@ -152,6 +235,98 @@ public final class MultiStrikeService {
                 }
             }
         });
+    }
+
+    private void discoverRadial(final Player viewer, final Location center,
+                                final ForgePowerDefinition power, final boolean playersOnly,
+                                final StrikeAction action, final Set<UUID> visited,
+                                final AtomicInteger targetCount, final int targetLimit) {
+        final World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        scheduler.runRegion(center, new Runnable() {
+            @Override
+            public void run() {
+                for (Candidate candidate : collectCandidates(viewer, center, power, playersOnly)) {
+                    synchronized (visited) {
+                        if (targetCount.get() >= targetLimit || !visited.add(candidate.uuid)) {
+                            continue;
+                        }
+                        targetCount.incrementAndGet();
+                    }
+                    scheduleStrikeRadial(viewer, candidate.entity, power, action);
+                }
+            }
+        });
+    }
+
+    private void discoverChain(final Player viewer, final Location center,
+                               final ForgePowerDefinition power, final boolean playersOnly,
+                               final StrikeAction action, final Set<UUID> visited,
+                               final AtomicInteger targetCount, final int targetLimit) {
+        final World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+        scheduler.runRegion(center, new Runnable() {
+            @Override
+            public void run() {
+                for (Candidate candidate : collectCandidates(viewer, center, power, playersOnly)) {
+                    synchronized (visited) {
+                        if (targetCount.get() >= targetLimit || !visited.add(candidate.uuid)) {
+                            continue;
+                        }
+                        targetCount.incrementAndGet();
+                    }
+                    scheduleStrikeChain(viewer, candidate.entity, center, power, playersOnly,
+                        action, visited, targetCount, targetLimit);
+                }
+            }
+        });
+    }
+
+    private List<Candidate> collectCandidates(final Player viewer, final Location center,
+                                              final ForgePowerDefinition power,
+                                              final boolean playersOnly) {
+        final World world = center.getWorld();
+        if (world == null) {
+            return Collections.emptyList();
+        }
+        List<Candidate> candidates = new ArrayList<>();
+        double radius = power.getRadius().doubleValue();
+        for (Entity entity : world.getNearbyEntities(center, radius, radius, radius)) {
+            if (!(entity instanceof LivingEntity) || entity.getUniqueId() == null
+                || entity.getUniqueId().equals(viewer.getUniqueId())) {
+                continue;
+            }
+            if (playersOnly && !(entity instanceof Player)) {
+                continue;
+            }
+            Location location = snapshot(entity.getLocation());
+            if (location == null || location.getWorld() == null
+                || !location.getWorld().equals(center.getWorld())) {
+                continue;
+            }
+            double distanceSquared = distanceSquared(center, location);
+            candidates.add(new Candidate((LivingEntity) entity, distanceSquared,
+                entity.getEntityId(), entity.getUniqueId()));
+        }
+        Collections.sort(candidates, new Comparator<Candidate>() {
+            @Override
+            public int compare(Candidate left, Candidate right) {
+                int distance = Double.compare(left.distanceSquared, right.distanceSquared);
+                if (distance != 0) {
+                    return distance;
+                }
+                int entityId = Integer.compare(left.entityId, right.entityId);
+                if (entityId != 0) {
+                    return entityId;
+                }
+                return left.uuid.toString().compareTo(right.uuid.toString());
+            }
+        });
+        return candidates;
     }
 
     private void renderTrail(final Player viewer, final LivingEntity target,
@@ -170,6 +345,27 @@ public final class MultiStrikeService {
                 public void run() {
                     Location targetOwnerLocation = snapshot(target.getLocation());
                     render((Player) target, targetOwnerLocation, targetPoint, power);
+                }
+            }, RETIRED);
+        }
+    }
+
+    private void renderChainTrail(final Player viewer, final Location parentHopLocation,
+                                  final LivingEntity target, final Location childLocation,
+                                  final ForgePowerDefinition power) {
+        final Location parentPoint = snapshot(parentHopLocation);
+        final Location childPoint = snapshot(childLocation);
+        scheduler.runEntity(viewer, new Runnable() {
+            @Override
+            public void run() {
+                render(viewer, parentPoint, childPoint, power);
+            }
+        }, RETIRED);
+        if (target instanceof Player && !target.getUniqueId().equals(viewer.getUniqueId())) {
+            scheduler.runEntity(target, new Runnable() {
+                @Override
+                public void run() {
+                    render((Player) target, parentPoint, childPoint, power);
                 }
             }, RETIRED);
         }

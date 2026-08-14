@@ -3,6 +3,7 @@ package com.arkflame.flameforge.menu;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.forge.ForgePlan;
 import com.arkflame.flameforge.forge.ForgePlanResult;
+import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.model.PlayerForgeState;
 import com.arkflame.flameforge.text.MessageService;
@@ -24,11 +25,13 @@ public final class ForgeMenuForgeService {
     private final SchedulerBridge scheduler;
     private final MessageService messageService;
     private final Logger logger;
+    private final ForgePowerService forgePowerService;
 
     public ForgeMenuForgeService(ForgeMenuRegistry registry, ForgeMenuViewResolver viewResolver,
                                 ForgeService forgeService, ForgeMenuSettlementService settlementService,
                                 ForgeMenuService menuService, SchedulerBridge scheduler,
-                                MessageService messageService, Logger logger) {
+                                MessageService messageService, Logger logger,
+                                ForgePowerService forgePowerService) {
         this.registry = registry;
         this.viewResolver = viewResolver;
         this.forgeService = forgeService;
@@ -37,6 +40,7 @@ public final class ForgeMenuForgeService {
         this.scheduler = scheduler;
         this.messageService = messageService;
         this.logger = logger;
+        this.forgePowerService = forgePowerService;
     }
 
     public void requestConfirm(Player player, ForgeInventoryHolder holder) {
@@ -118,6 +122,7 @@ public final class ForgeMenuForgeService {
                 scheduler.runEntity(player,
                     () -> {
                         if (resolution.isSuccess()) {
+                            forgePowerService.refreshPassivePowers(player);
                             messageService.send(player, "forge.confirm.complete");
                         } else {
                             String errorReason = resolution.getErrorMessage();

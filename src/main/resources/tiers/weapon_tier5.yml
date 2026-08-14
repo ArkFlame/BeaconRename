@@ -111,7 +111,8 @@ variants:
     lore:
       - "<gray>Weapon Tier V forged variant"
       - "<dark_gray>Power: Chain poison and bleed"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Chain Cooldown: 4s"
+      - "<dark_gray>Bleed Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -125,7 +126,11 @@ variants:
         duration-ticks: 100
         amplifier: 1
         radius: "5"
-        max-targets: 5
+        max-targets: 8
+        particle-candidates:
+          - HAPPY_VILLAGER
+          - VILLAGER_HAPPY
+          - SPELL
       - id: pestilent_bleed
         type: ON_HIT_BLEED
         cooldown-ticks: 60
@@ -133,6 +138,9 @@ variants:
         damage-amount: "0.75"
         pulse-count: 3
         pulse-interval-ticks: 12
+        particle-candidates:
+          - CRIT
+          - HEART
   thunderlord:
     weight: "33.0"
     applicable-groups:
@@ -141,7 +149,7 @@ variants:
     lore:
       - "<gray>Weapon Tier V forged variant"
       - "<dark_gray>Power: Lightning every fourth hit and chain damage"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -151,13 +159,21 @@ variants:
         hit-interval: 4
         cooldown-ticks: 0
         chance: "1.0"
+        particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
+          - CRIT
       - id: thunderlord_chain
         type: ON_HIT_CHAIN_DAMAGE
         cooldown-ticks: 80
         chance: "0.12"
         damage-amount: "1.5"
         radius: "5"
-        max-targets: 5
+        max-targets: 8
+        particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
+          - CRIT
   infernal:
     weight: "33.0"
     applicable-groups:
@@ -166,7 +182,7 @@ variants:
     lore:
       - "<gray>Weapon Tier V forged variant"
       - "<dark_gray>Power: Area fire on hit"
-      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -178,3 +194,6 @@ variants:
         fire-ticks: 80
         radius: "4"
         max-targets: 5
+        particle-candidates:
+          - FLAME
+          - LAVA

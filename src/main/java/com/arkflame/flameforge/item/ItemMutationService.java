@@ -40,7 +40,7 @@ public final class ItemMutationService {
             AttributeBridge attributeBridge,
             EnchantmentResolver enchantmentResolver,
             TextRenderer textRenderer) {
-        this(identityService, attributeBridge, enchantmentResolver, textRenderer, null);
+        this(identityService, attributeBridge, enchantmentResolver, textRenderer, (ConfigService) null);
     }
 
     public ItemMutationService(
@@ -49,11 +49,21 @@ public final class ItemMutationService {
             EnchantmentResolver enchantmentResolver,
             TextRenderer textRenderer,
             ConfigService configService) {
+        this(identityService, attributeBridge, enchantmentResolver, textRenderer,
+                new ItemDisplayNameResolver(identityService, configService));
+    }
+
+    public ItemMutationService(
+            ItemIdentityService identityService,
+            AttributeBridge attributeBridge,
+            EnchantmentResolver enchantmentResolver,
+            TextRenderer textRenderer,
+            ItemDisplayNameResolver displayNameResolver) {
         this.identityService = identityService;
         this.attributeBridge = attributeBridge;
         this.enchantmentResolver = enchantmentResolver;
         this.textRenderer = textRenderer;
-        this.displayNameResolver = new ItemDisplayNameResolver(identityService, configService);
+        this.displayNameResolver = displayNameResolver;
     }
 
     public MutationResult mutateSuccess(
@@ -421,17 +431,21 @@ public final class ItemMutationService {
     }
 
     private List<AttributeSpec> applyVariantAttributes(ItemStack item, List<ForgeAttributeDefinition> attributes) {
-        List<AttributeSpec> applied = new ArrayList<>();
+        List<AttributeSpec> recorded = new ArrayList<>();
         if (attributes == null || attributes.isEmpty()) {
-            return applied;
+            return recorded;
         }
+        List<AttributeSpec> nativeSpecs = new ArrayList<>();
         for (ForgeAttributeDefinition attr : attributes) {
             AttributeSpec spec = AttributeSpec.of(attr.getId(), attr.getMultiplier(),
                     attr.getMultiplier(), "ADD");
-            applied.add(spec);
+            recorded.add(spec);
+            if (attr.getType() == ForgeAttributeDefinition.AttributeType.ATTACK_DAMAGE_FLAT) {
+                nativeSpecs.add(spec);
+            }
         }
-        AttributeBridge.apply(item, applied);
-        return applied;
+        attributeBridge.applyAttributes(item, nativeSpecs);
+        return recorded;
     }
 
     private void applyName(ItemMeta meta, String name, MessageArguments arguments) {

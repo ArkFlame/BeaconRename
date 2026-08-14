@@ -2,10 +2,11 @@ package com.arkflame.flameforge.listener;
 
 import com.arkflame.flameforge.compat.equipment.EquipmentBridge;
 import com.arkflame.flameforge.compat.interaction.InteractionHandBridge;
-import com.arkflame.flameforge.item.AttributeBridge;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
+import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.forge.ForgePowerService;
+import com.arkflame.flameforge.item.AttributeBridge;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeAttributeDefinition;
@@ -15,24 +16,24 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
-import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemBreakEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.Bukkit;
-import org.bukkit.plugin.EventExecutor;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,7 +54,7 @@ public final class ForgePowerListener implements Listener {
     private final SchedulerBridge schedulerBridge;
     private final AttributeBridge attributeBridge;
     private final InteractionHandBridge handBridge;
-    private final Set<UUID> refreshPending = Collections.newSetFromMap(new ConcurrentHashMap<UUID, Boolean>());
+    private final ConcurrentHashMap<UUID, TaskHandle> pendingPassiveRefresh = new ConcurrentHashMap<>();
 
     private static final Runnable RETIRED_NOOP = () -> {};
 
@@ -62,15 +63,15 @@ public final class ForgePowerListener implements Listener {
                               ItemIdentityService identityService,
                               TierRepository tierRepository,
                               SchedulerBridge schedulerBridge,
-                              AttributeBridge attributeBridge) {
+                              AttributeBridge attributeBridge,
+                              InteractionHandBridge handBridge) {
         this.powerService = powerService;
         this.equipmentBridge = equipmentBridge;
         this.identityService = identityService;
         this.tierRepository = tierRepository;
         this.schedulerBridge = schedulerBridge;
         this.attributeBridge = attributeBridge;
-        this.handBridge = new InteractionHandBridge(null);
-        registerSwapHandListener();
+        this.handBridge = handBridge;
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = false)
@@ -140,6 +141,7 @@ public final class ForgePowerListener implements Listener {
         double reduction = computeDamageReduction(victim, event.getCause());
         if (reduction > 0) {
             event.setDamage(event.getDamage() * (1 - reduction));
+            powerService.emitArmorReductionParticle(victim);
         }
     }
 
@@ -201,7 +203,8 @@ public final class ForgePowerListener implements Listener {
     }
 
     private double computeDamageReduction(Player player, EntityDamageEvent.DamageCause cause) {
-        double maxReduction = 0.0;
+        double genericMax = 0.0;
+        double specificMax = 0.0;
         EquipmentBridge.Slot[] slots = {
             EquipmentBridge.Slot.MAINHAND,
             EquipmentBridge.Slot.OFFHAND,
@@ -220,28 +223,42 @@ public final class ForgePowerListener implements Listener {
                 continue;
             }
             ItemIdentityCodec.Identity identity = identityRead.getIdentity();
-            double reduction = getDamageReductionFromIdentity(identity, cause);
-            if (reduction > maxReduction) {
-                maxReduction = reduction;
+            double generic = getMaxDamageReduction(identity,
+                ForgeAttributeDefinition.AttributeType.DAMAGE_REDUCTION_PERCENT);
+            if (generic > genericMax) {
+                genericMax = generic;
+            }
+            double specific = getCauseSpecificDamageReduction(identity, cause);
+            if (specific > specificMax) {
+                specificMax = specific;
             }
         }
-        return Math.min(maxReduction, 0.80);
+        return Math.min(genericMax + specificMax, 0.80);
     }
 
-    private double getDamageReductionFromIdentity(ItemIdentityCodec.Identity identity, EntityDamageEvent.DamageCause cause) {
+    private double getCauseSpecificDamageReduction(ItemIdentityCodec.Identity identity,
+                                                   EntityDamageEvent.DamageCause cause) {
+        ForgeAttributeDefinition.AttributeType causeType = causeAttributeType(cause);
+        if (causeType == null) {
+            return 0.0;
+        }
+        return getMaxDamageReduction(identity, causeType);
+    }
+
+    private double getMaxDamageReduction(ItemIdentityCodec.Identity identity,
+                                         ForgeAttributeDefinition.AttributeType type) {
         String lastTierId = identity.getLastTierId();
         String lastVariantId = identity.getLastVariantId();
         List<String> activeAttributeIds = identity.getActiveAttributeIds();
         if (lastTierId == null || lastVariantId == null || activeAttributeIds == null) {
-            return 0;
+            return 0.0;
         }
         return tierRepository.findById(lastTierId)
             .map(tier -> tier.getVariants().stream()
                 .filter(v -> lastVariantId.equals(v.getId()))
                 .flatMap(v -> v.getAttributes().stream())
                 .filter(attr -> activeAttributeIds.contains(attr.getId()))
-                .filter(attr -> attr.getType() == ForgeAttributeDefinition.AttributeType.DAMAGE_REDUCTION_PERCENT
-                    || causeAttributeType(cause) == attr.getType())
+                .filter(attr -> attr.getType() == type)
                 .mapToDouble(ForgeAttributeDefinition::getMultiplier)
                 .max()
                 .orElse(0.0))
@@ -249,14 +266,17 @@ public final class ForgePowerListener implements Listener {
     }
 
     private ForgeAttributeDefinition.AttributeType causeAttributeType(EntityDamageEvent.DamageCause cause) {
-        if (cause == EntityDamageEvent.DamageCause.POISON) {
-            return ForgeAttributeDefinition.AttributeType.POISON_REDUCTION_PERCENT;
+        if (cause == null) {
+            return null;
         }
-        if (cause == EntityDamageEvent.DamageCause.MAGIC) {
-            return ForgeAttributeDefinition.AttributeType.MAGIC_REDUCTION_PERCENT;
+        if (cause == EntityDamageEvent.DamageCause.POISON) {
+            return ForgeAttributeDefinition.AttributeType.POISON_DAMAGE_REDUCTION_PERCENT;
+        }
+        if (cause == EntityDamageEvent.DamageCause.MAGIC || "DRAGON_BREATH".equals(cause.name())) {
+            return ForgeAttributeDefinition.AttributeType.MAGIC_DAMAGE_REDUCTION_PERCENT;
         }
         if (cause == EntityDamageEvent.DamageCause.FALL) {
-            return ForgeAttributeDefinition.AttributeType.FALL_REDUCTION_PERCENT;
+            return ForgeAttributeDefinition.AttributeType.FALL_DAMAGE_REDUCTION_PERCENT;
         }
         return null;
     }
@@ -334,157 +354,118 @@ public final class ForgePowerListener implements Listener {
         if (player == null) {
             return;
         }
+        cancelPendingRefresh(player);
         powerService.clearCooldownsForPlayer(player);
         powerService.clearPassiveTasksForPlayer(player);
         powerService.clearInventoryCacheForPlayer(player);
-        refreshPending.remove(player.getUniqueId());
         powerService.clearHitCountersForPlayer(player.getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
+        if (event != null) {
+            queuePassiveRefresh(event.getPlayer());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerJoin(PlayerJoinEvent event) {
-        if (event == null) {
-            return;
+        if (event != null) {
+            queuePassiveRefresh(event.getPlayer());
         }
-        Player player = event.getPlayer();
-        if (player == null) {
-            return;
-        }
-        markDirty(player);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerItemHeld(PlayerItemHeldEvent event) {
-        if (event == null) {
-            return;
+        if (event != null) {
+            queuePassiveRefresh(event.getPlayer());
         }
-        Player player = event.getPlayer();
-        if (player == null) {
-            return;
-        }
-        markDirty(player);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryClick(InventoryClickEvent event) {
         if (event != null && event.getWhoClicked() instanceof Player) {
-            markDirty((Player) event.getWhoClicked());
+            queuePassiveRefresh((Player) event.getWhoClicked());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onInventoryDrag(InventoryDragEvent event) {
         if (event != null && event.getWhoClicked() instanceof Player) {
-            markDirty((Player) event.getWhoClicked());
+            queuePassiveRefresh((Player) event.getWhoClicked());
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onInventoryClose(InventoryCloseEvent event) {
+        if (event != null && event.getPlayer() instanceof Player) {
+            queuePassiveRefresh((Player) event.getPlayer());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerDropItem(PlayerDropItemEvent event) {
         if (event != null) {
-            markDirty(event.getPlayer());
+            queuePassiveRefresh(event.getPlayer());
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onPlayerPickupItem(PlayerPickupItemEvent event) {
         if (event != null) {
-            markDirty(event.getPlayer());
+            queuePassiveRefresh(event.getPlayer());
         }
     }
 
-    private void registerSwapHandListener() {
-        try {
-            final Class<?> eventClass = Class.forName("org.bukkit.event.player.PlayerSwapHandItemsEvent");
-            Bukkit.getPluginManager().registerEvent((Class) eventClass, this, EventPriority.MONITOR,
-                new EventExecutor() {
-                    @Override
-                    public void execute(org.bukkit.event.Listener listener, Event event) {
-                        try {
-                            Object player = eventClass.getMethod("getPlayer").invoke(event);
-                            if (player instanceof Player) {
-                                markDirty((Player) player);
-                            }
-                        } catch (Exception ignored) {
-                        }
-                    }
-                }, JavaPlugin.getProvidingPlugin(ForgePowerListener.class));
-        } catch (ClassNotFoundException ignored) {
-        } catch (RuntimeException ignored) {
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerItemConsume(PlayerItemConsumeEvent event) {
+        if (event != null) {
+            queuePassiveRefresh(event.getPlayer());
         }
     }
 
-    private void markDirty(final Player player) {
-        if (player == null || !refreshPending.add(player.getUniqueId())) {
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerItemBreak(PlayerItemBreakEvent event) {
+        if (event != null) {
+            queuePassiveRefresh(event.getPlayer());
+        }
+    }
+
+    public void queuePassiveRefresh(Player player) {
+        if (player == null) {
             return;
         }
-        schedulerBridge.runEntityLater(player, () -> {
-            refreshPending.remove(player.getUniqueId());
-            refreshPassivePowers(player);
+        UUID playerId = player.getUniqueId();
+        TaskHandle prior = pendingPassiveRefresh.remove(playerId);
+        if (prior != null) {
+            prior.cancel();
+        }
+        TaskHandle handle = schedulerBridge.runEntityLater(player, () -> {
+            pendingPassiveRefresh.remove(playerId);
+            powerService.refreshPassivePowers(player);
         }, RETIRED_NOOP, 1L);
+        if (handle != null) {
+            pendingPassiveRefresh.put(playerId, handle);
+        }
     }
 
-    private void refreshPassivePowers(Player player) {
-        if (player == null || !player.isOnline()) {
+    public void shutdown() {
+        for (TaskHandle handle : pendingPassiveRefresh.values()) {
+            if (handle != null) {
+                handle.cancel();
+            }
+        }
+        pendingPassiveRefresh.clear();
+        powerService.clearAllPassiveTasks();
+    }
+
+    private void cancelPendingRefresh(Player player) {
+        if (player == null) {
             return;
         }
-        powerService.clearPassiveTasksForPlayer(player);
-        powerService.refreshInventoryCache(player);
-        List<ItemStack> itemsToScan = new ArrayList<>();
-        addItems(itemsToScan, equipmentBridge.getInventoryContents(player));
-        ItemStack mainhand = equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND);
-        if (mainhand != null && mainhand.hasItemMeta()) {
-            itemsToScan.add(mainhand);
-        }
-        ItemStack offhand = equipmentBridge.getItem(player, EquipmentBridge.Slot.OFFHAND);
-        if (offhand != null && offhand.hasItemMeta()) {
-            itemsToScan.add(offhand);
-        }
-        ItemStack helmet = equipmentBridge.getItem(player, EquipmentBridge.Slot.HEAD);
-        if (helmet != null && helmet.hasItemMeta()) {
-            itemsToScan.add(helmet);
-        }
-        ItemStack chest = equipmentBridge.getItem(player, EquipmentBridge.Slot.CHEST);
-        if (chest != null && chest.hasItemMeta()) {
-            itemsToScan.add(chest);
-        }
-        ItemStack legs = equipmentBridge.getItem(player, EquipmentBridge.Slot.LEGS);
-        if (legs != null && legs.hasItemMeta()) {
-            itemsToScan.add(legs);
-        }
-        ItemStack boots = equipmentBridge.getItem(player, EquipmentBridge.Slot.FEET);
-        if (boots != null && boots.hasItemMeta()) {
-            itemsToScan.add(boots);
-        }
-        Set<String> processed = new HashSet<>();
-        for (ItemStack item : itemsToScan) {
-            ItemIdentityService.ForgeIdentityRead identityRead = identityService.readForgeIdentity(item);
-            if (identityRead.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID) {
-                continue;
-            }
-            ItemIdentityCodec.Identity identity = identityRead.getIdentity();
-            String lastTierId = identity.getLastTierId();
-            String lastVariantId = identity.getLastVariantId();
-            if (lastTierId == null || lastVariantId == null) {
-                continue;
-            }
-            UUID forgeId = identity.getForgeId();
-            List<String> activePowerIds = identity.getActivePowerIds();
-            List<ForgePowerDefinition> powers = getPowersForForge(lastTierId, lastVariantId, activePowerIds);
-            for (ForgePowerDefinition power : powers) {
-                if (power.getPowerType() != ForgePowerDefinition.PowerType.PASSIVE_POTION) {
-                    continue;
-                }
-                String uniqueKey = forgeId.toString() + ":" + power.getId();
-                if (processed.contains(uniqueKey)) {
-                    continue;
-                }
-                processed.add(uniqueKey);
-                List<ForgePowerDefinition.ActivationSlot> slots = power.getActivationSlots();
-                if (isItemInActivationSlot(player, item, slots)) {
-                    powerService.activatePassivePower(player, power, forgeId);
-                }
-            }
+        TaskHandle handle = pendingPassiveRefresh.remove(player.getUniqueId());
+        if (handle != null) {
+            handle.cancel();
         }
     }
 

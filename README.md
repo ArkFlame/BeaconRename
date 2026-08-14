@@ -1,186 +1,142 @@
 # FlameForge
 
-FlameForge is a highly customizable Minecraft forge/reforge plugin for Spigot, Paper, and Folia servers. Players interact with forge stations to open a GUI-based forge menu where they can reforge weapons, armor, and tools with configurable outcomes, costs, cooldowns, and visual effects.
+FlameForge is a customizable Minecraft forge/reforge plugin for Spigot, Paper,
+and Folia servers. Players interact with forge stations to open a GUI-based
+forge menu where they reforge weapons, armor, shields, and amulets with
+configured tiers, variants, costs, cooldowns, powers, and visual effects.
 
 ## Compatibility
 
-| Platform      | Version         | Notes                                      |
-|---------------|-----------------|--------------------------------------------|
-| Spigot/Paper  | 1.8.8 - 1.21+  | API version 1.13 minimum                   |
-| Folia         | Supported       | Uses entity scheduler for cross-thread ops  |
-| Java          | 8+              | Compiled for Java 8 bytecode               |
+| Platform      | Version        | Notes                                     |
+|---------------|----------------|-------------------------------------------|
+| Spigot/Paper  | 1.8.8 – 1.21+ | API version 1.13 minimum (`api-version`)  |
+| Folia         | Supported      | `folia-supported: true`, region/entity schedulers |
+| Java          | 8+             | Compiled for Java 8 bytecode              |
+| PacketEvents  | 2.13.0 (Spigot)| Hard dependency (external plugin)         |
+
+Modern server capabilities (offhand API, swap-hand events, NETHERITE
+materials, attribute APIs, particle/sound names) are isolated behind
+runtime-detecting compatibility bridges; the plugin still runs on 1.8.8 where
+those capabilities fall back gracefully.
 
 ## Build and Install
 
-### Requirements
-
-- Java 8 JDK or higher
-- Maven 3.x
-
-### Build
+Requirements: Java 8 JDK or higher, Maven 3.x.
 
 ```bash
-mvn clean package
+mvn clean install
 ```
 
-The compiled JAR will be at `target/FlameForge-1.0.2.jar`.
-
-### Installation
+The shaded JAR is `target/FlameForge-1.0.2.jar`.
 
 1. Stop the server.
-2. Place the JAR in `plugins/`.
-3. Start the server. Default configuration and tier files will be generated.
-4. Review `plugins/FlameForge/config.yml` and `plugins/FlameForge/tiers/` directory.
-5. Register forge stations using `/flameforge station add [id] [profile]`.
-6. Restart or use `/flameforge reload`.
+2. Place the JAR in `plugins/`. **PacketEvents must also be installed** —
+   FlameForge declares it as a hard dependency.
+3. Start the server. Default configuration, tier files, and equipment catalog
+   are generated into `plugins/FlameForge/`.
+4. Register forge stations: `/flameforge station add myforge default` while
+   looking at any non-air block (default mode is `REGISTERED_ONLY`).
+5. Right-click the registered block to open the forge.
 
 ## Quick Start
 
-1. Create forge stations where you want forges.
-2. Run `/flameforge station add myforge default` while looking at any non-air block.
-3. Edit tier files in `plugins/FlameForge/tiers/` to define outcomes.
-4. Open the forge by right-clicking a registered forge.
+1. `/flameforge station add myforge default` — register a forge at the block
+   you are looking at (any non-air block works).
+2. `/flameforge validate` — confirm configuration is clean.
+3. Open the forge by right-clicking the block, place an item in the input
+   slot (22), and confirm (slot 31). The item's current forged identity
+   determines the exact next tier in its category's progression.
+4. `/flameforge testitem weapon_tier1 bloodletter` — spawn a forged test item
+   to check variants and powers without a forge transaction.
 
-Any non-air block can be registered as a forge; no specific block material is required. In `REGISTERED_ONLY` mode, players interact only with blocks registered as forges.
+## Equipment Progression
 
-## Optional Dependencies
+Items are classified by category in `equipment.yml`: `weapon`, `armor`,
+`shield`, and `amulet` (fallback for anything unmatched). Each category has a
+7-tier progression (`weapon_tier1..7`, `armor_tier1..7`, `shield_tier1..7`,
+`amulet_tier1..7`). The legacy `tier1..tier7` identities remain readable so
+old forged items keep resolving during migration. Operator tier files in
+`tiers/` override bundled tiers by id; a tier is forgeable only when its id is
+referenced by a category progression. Incomplete progressions are validation
+errors.
 
-| Plugin         | Purpose                                | Hook Type        |
-|----------------|----------------------------------------|------------------|
-| Vault          | Economy integration (money costs)      | Soft dependency  |
+## Features
 
-FlameForge will operate without Vault. Economy features require Vault and a compatible economy provider.
-
-## Menu
-
-The forge GUI is a 54-slot single-input menu with these key slots:
-
-- **Input slot (slot 22)**: Center slot — place the item to reforge.
-- **Confirm button (slot 31)**: Bottom-center — executes the forge.
-
-**Tier determination:** There are no tier buttons. The current item identity (stored on the item) determines the current tier. The forge automatically targets the exact next configured tier based on that identity. The confirm button lore shows the tier, requirements, chances, and available variants.
-
-**Note:** Catalyst, ward, and pity UI slots have been removed. Tier requirements replace catalyst mechanics.
-
-## Tier Schema v2
-
-Tier files use schema version 2 with per-tier requirements:
-
-```yaml
-schema-version: 2
-id: tier_1
-level: 1
-requirements:
-  items:
-    - material: DIAMOND_SWORD
-      required: true
-display:
-  name: "<white>Common Forge"
-  lore:
-    - "<gray>Basic reforge"
-  material: IRON_INGOT
-cost:
-  mode: XP_ONLY
-  xp: 10
-cooldown-seconds: 60
-outcomes:
-  success_modify:
-    type: MODIFY_INPUT
-    category: SUCCESS
-    weight: 70
-    mutation:
-      same_material: true
-      enchants:
-        sharpness_1:
-          name: DAMAGE_ALL
-          min-level: 1
-  break_item:
-    type: BREAK
-    category: BREAK
-    weight: 25
-  curse_drain:
-    type: CURSE
-    category: CURSE
-    weight: 5
-    curse:
-      type: DRAIN
-```
-
-### Tier Requirements
-
-| Field        | Type   | Description |
-|--------------|--------|-------------|
-| `items`      | List   | Required items to use this tier |
-| `items[].material` | Material | Item material |
-| `items[].required` | Boolean | Must be present in input |
-
-### Outcome Categories
-
-| Category | Description |
-|----------|-------------|
-| `SUCCESS` | Item returned in modified form |
-| `BREAK`  | Input item destroyed |
-| `CURSE`  | Negative effect applied |
-
-### Tier Levels
-
-Tiers have a `level` field instead of `priority`. Automatic next-tier progression uses level ordering.
+- **Forge menu**: 54-slot single-input GUI (input slot 22, confirm slot 31);
+  no tier buttons — the item's identity drives progression; requirements,
+  chances, and variants are shown on the confirm button.
+- **Outcomes**: SUCCESS (variant mutation), BREAK (reset/strip, optionally
+  destroy), CURSE (permanent, no further forging), with per-tier chances.
+- **Powers**: on-hit potion/fire/heal/bleed/explosive, every-N-hit
+  lightning/knockback, radial AOE fire, chain potion/damage (true A→B→C hops
+  with dedupe and target caps), on-block potion/knockback/heal, passive
+  potions, shift-right-click dash/heal. Activation slots include main/off
+  hand, armor slots, and inventory.
+- **Particles**: per-power particle candidates with semantic fallbacks;
+  cosmetic failures never abort a power.
+- **Armor**: semantic damage-reduction attributes composed per damage cause,
+  capped at 80%; flat attack bonus via native attributes when available.
+- **Animation**: PacketEvents fake-item orbit/rise with double spiral, trail,
+  aura, five-point star reveal; outcome-themed palettes (electric, swift,
+  poison, contagion, bleed, explosive, heal, curse, break). No real item
+  entity is spawned.
+- **Economy (Vault)**: soft dependency; money requirements and costs only when
+  Vault with an economy provider is installed.
+- **Holograms**: FancyHolograms and DecentHolograms providers (soft
+  dependencies, configurable order); skipped with a log line when absent.
+- **Messages**: MiniMessage throughout, layered operator overrides.
 
 ## Commands
 
-| Command                            | Description                          | Permission (default)      |
-|------------------------------------|--------------------------------------|--------------------------|
-| `/flameforge help [page]`          | Show help menu                       | `flameforge.use` (all)   |
-| `/flameforge open [player]`        | Open forge GUI                       | `flameforge.command.open` (all) |
-| `/flameforge reload`               | Reload configuration                  | `flameforge.command.reload` (op) |
-| `/flameforge validate`             | Validate configuration files            | `flameforge.command.validate` (op) |
-| `/flameforge tiers [page]`         | List all configured tiers            | `flameforge.command.tiers` (op) |
-| `/flameforge tier info <tier>`     | Show tier details                    | `flameforge.command.tier.info` (op) |
-| `/flameforge preview <tier> [mat]` | Preview outcome for held item        | `flameforge.command.preview` (op) |
-| `/flameforge history [player]`      | View reforge history                 | `flameforge.command.history` (all) |
-| `/flameforge station add [id] [profile]` | Register a forge       | `flameforge.command.station.add` (op) |
-| `/flameforge station remove <id>`  | Remove a station                     | `flameforge.command.station.remove` (op) |
-| `/flameforge station list [page]`  | List all stations                    | `flameforge.command.station.list` (op) |
-| `/flameforge station info <id>`    | Show station details                 | `flameforge.command.station.info` (op) |
-| `/flameforge station teleport <id>` | Teleport to station                  | `flameforge.command.station.teleport` (op) |
-| `/flameforge setup tier create <id> <level>` | Create empty tier     | `flameforge.command.setup.tier` (op) |
-| `/flameforge setup tier clone <source> <id> <level>` | Clone existing tier | `flameforge.command.setup.tier` (op) |
+All commands are subcommands of `/flameforge` (aliases: `forge`, `ff`).
+Admin nodes default to op and are children of `flameforge.admin`. Full
+reference: [COMMANDS-AND-PERMISSIONS](docs/COMMANDS-AND-PERMISSIONS.md).
+
+| Command                                      | Permission                        | Default |
+|----------------------------------------------|-----------------------------------|---------|
+| `/flameforge help [page]`                    | `flameforge.command.help`         | true    |
+| `/flameforge open [player]`                  | `flameforge.command.open(.others)`| true/op |
+| `/flameforge history [player]`               | `flameforge.command.history(.others)` | true/op |
+| `/flameforge tiers [page]`                   | `flameforge.command.tiers`        | op      |
+| `/flameforge tier info <tier>`               | `flameforge.command.tier.info`    | op      |
+| `/flameforge preview <tier> [material]`      | `flameforge.command.preview`      | op      |
+| `/flameforge testitem <tier> <variant> [material]` | `flameforge.command.testitem` | op |
+| `/flameforge reload` / `/flameforge validate`| `flameforge.command.reload` / `.validate` | op |
+| `/flameforge station add|remove|list|info|teleport` | `flameforge.command.station.*` | op |
+| `/flameforge tp <id>`                        | `flameforge.command.station.teleport` | op |
+| `/flameforge setup tier create|clone`        | `flameforge.command.setup.tier`   | op      |
 
 ## Configuration Files
 
-| File                    | Purpose                                      |
-|-------------------------|----------------------------------------------|
-| `config.yml`            | Root plugin settings, announcements |
-| `stations/<id>.yml`     | Individual station files (one per station)    |
-| `tiers/*.yml`           | Individual tier definitions (schema v2)         |
-| `messages.yml`          | Custom message strings                       |
-| `menus.yml`             | GUI layout and styling                       |
+| File                    | Purpose                                        |
+|-------------------------|------------------------------------------------|
+| `config.yml`            | Root settings, stations mode, announcements, holograms, forge runtime |
+| `equipment.yml`         | Categories, materials, tier progression, legacy tier ids |
+| `tiers/*.yml`           | Tier definitions (schema v2: requirements, chances, break/curse, animation, variants, powers) |
+| `messages.yml`          | MiniMessage strings (operator overrides bundled defaults) |
+| `menus.yml`             | GUI layout and styling                         |
+| `station-profiles.yml`  | Station behavior profiles (max tier, permissions) |
+| `stations/<id>.yml`     | Registered forge stations (runtime-created)    |
 
-## Tier Bootstrap Warning
+See [CONFIGURATION](docs/CONFIGURATION.md) for schemas and validation rules.
 
-On first startup, if the `tiers/` directory does not exist, FlameForge will copy seven default tier files (tier1.yml through tier7.yml) into that directory. If you are upgrading and already have a `tiers/` directory, existing files will not be overwritten.
+## Optional Dependencies
 
-**Deleting a tier file** removes that tier from the forge. Deleting all tier files does not disable the plugin; players will see an empty tier selection menu.
+| Plugin          | Purpose                                 | Hook Type       |
+|-----------------|-----------------------------------------|-----------------|
+| Vault           | Economy (money requirements/costs)      | Soft dependency |
+| FancyHolograms  | Station holograms (provider order 1)    | Soft dependency |
+| DecentHolograms | Station holograms (provider order 2)    | Soft dependency |
+| PacketEvents    | Forge animation fake item packets       | Hard dependency |
 
-## Hooks
-
-FlameForge provides command-based hooks for reward integration and economy:
-
-- **Vault**: Money costs via `CostMode.MONEY_ONLY` or `CostMode.XP_AND_MONEY`.
-- **PlaceholderAPI**: Expansion support for scoreboard and chat integration (separate plugin required).
-
-## Safety
-
-- **Anti-dupe**: Transaction journal prevents item duplication on disconnect. Pending deliveries are queued and delivered on player join.
-- **Session validation**: Items are held in custody only during animation. Disconnecting during animation returns items and refunds costs.
-- **Atomic operations**: Tier selection, cost charging, and outcome execution occur within a session state machine to prevent race conditions.
+FlameForge operates without Vault and without hologram providers (money
+requirements report unavailable; holograms are skipped). There is no
+PlaceholderAPI hook — all placeholders are the plugin's own MiniMessage
+template variables.
 
 ## Documentation
 
-- [PROJECT-SPEC](docs/PROJECT-SPEC.md) — Acceptance contract
-- [ARCHITECTURE](docs/ARCHITECTURE.md) — Object model and threading
-- [CONFIGURATION](docs/CONFIGURATION.md) — File schemas and examples
-- [COMMANDS](docs/COMMANDS-AND-PERMISSIONS.md) — Permission nodes and command reference
-- [OUTCOMES](docs/OUTCOMES-AND-HOOKS.md) — Outcome types and hook system
-- [ADMIN-GUIDE](docs/ADMIN-GUIDE.md) — Setup, validation, backup, troubleshooting
-- [FEATURE-EVALUATION](docs/FEATURE-EVALUATION.md) — Feature selection rationale
+- [CONFIGURATION](docs/CONFIGURATION.md) — config files, equipment catalog, tier schema, messages
+- [COMMANDS-AND-PERMISSIONS](docs/COMMANDS-AND-PERMISSIONS.md) — command reference, permissions, tab completion
+- [OUTCOMES-AND-HOOKS](docs/OUTCOMES-AND-HOOKS.md) — outcomes, power semantics, particles, armor, hooks
+- [ADMIN-GUIDE](docs/ADMIN-GUIDE.md) — build/install, editing, validation, compatibility, smoke tests

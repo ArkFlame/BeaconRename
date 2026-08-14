@@ -144,5 +144,8 @@ variants:
           - RESISTANCE
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
         activation-slots:
           - ARMOR

@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Weapon Tier I forged variant"
       - "<dark_gray>Power: Bleed on hit"
-      - "<dark_gray>Cooldown: 40 seconds"
+      - "<dark_gray>Cooldown: 2s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -134,7 +134,7 @@ variants:
     lore:
       - "<gray>Weapon Tier I forged variant"
       - "<dark_gray>Power: Poison on hit"
-      - "<dark_gray>Cooldown: 40 seconds"
+      - "<dark_gray>Cooldown: 2s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -147,6 +147,10 @@ variants:
           - POISON
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - HAPPY_VILLAGER
+          - VILLAGER_HAPPY
+          - SPELL
   swift:
     weight: "33.0"
     applicable-groups:
@@ -155,7 +159,7 @@ variants:
     lore:
       - "<gray>Weapon Tier I forged variant"
       - "<dark_gray>Power: Shift right-click dash"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -165,3 +169,7 @@ variants:
         cooldown-ticks: 80
         horizontal-strength: "1.40"
         vertical-strength: "0.35"
+        particle-candidates:
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
+          - CRIT

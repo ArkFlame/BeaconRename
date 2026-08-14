@@ -130,6 +130,7 @@ variants:
         pulse-count: 2
         pulse-interval-ticks: 12
         particle-candidates:
+          - CRIT
           - HEART
   venomous:
     weight: "30.0"
@@ -151,6 +152,10 @@ variants:
           - POISON
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - HAPPY_VILLAGER
+          - VILLAGER_HAPPY
+          - SPELL
   swift:
     weight: "25.0"
     applicable-groups:
@@ -170,6 +175,10 @@ variants:
           - SPEED
         duration-ticks: 40
         amplifier: 0
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
           - MAIN_HAND
           - OFF_HAND

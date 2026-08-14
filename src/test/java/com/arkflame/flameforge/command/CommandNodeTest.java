@@ -40,4 +40,33 @@ class CommandNodeTest {
             }
         }
     }
+
+    @Test
+    void testItemNodeIsAdminChildWithExactUsage() {
+        CommandNode testItem = null;
+        for (CommandNode node : CommandNode.values()) {
+            if ("testitem".equals(node.getRoot())
+                && node.getPermission().isPresent()
+                && "flameforge.command.testitem".equals(node.getPermission().get())) {
+                testItem = node;
+            }
+        }
+        assertNotNull(testItem);
+        assertEquals("testitem <tier> <variant> [material]", testItem.getUsage());
+        assertEquals("testitem", testItem.getSuggestion());
+        assertEquals("flameforge.command.testitem", testItem.getPermission().get());
+        assertEquals("help.descriptions.testitem", testItem.getDescriptionKey().get());
+        assertEquals(CommandNode.Category.ADMINISTRATION, testItem.getCategory());
+        assertEquals(CommandNode.AccessClass.ADMIN, testItem.getAccessClass());
+        assertTrue(testItem.isReadyOnly());
+        assertFalse(testItem.isAlias());
+    }
+
+    @Test
+    void setupTierUsagesUseLevelNotPriority() {
+        assertEquals("setup tier create <id> <level>", CommandNode.SETUP_TIER_CREATE.getUsage());
+        assertEquals("setup tier clone <source> <id> <level>", CommandNode.SETUP_TIER_CLONE.getUsage());
+        assertFalse(CommandNode.SETUP_TIER_CREATE.getUsage().contains("<priority>"));
+        assertFalse(CommandNode.SETUP_TIER_CLONE.getUsage().contains("<priority>"));
+    }
 }

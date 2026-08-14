@@ -135,5 +135,7 @@ variants:
           - REGENERATION
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - HEART
         activation-slots:
           - ARMOR

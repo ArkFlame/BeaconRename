@@ -3,7 +3,6 @@ package com.arkflame.flameforge.forge;
 import com.arkflame.flameforge.chance.OutcomeSelector;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
-import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.effect.AnimationHandle;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
@@ -37,6 +36,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
@@ -99,12 +99,13 @@ public final class ForgeService {
             currentTierLevel = identityRead.getIdentity().getCurrentTier();
         }
 
-        ConfigSnapshot config = configService.getCurrentSnapshot();
-        TierDefinition tier = findExactNextTier(config, currentTierLevel);
+        Optional<TierDefinition> nextTier = configService.getTierRepository()
+            .findExactNext(input.getType(), currentTierLevel);
 
-        if (tier == null) {
+        if (!nextTier.isPresent()) {
             return ForgePlanResult.nextTierMissing();
         }
+        TierDefinition tier = nextTier.get();
 
         if (!tier.isEnabled()) {
             return ForgePlanResult.nextTierDisabled();
@@ -357,6 +358,16 @@ public final class ForgeService {
         if (state != null && state.isOnCooldown(context.getPlan().getTargetTier().getId())) {
             return false;
         }
+        ItemStack input = context.getInputItem();
+        if (input != null) {
+            Optional<TierDefinition> nextTier = configService.getTierRepository()
+                .findExactNext(input.getType(), plan.getCurrentTierLevel());
+            if (!nextTier.isPresent()
+                || plan.getTargetTier() == null
+                || !plan.getTargetTier().getId().equals(nextTier.get().getId())) {
+                return false;
+            }
+        }
         return true;
     }
 
@@ -513,18 +524,6 @@ public final class ForgeService {
             custody.add(input.clone());
         }
         return custody;
-    }
-
-    private TierDefinition findExactNextTier(ConfigSnapshot config, int currentTierLevel) {
-        if (config == null) return null;
-        List<TierDefinition> tiers = config.getTiers();
-        if (tiers == null) return null;
-        for (TierDefinition tier : tiers) {
-            if (tier.getLevel() == currentTierLevel + 1) {
-                return tier;
-            }
-        }
-        return null;
     }
 
     private Location resolveStationLocation(ForgePlan plan) {

@@ -127,11 +127,16 @@ variants:
         radius: "3.5"
         particle-candidates:
           - FLAME
+          - LAVA
       - id: storm_every_five
         type: EVERY_N_HIT_LIGHTNING
         hit-interval: 5
         cooldown-ticks: 0
         chance: "1.0"
+        particle-candidates:
+          - ELECTRIC_SPARK
+          - NOTE
+          - CRIT
   aegis:
     weight: "40.0"
     applicable-groups:
@@ -154,6 +159,8 @@ variants:
         cooldown-ticks: 80
         chance: "0.12"
         heal-amount: "1.0"
+        particle-candidates:
+          - HEART
       - id: aegis_resistance
         type: PASSIVE_POTION
         cooldown-ticks: 0
@@ -162,6 +169,9 @@ variants:
           - RESISTANCE
         duration-ticks: 40
         amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
         activation-slots:
           - MAINHAND
   vital:
@@ -184,6 +194,8 @@ variants:
           - REGENERATION
         duration-ticks: 40
         amplifier: 0
+        particle-candidates:
+          - HEART
         activation-slots:
           - MAIN_HAND
           - OFF_HAND
@@ -192,5 +204,7 @@ variants:
         type: SHIFT_RIGHT_CLICK_HEAL
         cooldown-ticks: 200
         heal-amount: "3"
+        particle-candidates:
+          - HEART
         activation-slots:
           - MAINHAND

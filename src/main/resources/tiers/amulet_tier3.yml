@@ -47,7 +47,7 @@ animation:
   interval-ticks: 4
 variants:
   curative_ii:
-    weight: "50.0"
+    weight: "34.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#bbf7d0:#15803d><bold>Curative II %base_name%</bold></gradient>"
@@ -64,16 +64,18 @@ variants:
           - REGENERATION
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - HEART
         activation-slots:
           - INVENTORY
   fleet_ii:
-    weight: "50.0"
+    weight: "33.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#bae6fd:#1d4ed8><bold>Fleet II %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier III amulet variant"
-      - "<aqua>Speed II for 60 seconds while in inventory"
+      - "<aqua>Speed II for 60 seconds while held in main or off hand"
     enchantments: []
     attributes: []
     powers:
@@ -84,5 +86,28 @@ variants:
           - SPEED
         duration-ticks: 1200
         amplifier: 1
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
-          - INVENTORY
+          - MAIN_HAND
+          - OFF_HAND
+  restorative_charm:
+    weight: "33.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#f9a8d4:#ec4899><bold>Restorative Charm %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Tier III amulet variant"
+      - "<light_purple>Shift + right click to heal 3 health"
+      - "<white>Cooldown: 5s"
+    enchantments: []
+    attributes: []
+    powers:
+      - id: restorative_charm_heal
+        type: SHIFT_RIGHT_CLICK_HEAL
+        cooldown-ticks: 100
+        heal-amount: "3"
+        particle-candidates:
+          - HEART

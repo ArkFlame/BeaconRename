@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Shield Tier I forged variant"
       - "<dark_gray>● <white>Resistance while equipped"
-      - "<dark_gray>● <white>60 seconds duration"
+      - "<dark_gray>● <white>3 seconds duration"
     enchantments: []
     attributes: []
     powers:
@@ -123,6 +123,9 @@ variants:
           - RESISTANCE
         duration-ticks: 60
         amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
         activation-slots:
           - MAIN_HAND
           - OFF_HAND

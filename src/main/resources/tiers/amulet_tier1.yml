@@ -64,6 +64,8 @@ variants:
           - REGENERATION
         duration-ticks: 1200
         amplifier: 0
+        particle-candidates:
+          - HEART
         activation-slots:
           - INVENTORY
   fleet_charm:
@@ -73,7 +75,7 @@ variants:
     display-name: "<gradient:#67e8f9:#2563eb><bold>Fleet Charm %base_name%</bold></gradient>"
     lore:
       - "<gray>Tier I amulet variant"
-      - "<aqua>Speed for 60 seconds while in inventory"
+      - "<aqua>Speed for 60 seconds while held in main or off hand"
     enchantments: []
     attributes: []
     powers:
@@ -84,5 +86,10 @@ variants:
           - SPEED
         duration-ticks: 1200
         amplifier: 0
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
-          - INVENTORY
+          - MAIN_HAND
+          - OFF_HAND

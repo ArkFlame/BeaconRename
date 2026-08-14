@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Weapon Tier IV forged variant"
       - "<dark_gray>Power: Chain damage on hit"
-      - "<dark_gray>Cooldown: 80 seconds"
+      - "<dark_gray>Cooldown: 4s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -121,11 +121,12 @@ variants:
         cooldown-ticks: 80
         chance: "0.15"
         damage-amount: "1.25"
-        radius: "4.5"
-        max-targets: 4
+        radius: "5.0"
+        max-targets: 8
         chain-delay-ticks: 2
         trail-points: 10
         particle-candidates:
+          - ELECTRIC_SPARK
           - NOTE
           - CRIT
   hemorrhaging:
@@ -136,7 +137,7 @@ variants:
     lore:
       - "<gray>Weapon Tier IV forged variant"
       - "<dark_gray>Power: Heavy bleed on hit"
-      - "<dark_gray>Cooldown: 60 seconds"
+      - "<dark_gray>Cooldown: 3s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -148,6 +149,9 @@ variants:
         damage-amount: "0.75"
         pulse-count: 3
         pulse-interval-ticks: 12
+        particle-candidates:
+          - CRIT
+          - HEART
   executioner:
     weight: "33.0"
     applicable-groups:
@@ -156,7 +160,7 @@ variants:
     lore:
       - "<gray>Weapon Tier IV forged variant"
       - "<dark_gray>Power: Explosive strike"
-      - "<dark_gray>Cooldown: 100 seconds"
+      - "<dark_gray>Cooldown: 5s"
       - "<dark_gray>Original material retained"
     enchantments: []
     attributes: []
@@ -171,5 +175,7 @@ variants:
         max-targets: 5
         primary-knockback-multiplier: "1.5"
         particle-candidates:
+          - EXPLOSION
           - EXPLOSION_NORMAL
+          - EXPLOSION_EMITTER
           - FLAME

@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Shield Tier II forged variant"
       - "<dark_gray>● <white>100% chance to knock back attackers"
-      - "<dark_gray>● <white>40 seconds cooldown"
+      - "<dark_gray>● <white>2 seconds cooldown"
     enchantments: []
     attributes: []
     powers:
@@ -121,3 +121,6 @@ variants:
         chance: "1.0"
         horizontal-strength: "1.1"
         vertical-strength: "0.25"
+        particle-candidates:
+          - CLOUD
+          - CRIT

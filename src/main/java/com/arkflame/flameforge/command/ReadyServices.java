@@ -13,6 +13,7 @@ import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
+import com.arkflame.flameforge.item.ItemMutationService;
 import com.arkflame.flameforge.menu.MenuInputReturnService;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
 import com.arkflame.flameforge.persistence.StationRepository;
@@ -44,6 +45,7 @@ public final class ReadyServices {
     private final ForgePowerService forgePowerService;
     private final ForgeVariantEligibility forgeVariantEligibility;
     private final MenuInputReturnService menuInputReturnService;
+    private final ItemMutationService itemMutationService;
 
     public ReadyServices(ConfigService configService, TierRepository tierRepository,
                          ForgeStationService stationService, StationRepository stationRepository,
@@ -55,7 +57,8 @@ public final class ReadyServices {
                          ForgeItemPolicy forgeItemPolicy, PotionEffectResolver potionEffectResolver,
                          EquipmentBridge equipmentBridge, ForgePowerService forgePowerService,
                          ForgeVariantEligibility forgeVariantEligibility,
-                         MenuInputReturnService menuInputReturnService) {
+                         MenuInputReturnService menuInputReturnService,
+                         ItemMutationService itemMutationService) {
         this.configService = configService;
         this.tierRepository = tierRepository;
         this.stationService = stationService;
@@ -75,6 +78,7 @@ public final class ReadyServices {
         this.forgePowerService = forgePowerService;
         this.forgeVariantEligibility = forgeVariantEligibility;
         this.menuInputReturnService = menuInputReturnService;
+        this.itemMutationService = itemMutationService;
     }
 
     public ConfigService getConfigService() {
@@ -151,6 +155,10 @@ public final class ReadyServices {
 
     public MenuInputReturnService getMenuInputReturnService() {
         return menuInputReturnService;
+    }
+
+    public ItemMutationService getItemMutationService() {
+        return itemMutationService;
     }
 
     public List<String> getTierIds() {

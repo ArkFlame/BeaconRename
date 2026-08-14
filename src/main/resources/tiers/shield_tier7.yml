@@ -112,10 +112,10 @@ variants:
       - "<gray>Shield Tier VII forged variant"
       - "<dark_gray>● <white>15% damage reduction"
       - "<dark_gray>● <white>45% chance to recover 2 health"
-      - "<dark_gray>● <white>80 seconds cooldown"
+      - "<dark_gray>● <white>Heal Cooldown: 4s"
       - "<dark_gray>● <white>100% chance to knock back attackers"
       - "<dark_gray>● <white>1.75 horizontal, 0.4 vertical strength"
-      - "<dark_gray>● <white>60 seconds cooldown"
+      - "<dark_gray>● <white>Knockback Cooldown: 3s"
     enchantments: []
     attributes:
       - id: aegis_guard
@@ -127,9 +127,14 @@ variants:
         cooldown-ticks: 80
         chance: "0.45"
         heal-amount: "2"
+        particle-candidates:
+          - HEART
       - id: aegis_block
         type: ON_BLOCK_KNOCKBACK
         cooldown-ticks: 60
         chance: "1.0"
         horizontal-strength: "1.75"
         vertical-strength: "0.4"
+        particle-candidates:
+          - CLOUD
+          - CRIT

@@ -120,6 +120,8 @@ variants:
         cooldown-ticks: 60
         chance: "0.20"
         heal-amount: "2.0"
+        particle-candidates:
+          - HEART
   guardian:
     weight: "40.0"
     applicable-groups:
@@ -155,6 +157,9 @@ variants:
           - HASTE
         duration-ticks: 40
         amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - CRIT
         activation-slots:
           - MAIN_HAND
           - OFF_HAND

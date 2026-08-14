@@ -126,6 +126,10 @@ variants:
           - SPEED
         duration-ticks: 60
         amplifier: 1
+        particle-candidates:
+          - CLOUD
+          - INSTANT_EFFECT
+          - SPELL_INSTANT
         activation-slots:
           - ARMOR
       - id: seraphic_regeneration
@@ -135,6 +139,8 @@ variants:
           - REGENERATION
         duration-ticks: 60
         amplifier: 1
+        particle-candidates:
+          - HEART
         activation-slots:
           - ARMOR
   immortal_guard:

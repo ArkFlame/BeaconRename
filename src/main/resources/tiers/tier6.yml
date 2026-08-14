@@ -111,7 +111,7 @@ variants:
     lore:
       - "<gray>Tier VI forged variant"
       - "<dark_gray>● <green>28% Poison II contagion"
-      - "<dark_gray>● <white>3 second cooldown"
+      - "<dark_gray>● <white>4 second cooldown"
       - "<dark_gray>● <red>Bleeding follows the contagion"
     enchantments: []
     attributes: []
@@ -125,12 +125,13 @@ variants:
         duration-ticks: 80
         amplifier: 1
         radius: "5.5"
-        max-targets: 4
+        max-targets: 8
         chain-delay-ticks: 4
         trail-points: 12
         particle-candidates:
-          - VILLAGER_HAPPY
           - HAPPY_VILLAGER
+          - VILLAGER_HAPPY
+          - SPELL
       - id: plague_bleed
         type: ON_HIT_BLEED
         cooldown-ticks: 60
@@ -139,6 +140,7 @@ variants:
         pulse-count: 3
         pulse-interval-ticks: 14
         particle-candidates:
+          - CRIT
           - HEART
   executioner:
     weight: "40.0"
@@ -162,6 +164,9 @@ variants:
         chance: "1.0"
         horizontal-strength: "1.35"
         vertical-strength: "0.35"
+        particle-candidates:
+          - CLOUD
+          - CRIT
       - id: executioner_explosive
         type: ON_HIT_EXPLOSIVE
         cooldown-ticks: 100
@@ -173,8 +178,10 @@ variants:
         horizontal-strength: "0.55"
         vertical-strength: "0.20"
         particle-candidates:
+          - EXPLOSION
           - EXPLOSION_NORMAL
-          - CRIT
+          - EXPLOSION_EMITTER
+          - FLAME
   restoration:
     weight: "30.0"
     applicable-groups:
@@ -191,6 +198,8 @@ variants:
         type: SHIFT_RIGHT_CLICK_HEAL
         cooldown-ticks: 160
         heal-amount: "6.0"
+        particle-candidates:
+          - HEART
       - id: restoration_passive
         type: PASSIVE_POTION
         cooldown-ticks: 0
@@ -199,5 +208,7 @@ variants:
           - REGEN
         duration-ticks: 40
         amplifier: 0
+        particle-candidates:
+          - HEART
         activation-slots:
           - MAINHAND

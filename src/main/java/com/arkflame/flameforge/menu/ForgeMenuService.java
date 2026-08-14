@@ -9,6 +9,7 @@ import com.arkflame.flameforge.forge.ForgePlanResult;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.forge.CostQuote;
+import com.arkflame.flameforge.item.ItemDisplayNameResolver;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.PlayerForgeState;
@@ -110,6 +111,7 @@ public final class ForgeMenuService {
     private final ForgeVariantEligibility variantEligibility;
     private final OutcomeSelector outcomeSelector;
     private final ItemIdentityService identityService;
+    private final ItemDisplayNameResolver displayNameResolver;
     private final LoreTemplateRenderer loreTemplateRenderer;
     private final ForgeItemPolicy itemPolicy;
     private final TextRenderer textRenderer;
@@ -120,6 +122,7 @@ public final class ForgeMenuService {
                            ForgeMenuSettlementService settlementService, ConfigService configService,
                            ForgeService forgeService, ForgeVariantEligibility variantEligibility,
                            OutcomeSelector outcomeSelector, ItemIdentityService identityService,
+                           ItemDisplayNameResolver displayNameResolver,
                            LoreTemplateRenderer loreTemplateRenderer, ForgeItemPolicy itemPolicy,
                            TextRenderer textRenderer, MenuItemFactory menuItemFactory, Logger logger) {
         this.inventoryFactory = Objects.requireNonNull(inventoryFactory);
@@ -130,11 +133,24 @@ public final class ForgeMenuService {
         this.variantEligibility = Objects.requireNonNull(variantEligibility);
         this.outcomeSelector = Objects.requireNonNull(outcomeSelector);
         this.identityService = Objects.requireNonNull(identityService);
+        this.displayNameResolver = Objects.requireNonNull(displayNameResolver);
         this.loreTemplateRenderer = Objects.requireNonNull(loreTemplateRenderer);
         this.itemPolicy = Objects.requireNonNull(itemPolicy);
         this.textRenderer = Objects.requireNonNull(textRenderer);
         this.menuItemFactory = Objects.requireNonNull(menuItemFactory);
         this.logger = Objects.requireNonNull(logger);
+    }
+
+    public ForgeMenuService(InventoryFactory inventoryFactory, ForgeMenuRegistry registry,
+                           ForgeMenuSettlementService settlementService, ConfigService configService,
+                           ForgeService forgeService, ForgeVariantEligibility variantEligibility,
+                           OutcomeSelector outcomeSelector, ItemIdentityService identityService,
+                           LoreTemplateRenderer loreTemplateRenderer, ForgeItemPolicy itemPolicy,
+                           TextRenderer textRenderer, MenuItemFactory menuItemFactory, Logger logger) {
+        this(inventoryFactory, registry, settlementService, configService, forgeService,
+                variantEligibility, outcomeSelector, identityService,
+                new ItemDisplayNameResolver(identityService, configService),
+                loreTemplateRenderer, itemPolicy, textRenderer, menuItemFactory, logger);
     }
 
     public MenuResult open(Player player, PlayerForgeState session) {
@@ -514,8 +530,17 @@ public final class ForgeMenuService {
             ForgeVariant variant = vwp.variant;
             String variantName = variant.getName() != null ? variant.getName() : "Unknown";
 
+            String baseName = displayNameResolver.resolve(inputItem, null);
+            Component variantNameComponent = textRenderer.renderInheritedLiteral(
+                    variantName,
+                    Collections.singletonMap("base_name", baseName),
+                    Collections.emptyMap(),
+                    "base_name",
+                    "menu.variant-name",
+                    logger);
+
             MessageArguments args = MessageArguments.create()
-                    .component("variant_name", textRenderer.renderComponent(variantName, null, "menu.variant-name"))
+                    .component("variant_name", variantNameComponent)
                     .string("variant_chance", formatPercent(vwp.actualPct));
 
             lines.add(textRenderer.renderToMiniMessage(variantTemplate, args.getStringValues(),

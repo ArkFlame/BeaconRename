@@ -6,9 +6,13 @@ import org.bukkit.entity.Player;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -17,8 +21,10 @@ import java.util.logging.Logger;
 public final class ParticleBridge {
     private static final ParticleBridge INSTANCE = new ParticleBridge();
     private static final int MAX_CACHE_ENTRIES = 256;
+    private static final int MAX_UNAVAILABLE_KEYS = 64;
     private static final Map<String, String> PARTICLE_ALIASES = new ConcurrentHashMap<>();
     private static final Map<String, Integer> LEGACY_EFFECT_IDS = new HashMap<>();
+    private static final Map<String, String[]> EQUIVALENCE_FAMILIES = new HashMap<>();
     private static final Map<String, Object> PARTICLE_CACHE = new ConcurrentHashMap<>(MAX_CACHE_ENTRIES);
     private static final Object PARTICLE_NOT_FOUND = new Object();
 
@@ -31,6 +37,7 @@ public final class ParticleBridge {
     private final Constructor<?> dustOptionsConstructor;
     private final AtomicBoolean coloredDustDiagnostic = new AtomicBoolean(false);
     private final Logger logger = Logger.getLogger(ParticleBridge.class.getName());
+    private final Set<String> unavailableKeys = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
 
     static {
         PARTICLE_ALIASES.put("explode", "explosion_normal");
@@ -129,6 +136,19 @@ public final class ParticleBridge {
         LEGACY_EFFECT_IDS.put("squid_ink", 41);
     }
 
+    static {
+        EQUIVALENCE_FAMILIES.put("EXPLOSION", new String[] {"EXPLOSION", "EXPLOSION_NORMAL", "EXPLOSION_LARGE", "EXPLOSION_EMITTER"});
+        EQUIVALENCE_FAMILIES.put("HAPPY_VILLAGER", new String[] {"HAPPY_VILLAGER", "VILLAGER_HAPPY"});
+        EQUIVALENCE_FAMILIES.put("ANGRY_VILLAGER", new String[] {"ANGRY_VILLAGER", "VILLAGER_ANGRY"});
+        EQUIVALENCE_FAMILIES.put("INSTANT_EFFECT", new String[] {"INSTANT_EFFECT", "SPELL_INSTANT"});
+        EQUIVALENCE_FAMILIES.put("EFFECT", new String[] {"EFFECT", "SPELL"});
+        EQUIVALENCE_FAMILIES.put("SMOKE", new String[] {"SMOKE", "SMOKE_NORMAL"});
+        EQUIVALENCE_FAMILIES.put("LARGE_SMOKE", new String[] {"LARGE_SMOKE", "SMOKE_LARGE"});
+        EQUIVALENCE_FAMILIES.put("DUST", new String[] {"DUST", "REDSTONE"});
+        EQUIVALENCE_FAMILIES.put("ENCHANT", new String[] {"ENCHANT", "ENCHANTMENT_TABLE"});
+        EQUIVALENCE_FAMILIES.put("ELECTRIC_SPARK", new String[] {"ELECTRIC_SPARK", "NOTE", "CRIT"});
+    }
+
     private ParticleBridge() {
         Class<?> clazz = null;
         Method method = null;
@@ -193,12 +213,17 @@ public final class ParticleBridge {
         if (coloredSpawnParticleMethod != null && dustOptionsClass != null
             && colorFromRgbMethod != null && dustOptionsConstructor != null) {
             try {
-                Object particle = resolveParticle("redstone");
-                Object color = colorFromRgbMethod.invoke(null, clamp(red), clamp(green), clamp(blue));
-                Object dust = dustOptionsConstructor.newInstance(color, Math.max(0.01f, size));
-                coloredSpawnParticleMethod.invoke(player, particle, location, count,
-                    0.0, 0.0, 0.0, 0.0, dust);
-                return;
+                Object particle = resolveParticle("DUST");
+                if (particle == null) {
+                    particle = resolveParticle("REDSTONE");
+                }
+                if (particle != null) {
+                    Object color = colorFromRgbMethod.invoke(null, clamp(red), clamp(green), clamp(blue));
+                    Object dust = dustOptionsConstructor.newInstance(color, Math.max(0.01f, size));
+                    coloredSpawnParticleMethod.invoke(player, particle, location, count,
+                        0.0, 0.0, 0.0, 0.0, dust);
+                    return;
+                }
             } catch (ReflectiveOperationException | RuntimeException e) {
                 logColoredDustFallback(e);
             } catch (LinkageError e) {
@@ -207,12 +232,96 @@ public final class ParticleBridge {
         } else {
             logColoredDustFallback(null);
         }
-        sendToPlayer(player, "spell", location, 0f, 0f, 0f, 0f, count);
+        sendFirstAvailable(player, location, Arrays.asList("DUST", "REDSTONE", "dust"),
+            0f, 0f, 0f, 0f, count);
     }
 
     private void logColoredDustFallback(Throwable failure) {
         if (coloredDustDiagnostic.compareAndSet(false, true)) {
             logger.log(Level.FINE, "Colored forge dust unavailable; using cosmetic fallback", failure);
+        }
+    }
+
+    public boolean sendFirstAvailable(Player player, Location location, List<String> candidates,
+                                      float offsetX, float offsetY, float offsetZ,
+                                      float speed, int count) {
+        if (player == null || location == null || candidates == null || candidates.isEmpty()) {
+            return false;
+        }
+        for (String candidate : candidates) {
+            if (candidate == null || candidate.isEmpty()) {
+                continue;
+            }
+            for (String name : buildEquivalenceFamily(candidate)) {
+                Object particle = resolveParticle(name);
+                if (particle == null) {
+                    continue;
+                }
+                if (trySpawnParticle(player, location, particle, offsetX, offsetY, offsetZ, speed, count)) {
+                    return true;
+                }
+            }
+            if (tryLegacyEffect(player, location, candidate)) {
+                return true;
+            }
+        }
+        logUnavailableFamily(candidates.toString());
+        return false;
+    }
+
+    private List<String> buildEquivalenceFamily(String candidate) {
+        List<String> family = new ArrayList<String>();
+        String normalized = candidate.toUpperCase();
+        family.add(normalized);
+        String[] members = EQUIVALENCE_FAMILIES.get(normalized);
+        if (members != null) {
+            for (String member : members) {
+                if (!family.contains(member)) {
+                    family.add(member);
+                }
+            }
+        }
+        return family;
+    }
+
+    private boolean trySpawnParticle(Player player, Location location, Object particle,
+                                     float offsetX, float offsetY, float offsetZ,
+                                     float speed, int count) {
+        if (spawnParticleMethod == null) {
+            return false;
+        }
+        try {
+            if (spawnParticleMethod.getParameterTypes().length == 3) {
+                spawnParticleMethod.invoke(player, particle, location, count);
+            } else {
+                spawnParticleMethod.invoke(player, particle, location, count,
+                    (double) offsetX, (double) offsetY, (double) offsetZ, (double) speed);
+            }
+            return true;
+        } catch (Exception | LinkageError e) {
+            return false;
+        }
+    }
+
+    private boolean tryLegacyEffect(Player player, Location location, String particleKey) {
+        Effect effect = getLegacyEffect(particleKey);
+        if (effect == null) {
+            return false;
+        }
+        try {
+            player.playEffect(location, effect, null);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void logUnavailableFamily(String familyKey) {
+        if (familyKey == null || familyKey.isEmpty() || unavailableKeys.size() >= MAX_UNAVAILABLE_KEYS) {
+            return;
+        }
+        if (unavailableKeys.add(familyKey)) {
+            logger.log(Level.FINE, "No particle available for family " + familyKey);
         }
     }
 
@@ -264,7 +373,7 @@ public final class ParticleBridge {
             }
         }
 
-        Integer effectId = LEGACY_EFFECT_IDS.get(particleKey.toUpperCase());
+        Integer effectId = LEGACY_EFFECT_IDS.get(particleKey.toLowerCase());
         if (effectId != null) {
             sendLegacyEffect(player, locationFromPlayer(player), effectId);
             putInCache(particleKey, particleKey);
@@ -315,7 +424,8 @@ public final class ParticleBridge {
             } else {
                 spawnParticleMethod.invoke(player, particle, location, 1, 0.0, 0.0, 0.0, 0.0);
             }
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
+            logUnavailableFamily(String.valueOf(particle));
         }
     }
 
@@ -323,7 +433,8 @@ public final class ParticleBridge {
         try {
             Effect effect = Effect.values()[effectId];
             player.playEffect(location, effect, null);
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
+            logUnavailableFamily("legacy-effect-" + effectId);
         }
     }
 
@@ -331,8 +442,13 @@ public final class ParticleBridge {
                             final float offsetX, final float offsetY, final float offsetZ,
                             final float speed, final int count) {
         try {
-            String particleName = PARTICLE_ALIASES.getOrDefault(particleKey.toLowerCase(), particleKey.toLowerCase());
-            Object particle = resolveParticle(particleName);
+            Object particle = resolveParticle(particleKey);
+            if (particle == null) {
+                String alias = PARTICLE_ALIASES.get(particleKey.toLowerCase());
+                if (alias != null) {
+                    particle = resolveParticle(alias);
+                }
+            }
             if (particle == null) {
                 sendLegacy(player, particleKey, location, offsetX, offsetY, offsetZ, speed, count);
                 return;
@@ -341,9 +457,9 @@ public final class ParticleBridge {
                 spawnParticleMethod.invoke(player, particle, location, count);
             } else {
                 spawnParticleMethod.invoke(player, particle, location, count,
-                    offsetX, offsetY, offsetZ, speed);
+                    (double) offsetX, (double) offsetY, (double) offsetZ, (double) speed);
             }
-        } catch (Exception e) {
+        } catch (Exception | LinkageError e) {
             sendLegacy(player, particleKey, location, offsetX, offsetY, offsetZ, speed, count);
         }
     }
@@ -351,16 +467,15 @@ public final class ParticleBridge {
     private void sendLegacy(final Player player, final String particleKey, final Location location,
                             final float offsetX, final float offsetY, final float offsetZ,
                             final float speed, final int count) {
+        Effect effect = getLegacyEffect(particleKey);
+        if (effect == null) {
+            logUnavailableFamily(particleKey);
+            return;
+        }
         try {
-            Effect effect = getLegacyEffect(particleKey);
-            if (effect != null) {
-                player.playEffect(location, effect, null);
-            }
+            player.playEffect(location, effect, null);
         } catch (Exception e) {
-            try {
-                player.playEffect(location, Effect.FOOTSTEP, null);
-            } catch (Exception ignored) {
-            }
+            logUnavailableFamily(particleKey);
         }
     }
 
@@ -371,10 +486,9 @@ public final class ParticleBridge {
         }
         Integer id = LEGACY_EFFECT_IDS.get(effectName);
         if (id != null) {
-            for (Effect effect : Effect.values()) {
-                if (effect.getId() == id) {
-                    return effect;
-                }
+            Effect[] values = Effect.values();
+            if (id >= 1 && id <= values.length) {
+                return values[id - 1];
             }
         }
         try {
