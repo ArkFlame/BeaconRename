@@ -58,6 +58,28 @@ class ConfigServiceTest {
     }
 
     @Test
+    void bundledPowerTraceDefaultsFalseWhenFallbackIsTrue() throws Exception {
+        configService.initialLoad();
+
+        assertFalse(configService.getCurrentSnapshot().getRootBoolean("forge.power-trace", true));
+    }
+
+    @Test
+    void operatorPowerTracePublishesAfterInitialLoadAndReload() throws Exception {
+        configService.initialLoad();
+
+        assertFalse(configService.getCurrentSnapshot().getRootBoolean("forge.power-trace", true));
+
+        Files.write(tempDir.resolve("config.yml"),
+            "forge:\n  power-trace: true\n".getBytes(StandardCharsets.UTF_8));
+        ConfigService.ReloadResult result = configService.reloadAsync().getNow(null);
+
+        assertNotNull(result);
+        assertEquals(ConfigService.ReloadResult.Status.APPLIED, result.getStatus());
+        assertTrue(configService.getCurrentSnapshot().getRootBoolean("forge.power-trace", false));
+    }
+
+    @Test
     void validateDoesNotPublishCandidateSnapshot() throws Exception {
         configService.initialLoad();
         ConfigSnapshot before = configService.getCurrentSnapshot();

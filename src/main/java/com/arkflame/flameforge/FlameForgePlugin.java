@@ -9,6 +9,8 @@ import com.arkflame.flameforge.command.StartupFailure;
 import com.arkflame.flameforge.compat.RuntimeCapabilities;
 import com.arkflame.flameforge.compat.RuntimePlatform;
 import com.arkflame.flameforge.compat.effect.ParticleBridge;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticleNetworkRenderer;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticlePatternBuilder;
 import com.arkflame.flameforge.compat.effect.PotionEffectResolver;
 import com.arkflame.flameforge.compat.effect.SoundResolver;
 import com.arkflame.flameforge.compat.equipment.EquipmentBridge;
@@ -43,6 +45,7 @@ import com.arkflame.flameforge.hook.EconomyServiceFactory;
 import com.arkflame.flameforge.hook.PluginConditionService;
 import com.arkflame.flameforge.item.AttributeBridge;
 import com.arkflame.flameforge.item.EnchantmentResolver;
+import com.arkflame.flameforge.item.ForgeExampleItemService;
 import com.arkflame.flameforge.item.ItemFactory;
 import com.arkflame.flameforge.item.ItemDisplayNameResolver;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
@@ -52,6 +55,7 @@ import com.arkflame.flameforge.listener.ForgeInteractListener;
 import com.arkflame.flameforge.listener.ForgeInventoryListener;
 import com.arkflame.flameforge.listener.ForgePowerListener;
 import com.arkflame.flameforge.listener.PlayerLifecycleListener;
+import com.arkflame.flameforge.listener.WeaponsMenuListener;
 import com.arkflame.flameforge.menu.ForgeMenuService;
 import com.arkflame.flameforge.menu.ForgeMenuRegistry;
 import com.arkflame.flameforge.menu.ForgeMenuSettlementService;
@@ -63,6 +67,7 @@ import com.arkflame.flameforge.menu.MenuInputReturnService;
 import com.arkflame.flameforge.menu.SimpleInventoryFactory;
 import com.arkflame.flameforge.menu.MenuItemFactory;
 import com.arkflame.flameforge.menu.LoreTemplateRenderer;
+import com.arkflame.flameforge.menu.WeaponsMenuService;
 import com.arkflame.flameforge.persistence.AuditLogService;
 import com.arkflame.flameforge.persistence.PendingDeliveryRepository;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
@@ -169,6 +174,8 @@ public final class FlameForgePlugin extends JavaPlugin {
     private ItemIdentityCodec itemIdentityCodec;
     private ItemIdentityService itemIdentityService;
     private ItemMutationService itemMutationService;
+    private ForgeExampleItemService forgeExampleItemService;
+    private WeaponsMenuService weaponsMenuService;
     private ForgeVariantEligibility forgeVariantEligibility;
     private ForgeItemPolicy forgeItemPolicy;
     private PotionEffectResolver potionEffectResolver;
@@ -182,6 +189,7 @@ public final class FlameForgePlugin extends JavaPlugin {
     private ForgeInventoryListener forgeInventoryListener;
     private ForgePowerListener forgePowerListener;
     private PlayerLifecycleListener playerLifecycleListener;
+    private WeaponsMenuListener weaponsMenuListener;
 
     private CommandSuggestionIndex suggestionIndex;
     private ReadyServices readyServices;
@@ -347,8 +355,12 @@ public final class FlameForgePlugin extends JavaPlugin {
         );
         economyService = economyFactory.create();
 
-        ParticleBridge particleBridge = ParticleBridge.getInstance();
-        multiStrikeService = new MultiStrikeService(schedulerBridge, particleBridge);
+        ParticleBridge particleBridge = ParticleBridge.create(schedulerBridge);
+        ParticlePatternBuilder particlePatternBuilder = new ParticlePatternBuilder();
+        ParticleNetworkRenderer particleNetworkRenderer = new ParticleNetworkRenderer(
+            schedulerBridge, particleBridge, particlePatternBuilder
+        );
+        multiStrikeService = new MultiStrikeService(schedulerBridge, particleBridge, particleNetworkRenderer);
         SoundResolver soundResolver = SoundResolver.getInstance();
         ForgeItemVisualService forgeItemVisualService = new ForgeItemVisualService(this);
         ForgeAnimationThemeResolver forgeAnimationThemeResolver = new ForgeAnimationThemeResolver();
@@ -370,7 +382,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         forgeStationService = new ForgeStationService(this, schedulerBridge, stationRepository, configService, textRenderer, teleportBridge);
         forgeAnimationService = new ForgeAnimationService(
             this, schedulerBridge, particleBridge, soundResolver, textBridge, textRenderer, forgeItemVisualService,
-            forgeAnimationThemeResolver
+            forgeAnimationThemeResolver, particleNetworkRenderer
         );
         forgeSessionService = new ForgeSessionService();
 
@@ -393,9 +405,18 @@ public final class FlameForgePlugin extends JavaPlugin {
             equipmentBridge,
             itemIdentityService,
             multiStrikeService,
-            tierRepository
+            tierRepository,
+            () -> configService.getCurrentSnapshot().getRootBoolean("forge.power-trace", false),
+            particleNetworkRenderer
         );
         menuInputReturnService = new MenuInputReturnService(deliveryService);
+        forgeExampleItemService = new ForgeExampleItemService(
+            tierRepository,
+            MaterialResolver.getInstance(),
+            forgeVariantEligibility,
+            itemIdentityService,
+            itemMutationService
+        );
 
         Map<String, Object> wardConfig = configService.getCurrentSnapshot().getWard("default");
         outcomeExecutor = new OutcomeExecutor(
@@ -424,6 +445,20 @@ public final class FlameForgePlugin extends JavaPlugin {
 
         InventoryFactory inventoryFactory = new SimpleInventoryFactory();
         MenuItemFactory menuItemFactory = new MenuItemFactory(MaterialResolver.getInstance(), textRenderer);
+        weaponsMenuService = new WeaponsMenuService(
+            tierRepository,
+            forgeExampleItemService,
+            configService,
+            inventoryFactory,
+            menuItemFactory,
+            textRenderer,
+            menuInputReturnService,
+            forgePowerService,
+            messageService,
+            schedulerBridge,
+            getLogger()
+        );
+        weaponsMenuListener = new WeaponsMenuListener(weaponsMenuService);
         forgeMenuRegistry = new ForgeMenuRegistry();
         forgeMenuSettlementService = new ForgeMenuSettlementService(menuInputReturnService);
         LoreTemplateRenderer loreTemplateRenderer = new LoreTemplateRenderer();
@@ -495,7 +530,9 @@ public final class FlameForgePlugin extends JavaPlugin {
             forgePowerService,
             forgeVariantEligibility,
             menuInputReturnService,
-            itemMutationService
+            itemMutationService,
+            forgeExampleItemService,
+            weaponsMenuService
         );
 
         updateSuggestionIndex();
@@ -508,6 +545,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         );
         forgePowerListener = new ForgePowerListener(forgePowerService, equipmentBridge, itemIdentityService, tierRepository, schedulerBridge, attributeBridge, handBridge);
         equipmentBridge.registerOffhandSwapListener(this, forgePowerListener::queuePassiveRefresh);
+        equipmentBridge.registerDispenserArmorListener(this, forgePowerListener::queuePassiveRefresh);
         playerLifecycleListener = new PlayerLifecycleListener(
             this,
             forgeStationService,
@@ -535,6 +573,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(forgeInteractListener, this);
         getServer().getPluginManager().registerEvents(forgeInventoryListener, this);
         getServer().getPluginManager().registerEvents(forgePowerListener, this);
+        getServer().getPluginManager().registerEvents(weaponsMenuListener, this);
         getServer().getPluginManager().registerEvents(playerLifecycleListener, this);
     }
 

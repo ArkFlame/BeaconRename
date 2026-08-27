@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,14 +105,13 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   steadfast:
-    weight: "100.0"
+    weight: "34.0"
     applicable-groups:
       - SHIELD
     display-name: "<gradient:#d1d5db:#64748b><bold>Steadfast %base_name%</bold></gradient>"
     lore:
       - "<gray>Shield Tier I forged variant"
-      - "<dark_gray>● <white>Resistance while equipped"
-      - "<dark_gray>● <white>3 seconds duration"
+      - "<dark_gray>● <blue>Resistance while equipped."
     enchantments: []
     attributes: []
     powers:
@@ -127,5 +127,48 @@ variants:
           - ENCHANT
           - SPELL
         activation-slots:
-          - MAIN_HAND
-          - OFF_HAND
+           - MAIN_HAND
+           - OFF_HAND
+  mending_guard:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#86efac:#15803d><bold>Mending Guard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier I forged variant"
+      - "<dark_gray>● <green>Heal while blocking."
+      - "<dark_gray>● <white>Cooldown: 4s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: mending_guard_heal
+        type: ON_BLOCK_HEAL
+        cooldown-ticks: 80
+        chance: "0.12"
+        heal-amount: "0.5"
+        particle-candidates:
+          - HEART
+  slowing_guard:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#c4b5fd:#6d28d9><bold>Slowing Guard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier I forged variant"
+      - "<dark_gray>● <aqua>Slow attackers."
+      - "<dark_gray>● <white>Cooldown: 3s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: slowing_guard_potion
+        type: ON_BLOCK_POTION
+        cooldown-ticks: 60
+        chance: "0.15"
+        effect-candidates:
+          - SLOW
+          - SLOWNESS
+        duration-ticks: 40
+        amplifier: 0
+        particle-candidates:
+          - CLOUD
+          - SPELL

@@ -11,8 +11,7 @@ import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.config.ValidationIssue;
 import com.arkflame.flameforge.config.ValidationReport;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
-import com.arkflame.flameforge.item.ItemIdentityCodec;
-import com.arkflame.flameforge.item.ItemMutationService;
+import com.arkflame.flameforge.item.ForgeExampleItemService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierChances;
 import com.arkflame.flameforge.model.TierDefinition;
@@ -132,6 +131,8 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                 return commandPreview(sender, args);
             case "testitem":
                 return commandTestItem(sender, args);
+            case "weaponsmenu":
+                return commandWeaponsMenu(sender);
             case "history":
                 return commandHistory(sender, args);
             case "tp":
@@ -169,6 +170,7 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             case "reload":
             case "validate":
             case "tiers":
+            case "weaponsmenu":
                 return Collections.emptyList();
             case "tier":
                 if (args.length == 2) {
@@ -723,59 +725,89 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
                 messageArguments("tier_id", tierId, "variant_id", variantId));
             return true;
         }
-        Material material;
+        Material explicitMaterial = null;
         if (args.length >= 4) {
-            material = materialResolver.resolve(args[3]).orElse(null);
-            if (material == null || material == Material.AIR) {
+            explicitMaterial = materialResolver.resolve(args[3]).orElse(null);
+            if (explicitMaterial == null || explicitMaterial == Material.AIR) {
                 send(sender, "testitem.material-unavailable", messageArguments("material", args[3]));
                 return true;
             }
-        } else {
-            Optional<Material> fallback = resolveFallbackMaterial(tier.getId());
-            if (!fallback.isPresent() || fallback.get() == Material.AIR) {
-                send(sender, "testitem.material-unavailable", messageArguments("material", "auto"));
-                return true;
-            }
-            material = fallback.get();
         }
-        Optional<String> tierCategoryId = tierRepository.getEquipmentCatalog().categoryIdForTier(tier.getId());
-        if (tierCategoryId.isPresent()) {
-            String materialCategoryId = tierRepository.getEquipmentCatalog()
-                .categoryForMaterial(material.name()).getId();
-            if (!tierCategoryId.get().equalsIgnoreCase(materialCategoryId)) {
+        ForgeExampleItemService exampleService = ctx.getReadyServices().getForgeExampleItemService();
+        ForgeExampleItemService.ExampleResult result = explicitMaterial != null
+            ? exampleService.create(tier, variant, explicitMaterial, UUID.randomUUID())
+            : exampleService.createDefault(tier, variant, UUID.randomUUID());
+        return sendTestItemResult(sender, (Player) sender, tierId, variantId, explicitMaterial, result);
+    }
+
+    private boolean sendTestItemResult(CommandSender sender, Player player, String tierId, String variantId,
+                                       Material explicitMaterial, ForgeExampleItemService.ExampleResult result) {
+        switch (result.getStatus()) {
+            case MATERIAL_UNAVAILABLE:
+                send(sender, "testitem.material-unavailable",
+                    messageArguments("material", explicitMaterial != null ? explicitMaterial.name() : "auto"));
+                return true;
+            case MATERIAL_CATEGORY_MISMATCH:
+                if (!result.getMaterial().isPresent() || !result.getActualCategoryId().isPresent()
+                        || !result.getRequiredCategoryId().isPresent()) {
+                    sendTestItemMutationFailed(sender, tierId, variantId, explicitMaterial);
+                    return true;
+                }
                 send(sender, "testitem.material-category-mismatch",
                     messageArguments("tier_id", tierId, "variant_id", variantId,
-                        "material", material.name(), "category", materialCategoryId,
-                        "required_category", tierCategoryId.get()));
+                        "material", result.getMaterial().get().name(),
+                        "category", result.getActualCategoryId().get(),
+                        "required_category", result.getRequiredCategoryId().get()));
                 return true;
-            }
+            case VARIANT_INELIGIBLE:
+                if (!result.getMaterial().isPresent()) {
+                    sendTestItemMutationFailed(sender, tierId, variantId, explicitMaterial);
+                    return true;
+                }
+                send(sender, "testitem.variant-ineligible",
+                    messageArguments("tier_id", tierId, "variant_id", variantId,
+                        "material", result.getMaterial().get().name()));
+                return true;
+            case MUTATION_FAILED:
+                sendTestItemMutationFailed(sender, tierId, variantId, explicitMaterial);
+                return true;
+            case SUCCESS:
+            default:
+                if (!result.getItem().isPresent() || !result.getMaterial().isPresent()) {
+                    sendTestItemMutationFailed(sender, tierId, variantId, explicitMaterial);
+                    return true;
+                }
+                ReadyServices ready = snapshot().getReadyServices();
+                ready.getMenuInputReturnService().returnToPlayer(result.getItem().get(), player);
+                ready.getForgePowerService().refreshPassivePowers(player);
+                send(sender, "testitem.success",
+                    messageArguments("tier_id", tierId, "variant_id", variantId,
+                        "material", result.getMaterial().get().name()));
+                return true;
         }
-        ReadyServices ready = ctx.getReadyServices();
-        ItemStack item = new ItemStack(material, 1);
-        if (!ready.getForgeVariantEligibility().isEligible(item, variant)) {
-            send(sender, "testitem.variant-ineligible",
-                messageArguments("tier_id", tierId, "variant_id", variantId,
-                    "material", material.name()));
-            return true;
-        }
-        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
-            .withForgeId(UUID.randomUUID())
-            .withBaseMaterial(material.name())
-            .withBaseDisplayName(ready.getItemIdentityService().defaultBaseDisplayName(material));
-        ItemMutationService.MutationResult mutation = ready.getItemMutationService()
-            .mutateSuccess(item, tier, variant, identity, identity.getForgeId());
-        if (!mutation.isSuccess() || mutation.getResult() == null) {
-            send(sender, "testitem.mutation-failed",
-                messageArguments("tier_id", tierId, "variant_id", variantId,
-                    "material", material.name()));
-            return true;
-        }
-        Player player = (Player) sender;
-        ready.getMenuInputReturnService().returnToPlayer(mutation.getResult(), player);
-        ready.getForgePowerService().refreshPassivePowers(player);
-        send(sender, "testitem.success",
+    }
+
+    private void sendTestItemMutationFailed(CommandSender sender, String tierId, String variantId,
+                                            Material explicitMaterial) {
+        send(sender, "testitem.mutation-failed",
             messageArguments("tier_id", tierId, "variant_id", variantId,
-                "material", material.name()));
+                "material", explicitMaterial != null ? explicitMaterial.name() : ""));
+    }
+
+    private boolean commandWeaponsMenu(CommandSender sender) {
+        if (!requirePermission(sender, "weaponsmenu.no-permission", "flameforge.command.weaponsmenu")) {
+            return true;
+        }
+        CommandContext ctx = snapshot();
+        if (!ctx.isReady()) {
+            sendStartupBlocker(sender, ctx);
+            return true;
+        }
+        if (!(sender instanceof Player)) {
+            send(sender, "weaponsmenu.player-only");
+            return true;
+        }
+        ctx.getReadyServices().getWeaponsMenuService().open((Player) sender, 0);
         return true;
     }
 
@@ -789,24 +821,6 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             }
         }
         return null;
-    }
-
-    private Optional<Material> resolveFallbackMaterial(String tierId) {
-        String[] candidates;
-        Optional<String> categoryId = tierRepository.getEquipmentCatalog().categoryIdForTier(tierId);
-        if (!categoryId.isPresent()) {
-            candidates = new String[]{"NETHERITE_SWORD", "DIAMOND_SWORD", "IRON_SWORD"};
-        } else if ("weapon".equalsIgnoreCase(categoryId.get())) {
-            candidates = new String[]{"NETHERITE_SWORD", "DIAMOND_SWORD", "IRON_SWORD"};
-        } else if ("armor".equalsIgnoreCase(categoryId.get())) {
-            candidates = new String[]{"NETHERITE_CHESTPLATE", "DIAMOND_CHESTPLATE", "IRON_CHESTPLATE"};
-        } else if ("shield".equalsIgnoreCase(categoryId.get())) {
-            candidates = new String[]{"SHIELD"};
-        } else {
-            candidates = new String[]{"NETHERITE_INGOT", "DIAMOND", "EMERALD", "WOOL"};
-        }
-        return materialResolver.get(candidates)
-            .map(MaterialResolver.ResolvedMaterial::getMaterial);
     }
 
     private List<String> tabCompleteTestItem(CommandSender sender, String[] args, String prefix) {

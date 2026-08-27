@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,13 +105,13 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   vital:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - ARMOR
     display-name: "<gradient:#86efac:#15803d><bold>Vital %base_name%</bold></gradient>"
     lore:
       - "<gray>Armor Tier V forged variant"
-      - "<dark_gray>● <green>Regeneration II while equipped"
+      - "<dark_gray>● <green>Regeneration II while equipped."
     enchantments: []
     attributes: []
     powers:
@@ -126,16 +127,58 @@ variants:
         activation-slots:
           - ARMOR
   featherfall_ii:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - ARMOR
     display-name: "<gradient:#bae6fd:#0284c7><bold>Featherfall II %base_name%</bold></gradient>"
     lore:
       - "<gray>Armor Tier V forged variant"
-      - "<dark_gray>● <white>50% fall damage reduction"
+      - "<dark_gray>● <blue>50% fall damage reduction."
     enchantments: []
     attributes:
       - id: featherfall_ii_reduction
         type: FALL_DAMAGE_REDUCTION_PERCENT
         value: "0.50"
     powers: []
+  spellguard:
+    weight: "25.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#c4b5fd:#6d28d9><bold>Spellguard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier V forged variant"
+      - "<dark_gray>● <blue>45% magic damage reduction."
+      - "<dark_gray>● <blue>8% damage reduction."
+    enchantments: []
+    attributes:
+      - id: spellguard_magic_reduction
+        type: MAGIC_DAMAGE_REDUCTION_PERCENT
+        value: "0.45"
+      - id: spellguard_reduction
+        type: DAMAGE_REDUCTION_PERCENT
+        value: "0.08"
+    powers: []
+  resolute:
+    weight: "25.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#d1d5db:#475569><bold>Resolute %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier V forged variant"
+      - "<dark_gray>● <blue>Resistance while equipped."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: resolute_resistance
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - DAMAGE_RESISTANCE
+          - RESISTANCE
+        duration-ticks: 60
+        amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
+        activation-slots:
+          - ARMOR

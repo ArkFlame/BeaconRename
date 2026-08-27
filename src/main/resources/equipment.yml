@@ -32,6 +32,13 @@ categories:
       - GOLD_AXE
       - DIAMOND_AXE
       - NETHERITE_AXE
+      - WOODEN_SPEAR
+      - STONE_SPEAR
+      - COPPER_SPEAR
+      - IRON_SPEAR
+      - GOLDEN_SPEAR
+      - DIAMOND_SPEAR
+      - NETHERITE_SPEAR
     progression:
       - weapon_tier1
       - weapon_tier2

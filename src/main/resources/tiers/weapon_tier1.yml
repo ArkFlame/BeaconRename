@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,15 +105,14 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   bloodletter:
-    weight: "34.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#7f1d1d:#ef4444><bold>Bloodletter %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier I forged variant"
-      - "<dark_gray>Power: Bleed on hit"
-      - "<dark_gray>Cooldown: 2s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <red>Bleed on hit."
+      - "<dark_gray>● <white>Cooldown: 2s."
     enchantments: []
     attributes: []
     powers:
@@ -125,17 +125,15 @@ variants:
         pulse-interval-ticks: 12
         particle-candidates:
           - CRIT
-          - HEART
   venomous:
-    weight: "33.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#22c55e:#166534><bold>Venomous %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier I forged variant"
-      - "<dark_gray>Power: Poison on hit"
-      - "<dark_gray>Cooldown: 2s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <green>Poison on hit."
+      - "<dark_gray>● <white>Cooldown: 2s."
     enchantments: []
     attributes: []
     powers:
@@ -152,15 +150,14 @@ variants:
           - VILLAGER_HAPPY
           - SPELL
   swift:
-    weight: "33.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#38bdf8:#2563eb><bold>Swift %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier I forged variant"
-      - "<dark_gray>Power: Shift right-click dash"
-      - "<dark_gray>Cooldown: 4s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <aqua>Shift right-click dash."
+      - "<dark_gray>● <white>Cooldown: 4s."
     enchantments: []
     attributes: []
     powers:
@@ -172,4 +169,44 @@ variants:
         particle-candidates:
           - INSTANT_EFFECT
           - SPELL_INSTANT
+          - CRIT
+  draining:
+    weight: "20.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#f87171:#991b1b><bold>Draining %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier I forged variant"
+      - "<dark_gray>● <green>Heal on hit."
+      - "<dark_gray>● <white>Cooldown: 3s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: draining_heal
+        type: ON_HIT_HEAL
+        cooldown-ticks: 60
+        chance: "0.10"
+        heal-amount: "0.5"
+        particle-candidates:
+          - HEART
+  repulsing:
+    weight: "20.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#c4b5fd:#7c3aed><bold>Repulsing %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier I forged variant"
+      - "<dark_gray>● <aqua>Knockback every fifth hit."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: repulsing_knockback
+        type: EVERY_N_HIT_KNOCKBACK
+        hit-interval: 5
+        cooldown-ticks: 0
+        chance: "1.0"
+        horizontal-strength: "0.65"
+        vertical-strength: "0.18"
+        particle-candidates:
+          - CLOUD
           - CRIT

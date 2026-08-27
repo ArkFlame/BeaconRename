@@ -30,6 +30,7 @@ public final class ItemIdentityService {
     private static final String MODERN_KEY = "state";
     private static final String HIDDEN_MARKER = "\u00A70\u00A71";
     private static final String VISIBLE_SHORT_ID_PREFIX = "Forge ID: #";
+    private static final String BLACK_VISIBLE_SHORT_ID_PREFIX = "\u00A70" + VISIBLE_SHORT_ID_PREFIX;
     private static final Pattern SHORT_ID_PATTERN = Pattern.compile("[A-HJ-NP-Z2-9]{8}");
 
     private volatile Boolean modernPdcAvailable;
@@ -639,8 +640,7 @@ public final class ItemIdentityService {
                 filtered.add(line);
             }
         }
-        filtered.add(encodeHiddenLegacyPayload(codec.encodeToString(identity)));
-        filtered.add(buildIdentityLoreLine(shortId));
+        filtered.add(buildIdentityLoreLine(shortId, encodeHiddenLegacyPayload(codec.encodeToString(identity))));
         try {
             meta.setLore(filtered);
             item.setItemMeta(meta);
@@ -666,10 +666,14 @@ public final class ItemIdentityService {
     }
 
     Optional<String> decodeHiddenLegacyPayload(final String line) {
-        if (line == null || !line.startsWith(HIDDEN_MARKER) || !line.endsWith("\u00A7r")) {
+        if (line == null) {
             return Optional.empty();
         }
-        final String encoded = line.substring(HIDDEN_MARKER.length(), line.length() - 2);
+        final int markerIndex = line.indexOf(HIDDEN_MARKER);
+        if (markerIndex < 0 || !line.endsWith("\u00A7r")) {
+            return Optional.empty();
+        }
+        final String encoded = line.substring(markerIndex + HIDDEN_MARKER.length(), line.length() - 2);
         if (encoded.length() % 4 != 0) {
             return Optional.empty();
         }
@@ -697,8 +701,17 @@ public final class ItemIdentityService {
             return Optional.empty();
         }
         for (final String line : meta.getLore()) {
-            if (line != null && line.startsWith(VISIBLE_SHORT_ID_PREFIX)) {
-                String value = line.substring(VISIBLE_SHORT_ID_PREFIX.length());
+            if (line == null) {
+                continue;
+            }
+            String prefix = null;
+            if (line.startsWith(BLACK_VISIBLE_SHORT_ID_PREFIX)) {
+                prefix = BLACK_VISIBLE_SHORT_ID_PREFIX;
+            } else if (line.startsWith(VISIBLE_SHORT_ID_PREFIX)) {
+                prefix = VISIBLE_SHORT_ID_PREFIX;
+            }
+            if (prefix != null && line.length() >= prefix.length() + 8) {
+                String value = line.substring(prefix.length(), prefix.length() + 8);
                 if (SHORT_ID_PATTERN.matcher(value).matches()) {
                     return Optional.of(value);
                 }
@@ -707,11 +720,14 @@ public final class ItemIdentityService {
         return Optional.empty();
     }
 
-    String buildIdentityLoreLine(final String shortId) {
+    String buildIdentityLoreLine(final String shortId, final String hiddenPayload) {
         if (shortId == null || !SHORT_ID_PATTERN.matcher(shortId).matches()) {
             throw new IllegalArgumentException("shortId");
         }
-        return VISIBLE_SHORT_ID_PREFIX + shortId;
+        if (hiddenPayload == null || hiddenPayload.isEmpty()) {
+            throw new IllegalArgumentException("hiddenPayload");
+        }
+        return BLACK_VISIBLE_SHORT_ID_PREFIX + shortId + hiddenPayload;
     }
 
     private Optional<String> readHiddenLegacyPayload(final ItemStack item) {
@@ -774,6 +790,7 @@ public final class ItemIdentityService {
         return line != null && (line.startsWith(LEGACY_PREFIX)
                 || line.startsWith(codec.getLegacyMarker())
                 || line.startsWith(HIDDEN_MARKER)
+                || line.startsWith(BLACK_VISIBLE_SHORT_ID_PREFIX)
                 || line.startsWith(VISIBLE_SHORT_ID_PREFIX));
     }
 

@@ -151,7 +151,7 @@ public final class OutcomeExecutor {
 
         ItemIdentityCodec.Identity identity = readRichIdentity(inputItem, forgeId);
         CurseDefinition curse = getCurseDefinition(plan);
-        boolean currentlyCursed = isCurrentlyCursed(inputItem);
+        boolean currentlyCursed = identity.isCursed();
 
         ItemMutationService.MutationResult result = mutationService.mutateCurse(
             inputItem, curse, currentlyCursed, identity, forgeId);
@@ -215,26 +215,4 @@ public final class OutcomeExecutor {
         return plan.getTargetTier().getCurseDefinition();
     }
 
-    private boolean isCurrentlyCursed(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) {
-            return false;
-        }
-        try {
-            for (org.bukkit.enchantments.Enchantment enchant : item.getItemMeta().getEnchants().keySet()) {
-                if (isEnchantmentCursed(enchant)) {
-                    return true;
-                }
-            }
-        } catch (Exception e) {
-        }
-        return false;
-    }
-
-    private boolean isEnchantmentCursed(org.bukkit.enchantments.Enchantment enchant) {
-        if (enchant == null) {
-            return false;
-        }
-        String name = enchant.getName();
-        return "VANISHING_CURSE".equals(name) || "BINDING_CURSE".equals(name);
-    }
 }

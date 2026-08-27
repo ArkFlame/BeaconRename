@@ -1,6 +1,5 @@
 package com.arkflame.flameforge;
 
-import com.arkflame.flameforge.compat.effect.ParticleBridge;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.config.ConfigService;
 import com.arkflame.flameforge.forge.ForgeService;
@@ -106,7 +105,6 @@ public final class ForgeAccessService {
     private final ForgeMenuService menuService;
     private final ConfigService configService;
     private final ForgeService forgeService;
-    private final ParticleBridge particleBridge;
     private final TargetBlockBridge targetBlockBridge;
     private final AtomicLong openFailureSequence = new AtomicLong();
 
@@ -124,7 +122,6 @@ public final class ForgeAccessService {
         this.menuService = Objects.requireNonNull(menuService);
         this.configService = Objects.requireNonNull(configService);
         this.forgeService = Objects.requireNonNull(forgeService);
-        this.particleBridge = ParticleBridge.getInstance();
         this.targetBlockBridge = new TargetBlockBridge(plugin, scheduler);
     }
 
@@ -134,10 +131,6 @@ public final class ForgeAccessService {
 
     public ForgeService getForgeService() {
         return forgeService;
-    }
-
-    public ParticleBridge getParticleBridge() {
-        return particleBridge;
     }
 
     public TargetBlockBridge getTargetBlockBridge() {

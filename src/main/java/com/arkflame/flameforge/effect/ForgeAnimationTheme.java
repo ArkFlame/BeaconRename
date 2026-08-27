@@ -1,44 +1,28 @@
 package com.arkflame.flameforge.effect;
 
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyle;
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyleCatalog;
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyleId;
+
 import java.util.Objects;
 
 /** Immutable visual palette for one forge result. */
 public final class ForgeAnimationTheme {
     private final String id;
-    private final int auraRed;
-    private final int auraGreen;
-    private final int auraBlue;
-    private final int starRed;
-    private final int starGreen;
-    private final int starBlue;
-    private final String auraParticle;
-    private final String starParticle;
+    private final ParticleStyleId styleId;
 
-    public ForgeAnimationTheme(String id, int auraRed, int auraGreen, int auraBlue,
-                               int starRed, int starGreen, int starBlue,
-                               String auraParticle, String starParticle) {
+    public ForgeAnimationTheme(String id, ParticleStyleId styleId) {
         this.id = Objects.requireNonNull(id, "id");
-        this.auraRed = clampChannel(auraRed);
-        this.auraGreen = clampChannel(auraGreen);
-        this.auraBlue = clampChannel(auraBlue);
-        this.starRed = clampChannel(starRed);
-        this.starGreen = clampChannel(starGreen);
-        this.starBlue = clampChannel(starBlue);
-        this.auraParticle = auraParticle != null ? auraParticle : "flame";
-        this.starParticle = starParticle != null ? starParticle : "firework";
+        this.styleId = Objects.requireNonNull(styleId, "styleId");
     }
 
     public String getId() { return id; }
-    public int getAuraRed() { return auraRed; }
-    public int getAuraGreen() { return auraGreen; }
-    public int getAuraBlue() { return auraBlue; }
-    public int getStarRed() { return starRed; }
-    public int getStarGreen() { return starGreen; }
-    public int getStarBlue() { return starBlue; }
-    public String getAuraParticle() { return auraParticle; }
-    public String getStarParticle() { return starParticle; }
-
-    private static int clampChannel(int value) {
-        return Math.max(0, Math.min(255, value));
-    }
+    public ParticleStyleId getStyleId() { return styleId; }
+    public ParticleStyle getStyle() { return ParticleStyleCatalog.get(styleId); }
+    public int getAuraRed() { return getStyle().getRed(); }
+    public int getAuraGreen() { return getStyle().getGreen(); }
+    public int getAuraBlue() { return getStyle().getBlue(); }
+    public int getStarRed() { return getStyle().getRed(); }
+    public int getStarGreen() { return getStyle().getGreen(); }
+    public int getStarBlue() { return getStyle().getBlue(); }
 }

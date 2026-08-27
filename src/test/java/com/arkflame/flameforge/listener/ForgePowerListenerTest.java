@@ -16,6 +16,7 @@ import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
@@ -31,6 +32,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerPickupItemEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.Material;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -47,6 +49,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
@@ -125,6 +128,7 @@ class ForgePowerListenerTest {
     void sneakingRightClickActivatesDashFromMainHandItem() {
         Harness harness = new Harness().withSynchronousScheduler();
         Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         when(player.isOnline()).thenReturn(true);
         when(player.isSneaking()).thenReturn(true);
         PlayerInteractEvent interact = mock(PlayerInteractEvent.class);
@@ -146,6 +150,7 @@ class ForgePowerListenerTest {
     void offHandSneakingRightClickActivatesOffhandItem() {
         Harness harness = new Harness().withSynchronousScheduler();
         Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         when(player.isOnline()).thenReturn(true);
         when(player.isSneaking()).thenReturn(true);
         PlayerInteractEvent interact = mock(PlayerInteractEvent.class);
@@ -164,6 +169,27 @@ class ForgePowerListenerTest {
     }
 
     @Test
+    void cursedRightClickCannotActivateActivePower() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(player.isOnline()).thenReturn(true);
+        when(player.isSneaking()).thenReturn(true);
+        PlayerInteractEvent interact = mock(PlayerInteractEvent.class);
+        when(interact.getAction()).thenReturn(Action.RIGHT_CLICK_AIR);
+        when(interact.getPlayer()).thenReturn(player);
+        when(harness.handBridge.getHand(interact)).thenReturn(InteractionHandBridge.Hand.MAIN);
+        ItemStack item = forgedItemWithPower(harness, "cursed-tier", "cursed-variant", "dash",
+            UUID.randomUUID(), ForgePowerDefinition.PowerType.SHIFT_RIGHT_CLICK_DASH, true);
+        when(harness.equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND)).thenReturn(item);
+
+        harness.listener.onPlayerInteract(interact);
+
+        verify(harness.powerService, never()).activateDash(any(), any(), any());
+        verify(harness.powerService, never()).activateHeal(any(), any(), any());
+    }
+
+    @Test
     void nonSneakingRightClickActivatesNothing() {
         Harness harness = new Harness().withSynchronousScheduler();
         Player player = mock(Player.class);
@@ -176,6 +202,80 @@ class ForgePowerListenerTest {
         harness.listener.onPlayerInteract(interact);
 
         verifyNoInteractions(harness.powerService);
+    }
+
+    @Test
+    void rightClickArmorItemQueuesPassiveRefreshWithoutSneaking() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(player.isOnline()).thenReturn(true);
+        when(player.isSneaking()).thenReturn(false);
+        PlayerInteractEvent interact = mock(PlayerInteractEvent.class);
+        when(interact.getAction()).thenReturn(Action.RIGHT_CLICK_AIR);
+        when(interact.getPlayer()).thenReturn(player);
+        when(harness.handBridge.getHand(interact)).thenReturn(InteractionHandBridge.Hand.MAIN);
+        ItemStack armorItem = mock(ItemStack.class);
+        when(armorItem.hasItemMeta()).thenReturn(true);
+        when(armorItem.getType()).thenReturn(Material.DIAMOND_CHESTPLATE);
+        when(harness.equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND)).thenReturn(armorItem);
+        when(harness.identityService.readForgeIdentity(armorItem)).thenReturn(
+            new ItemIdentityService.ForgeIdentityRead(
+                ItemIdentityService.ForgeIdentityStatus.INVALID, ItemIdentityCodec.Identity.empty()));
+        when(harness.tierRepository.findEquipmentCategory(Material.DIAMOND_CHESTPLATE))
+            .thenReturn(Optional.of("armor"));
+
+        harness.listener.onPlayerInteract(interact);
+
+        verify(harness.powerService).refreshPassivePowers(player);
+        verify(harness.powerService, never()).activateDash(any(), any(), any());
+        verify(harness.powerService, never()).activateHeal(any(), any(), any());
+    }
+
+    @Test
+    void rightClickDashStillActivatesAndCoalescesPassiveRefresh() {
+        Harness harness = new Harness().withDeferredScheduler();
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(player.isOnline()).thenReturn(true);
+        when(player.isSneaking()).thenReturn(true);
+        PlayerInteractEvent interact = mock(PlayerInteractEvent.class);
+        when(interact.getAction()).thenReturn(Action.RIGHT_CLICK_AIR);
+        when(interact.getPlayer()).thenReturn(player);
+        when(harness.handBridge.getHand(interact)).thenReturn(InteractionHandBridge.Hand.MAIN);
+        UUID forgeId = UUID.randomUUID();
+        ItemStack dashItem = forgedItemWithPower(harness, "dash-tier", "dash-variant", "dash",
+            forgeId, ForgePowerDefinition.PowerType.SHIFT_RIGHT_CLICK_DASH);
+        when(harness.equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND)).thenReturn(dashItem);
+
+        harness.listener.onPlayerInteract(interact);
+
+        verify(harness.powerService).activateDash(eq(player), any(ForgePowerDefinition.class), eq(forgeId));
+        verify(harness.powerService, never()).refreshPassivePowers(player);
+        harness.deferredRunnables.get(0).run();
+        verify(harness.powerService, times(1)).refreshPassivePowers(player);
+    }
+
+    @Test
+    void burstMutationEventsCoalesceToOneFinalRefresh() {
+        Harness harness = new Harness().withDeferredScheduler();
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+
+        PlayerItemHeldEvent held = mock(PlayerItemHeldEvent.class);
+        when(held.getPlayer()).thenReturn(player);
+        InventoryClickEvent click = mock(InventoryClickEvent.class);
+        when(click.getWhoClicked()).thenReturn(player);
+        PlayerDropItemEvent drop = mock(PlayerDropItemEvent.class);
+        when(drop.getPlayer()).thenReturn(player);
+
+        harness.listener.onPlayerItemHeld(held);
+        harness.listener.onInventoryClick(click);
+        harness.listener.onPlayerDropItem(drop);
+
+        assertEquals(3, harness.deferredRunnables.size());
+        harness.deferredRunnables.get(2).run();
+        verify(harness.powerService, times(1)).refreshPassivePowers(player);
     }
 
     @Test
@@ -195,8 +295,8 @@ class ForgePowerListenerTest {
         Player attacker = mock(Player.class);
         when(attacker.isOnline()).thenReturn(true);
         UUID forgeId = UUID.randomUUID();
-        ItemStack weapon = forgedItemWithPower(harness, "hit-tier", "hit-variant", "on-hit",
-            forgeId, ForgePowerDefinition.PowerType.ON_HIT_POTION);
+        ItemStack weapon = forgedItemWithPower(harness, "weapon_tier1", "draining", "draining_heal",
+            forgeId, ForgePowerDefinition.PowerType.ON_HIT_HEAL);
         when(attacker.getItemInHand()).thenReturn(weapon);
         LivingEntity victim = mock(LivingEntity.class);
         EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
@@ -205,8 +305,72 @@ class ForgePowerListenerTest {
 
         harness.listener.onEntityDamageByEntity(combat);
 
+        verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_EVENT", "damager=PLAYER");
+        verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_RESOLVED",
+            "forge=" + forgeId + " tier=weapon_tier1 variant=draining powers=1");
         verify(harness.powerService).triggerOnHitPower(eq(attacker), eq(victim),
-            any(ForgePowerDefinition.class), eq(forgeId));
+            any(ForgePowerDefinition.class), eq(forgeId), anyBoolean());
+    }
+
+    @Test
+    void projectileHitFromPlayerIsTracedAndDoesNotTriggerOnHitPower() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player shooter = mock(Player.class);
+        Projectile projectile = mock(Projectile.class);
+        when(projectile.getShooter()).thenReturn(shooter);
+        LivingEntity victim = mock(LivingEntity.class);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(projectile);
+        when(combat.getEntity()).thenReturn(victim);
+
+        harness.listener.onEntityDamageByEntity(combat);
+
+        verify(harness.powerService).tracePowerEvent(shooter, "PROJECTILE_HIT_EVENT_IGNORED",
+            "projectile=" + projectile.getClass().getSimpleName());
+        verify(harness.powerService, never()).triggerOnHitPower(any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void invalidIdentityRejectsOnHitAndTracesStatus() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player attacker = mock(Player.class);
+        when(attacker.isOnline()).thenReturn(true);
+        ItemStack weapon = mock(ItemStack.class);
+        when(weapon.hasItemMeta()).thenReturn(true);
+        when(attacker.getItemInHand()).thenReturn(weapon);
+        when(harness.identityService.readForgeIdentity(weapon)).thenReturn(
+            new ItemIdentityService.ForgeIdentityRead(
+                ItemIdentityService.ForgeIdentityStatus.INVALID, ItemIdentityCodec.Identity.empty()));
+        LivingEntity victim = mock(LivingEntity.class);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(attacker);
+        when(combat.getEntity()).thenReturn(victim);
+
+        harness.listener.onEntityDamageByEntity(combat);
+
+        verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_EVENT", "damager=PLAYER");
+        verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_REJECT_IDENTITY", "status=INVALID");
+        verify(harness.powerService, never()).triggerOnHitPower(any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void cursedPlayerHitCannotTriggerOnHitPower() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player attacker = mock(Player.class);
+        when(attacker.isOnline()).thenReturn(true);
+        ItemStack weapon = forgedItemWithPower(harness, "cursed-hit-tier", "cursed-hit-variant", "hit",
+            UUID.randomUUID(), ForgePowerDefinition.PowerType.ON_HIT_POTION, true);
+        when(attacker.getItemInHand()).thenReturn(weapon);
+        LivingEntity victim = mock(LivingEntity.class);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(attacker);
+        when(combat.getEntity()).thenReturn(victim);
+
+        harness.listener.onEntityDamageByEntity(combat);
+
+        verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_EVENT", "damager=PLAYER");
+        verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_REJECT_CURSED", "cursed=true");
+        verify(harness.powerService, never()).triggerOnHitPower(any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -233,6 +397,27 @@ class ForgePowerListenerTest {
     }
 
     @Test
+    void cursedBlockingItemCannotTriggerOnBlockPower() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player defender = mock(Player.class);
+        when(defender.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(defender.isBlocking()).thenReturn(true);
+        ItemStack shield = forgedItemWithPower(harness, "cursed-block-tier", "cursed-block-variant", "block",
+            UUID.randomUUID(), ForgePowerDefinition.PowerType.ON_BLOCK_POTION, true);
+        when(defender.getItemInHand()).thenReturn(shield);
+        when(harness.equipmentBridge.getItem(defender, EquipmentBridge.Slot.MAINHAND)).thenReturn(shield);
+        when(harness.equipmentBridge.getInventoryContents(defender)).thenReturn(new ItemStack[0]);
+        LivingEntity attacker = mock(LivingEntity.class);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(attacker);
+        when(combat.getEntity()).thenReturn(defender);
+
+        harness.listener.onEntityDamageByEntity(combat);
+
+        verify(harness.powerService, never()).triggerOnBlockPower(any(), any(), any(), any());
+    }
+
+    @Test
     void queuePassiveRefreshMergesPendingRefreshes() {
         Harness harness = new Harness().withDeferredScheduler();
         Player player = mock(Player.class);
@@ -245,6 +430,20 @@ class ForgePowerListenerTest {
         verify(harness.deferredHandles.get(0)).cancel();
         harness.deferredRunnables.get(1).run();
         verify(harness.powerService, times(1)).refreshPassivePowers(player);
+    }
+
+    @Test
+    void queuePassiveRefreshWithNullPlayerUuidDoesNotThrowAndDoesNotSchedule() {
+        Harness harness = new Harness().withDeferredScheduler();
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(null);
+
+        harness.listener.queuePassiveRefresh(player);
+
+        assertEquals(0, harness.deferredRunnables.size());
+        verify(harness.schedulerBridge, never()).runEntityLater(
+            any(Entity.class), any(Runnable.class), any(Runnable.class), anyLong());
+        verify(harness.powerService, never()).refreshPassivePowers(player);
     }
 
     @Test
@@ -354,6 +553,62 @@ class ForgePowerListenerTest {
     }
 
     @Test
+    void cursedIdentityCannotProvideLegacyAttackBonusOrDamageReduction() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        when(harness.attributeBridge.isModernAttributesAvailable()).thenReturn(false);
+        Player attacker = mock(Player.class);
+        ForgeAttributeDefinition attack = attribute(
+            ForgeAttributeDefinition.AttributeType.ATTACK_DAMAGE_FLAT, "attack", 5.0);
+        wireTierWithVariants(harness, "attack-tier", variant("attack-variant", attack));
+        ItemStack weapon = attributeItem(harness, "attack-tier", "attack-variant", "attack", true);
+        when(attacker.getItemInHand()).thenReturn(weapon);
+        LivingEntity victim = mock(LivingEntity.class);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(attacker);
+        when(combat.getEntity()).thenReturn(victim);
+        when(combat.getDamage()).thenReturn(2.0);
+        harness.listener.onEntityDamageByEntity(combat);
+        verify(combat, never()).setDamage(anyDouble());
+
+        Player protectedPlayer = mock(Player.class);
+        ForgeAttributeDefinition reduction = attribute(
+            ForgeAttributeDefinition.AttributeType.DAMAGE_REDUCTION_PERCENT, "reduction", 0.5);
+        wireTierWithVariants(harness, "reduction-tier", variant("reduction-variant", reduction));
+        ItemStack cursedArmor = attributeItem(harness, "reduction-tier", "reduction-variant", "reduction", true);
+        when(harness.equipmentBridge.getItem(protectedPlayer, EquipmentBridge.Slot.HEAD)).thenReturn(cursedArmor);
+        EntityDamageEvent damage = mock(EntityDamageEvent.class);
+        when(damage.getEntity()).thenReturn(protectedPlayer);
+        when(damage.getCause()).thenReturn(EntityDamageEvent.DamageCause.FALL);
+        when(damage.getDamage()).thenReturn(10.0);
+        harness.listener.onEntityDamage(damage);
+
+        verify(damage, never()).setDamage(anyDouble());
+        verify(harness.powerService, never()).emitArmorReductionParticle(protectedPlayer);
+    }
+
+    @Test
+    void lethalDamagePassesLethalFlagAfterAttackBonus() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player attacker = mock(Player.class);
+        when(attacker.isOnline()).thenReturn(true);
+        UUID forgeId = UUID.randomUUID();
+        ItemStack weapon = forgedItemWithPower(harness, "lethal-tier", "lethal-variant", "fire",
+            forgeId, ForgePowerDefinition.PowerType.ON_HIT_FIRE);
+        when(attacker.getItemInHand()).thenReturn(weapon);
+        LivingEntity victim = mock(LivingEntity.class);
+        when(victim.getHealth()).thenReturn(10.0);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(attacker);
+        when(combat.getEntity()).thenReturn(victim);
+        when(combat.getFinalDamage()).thenReturn(10.0);
+
+        harness.listener.onEntityDamageByEntity(combat);
+
+        verify(harness.powerService).triggerOnHitPower(eq(attacker), eq(victim),
+            any(ForgePowerDefinition.class), eq(forgeId), eq(true));
+    }
+
+    @Test
     void byEntityDamageIsNotDoubleReduced() {
         Harness harness = new Harness().withSynchronousScheduler();
         Player player = mock(Player.class);
@@ -384,6 +639,12 @@ class ForgePowerListenerTest {
     private ItemStack forgedItemWithPower(Harness harness, String tierId, String variantId,
                                           String powerId, UUID forgeId,
                                           ForgePowerDefinition.PowerType powerType) {
+        return forgedItemWithPower(harness, tierId, variantId, powerId, forgeId, powerType, false);
+    }
+
+    private ItemStack forgedItemWithPower(Harness harness, String tierId, String variantId,
+                                          String powerId, UUID forgeId,
+                                          ForgePowerDefinition.PowerType powerType, boolean cursed) {
         ItemStack item = mock(ItemStack.class);
         when(item.hasItemMeta()).thenReturn(true);
         when(item.isSimilar(item)).thenReturn(true);
@@ -391,7 +652,8 @@ class ForgePowerListenerTest {
             .withForgeId(forgeId)
             .withLastTierId(tierId)
             .withLastVariantId(variantId)
-            .withActivePowerIds(Collections.singletonList(powerId));
+            .withActivePowerIds(Collections.singletonList(powerId))
+            .withCursed(cursed);
         when(harness.identityService.readForgeIdentity(item)).thenReturn(
             new ItemIdentityService.ForgeIdentityRead(
                 ItemIdentityService.ForgeIdentityStatus.VALID, identity));
@@ -433,13 +695,19 @@ class ForgePowerListenerTest {
     }
 
     private ItemStack attributeItem(Harness harness, String tierId, String variantId, String attrId) {
+        return attributeItem(harness, tierId, variantId, attrId, false);
+    }
+
+    private ItemStack attributeItem(Harness harness, String tierId, String variantId,
+                                    String attrId, boolean cursed) {
         ItemStack item = mock(ItemStack.class);
         when(item.hasItemMeta()).thenReturn(true);
         ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
             .withForgeId(UUID.randomUUID())
             .withLastTierId(tierId)
             .withLastVariantId(variantId)
-            .withActiveAttributeIds(Collections.singletonList(attrId));
+            .withActiveAttributeIds(Collections.singletonList(attrId))
+            .withCursed(cursed);
         when(harness.identityService.readForgeIdentity(item)).thenReturn(
             new ItemIdentityService.ForgeIdentityRead(
                 ItemIdentityService.ForgeIdentityStatus.VALID, identity));

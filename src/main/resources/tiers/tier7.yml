@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -109,10 +110,10 @@ variants:
       - WEAPON
     display-name: "<gradient:#c084fc:#020617><bold>Voidbound %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier VII forged variant"
-      - "<dark_gray>● <dark_purple>30% Wither II strike"
-      - "<dark_gray>● <white>3 second cooldown"
-      - "<dark_gray>● <red>22% chance to cause bleeding"
+      - "<gray>Any Tier VII forged variant"
+      - "<dark_gray>● <dark_green>30% Wither II strike."
+      - "<dark_gray>● <white>Cooldown: 3s."
+      - "<dark_gray>● <red>22% chance to cause bleeding."
     enchantments: []
     attributes: []
     powers:
@@ -137,17 +138,16 @@ variants:
         pulse-interval-ticks: 12
         particle-candidates:
           - CRIT
-          - HEART
   annihilator:
     weight: "40.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#ef4444:#f8fafc><bold>Annihilator %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier VII forged variant"
-      - "<dark_gray>● <red>+6 raw attack damage"
-      - "<dark_gray>● <yellow>Every 3rd hit delivers crushing knockback"
-      - "<dark_gray>● <yellow>Electric <white>chain damage"
+      - "<gray>Any Tier VII forged variant"
+      - "<dark_gray>● <red>+6 raw attack damage."
+      - "<dark_gray>● <white>Every third hit delivers crushing knockback."
+      - "<dark_gray>● <yellow>Electric chain damage."
     enchantments: []
     attributes:
       - id: annihilator_damage
@@ -183,10 +183,10 @@ variants:
       - ANY
     display-name: "<gradient:#fef3c7:#a855f7><bold>Eternal %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier VII forged variant"
-      - "<dark_gray>● <light_purple>Regeneration II while equipped"
-      - "<dark_gray>● <blue>18% damage reduction"
-      - "<dark_gray>● <green>15% chance to recover health on hit"
+      - "<gray>Any Tier VII forged variant"
+      - "<dark_gray>● <light_purple>Regeneration II while equipped."
+      - "<dark_gray>● <blue>18% damage reduction."
+      - "<dark_gray>● <green>15% chance to recover health on hit."
     enchantments:
       - candidates:
           - DURABILITY

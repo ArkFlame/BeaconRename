@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,14 +105,14 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   repulsor:
-    weight: "100.0"
+    weight: "34.0"
     applicable-groups:
       - SHIELD
     display-name: "<gradient:#93c5fd:#1d4ed8><bold>Repulsor %base_name%</bold></gradient>"
     lore:
       - "<gray>Shield Tier II forged variant"
-      - "<dark_gray>● <white>100% chance to knock back attackers"
-      - "<dark_gray>● <white>2 seconds cooldown"
+      - "<dark_gray>● <white>100% chance to knock back attackers."
+      - "<dark_gray>● <white>Cooldown: 2s."
     enchantments: []
     attributes: []
     powers:
@@ -122,5 +123,46 @@ variants:
         horizontal-strength: "1.1"
         vertical-strength: "0.25"
         particle-candidates:
+           - CLOUD
+           - CRIT
+  mending_guard_ii:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#86efac:#15803d><bold>Mending Guard II %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier II forged variant"
+      - "<dark_gray>● <green>Heal while blocking."
+      - "<dark_gray>● <white>Cooldown: 4s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: mending_guard_ii_heal
+        type: ON_BLOCK_HEAL
+        cooldown-ticks: 80
+        chance: "0.15"
+        heal-amount: "0.75"
+        particle-candidates:
+          - HEART
+  hindering_guard:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#c4b5fd:#6d28d9><bold>Hindering Guard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier II forged variant"
+      - "<dark_gray>● <aqua>Slow attackers."
+      - "<dark_gray>● <white>Cooldown: 3s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: hindering_guard_potion
+        type: ON_BLOCK_POTION
+        cooldown-ticks: 60
+        chance: "0.20"
+        effect-candidates:
+          - SLOW
+        duration-ticks: 50
+        amplifier: 0
+        particle-candidates:
           - CLOUD
-          - CRIT

@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,14 +105,14 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   restorative_guard:
-    weight: "100.0"
+    weight: "34.0"
     applicable-groups:
       - SHIELD
     display-name: "<gradient:#f9a8d4:#22c55e><bold>Restorative Guard %base_name%</bold></gradient>"
     lore:
       - "<gray>Shield Tier IV forged variant"
-      - "<dark_gray>● <white>35% chance to recover 1.5 health"
-      - "<dark_gray>● <white>4 seconds cooldown"
+      - "<dark_gray>● <green>35% chance to recover 1.5 health."
+      - "<dark_gray>● <white>Cooldown: 4s."
     enchantments: []
     attributes: []
     powers:
@@ -122,3 +123,46 @@ variants:
         heal-amount: "1.5"
         particle-candidates:
           - HEART
+  repulsor_ii:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#93c5fd:#1d4ed8><bold>Repulsor II %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier IV forged variant"
+      - "<dark_gray>● <aqua>Knockback attackers."
+      - "<dark_gray>● <white>Cooldown: 3s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: repulsor_ii_knockback
+        type: ON_BLOCK_KNOCKBACK
+        cooldown-ticks: 60
+        chance: "0.25"
+        horizontal-strength: "0.90"
+        vertical-strength: "0.22"
+        particle-candidates:
+          - CLOUD
+          - CRIT
+  venom_guard_ii:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#4ade80:#166534><bold>Venom Guard II %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier IV forged variant"
+      - "<dark_gray>● <green>Poison attackers."
+      - "<dark_gray>● <white>Cooldown: 4s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: venom_guard_ii_potion
+        type: ON_BLOCK_POTION
+        cooldown-ticks: 80
+        chance: "0.20"
+        effect-candidates:
+          - POISON
+        duration-ticks: 60
+        amplifier: 0
+        particle-candidates:
+          - SPELL

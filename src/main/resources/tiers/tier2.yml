@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -109,9 +110,9 @@ variants:
       - ANY
     display-name: "<gradient:#d1d5db:#60a5fa><bold>Reinforced %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier II forged variant"
-      - "<dark_gray>● <white>Improved durability"
-      - "<dark_gray>● <blue>3% damage reduction while equipped"
+      - "<gray>Any Tier II forged variant"
+      - "<dark_gray>● <white>Improved durability."
+      - "<dark_gray>● <blue>3% damage reduction while equipped."
     enchantments:
       - candidates:
           - DURABILITY
@@ -130,10 +131,9 @@ variants:
       - WEAPON
     display-name: "<gradient:#fb923c:#dc2626><bold>Scorching %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier II forged variant"
-      - "<dark_gray>● <gold>20% chance to ignite"
-      - "<dark_gray>● <white>Original material retained"
-      - "<dark_gray>● <gold>Ignites target and nearby players"
+      - "<gray>Any Tier II forged variant"
+      - "<dark_gray>● <gold>20% chance to ignite."
+      - "<dark_gray>● <gold>Ignites target and nearby players."
     enchantments: []
     attributes: []
     powers:
@@ -152,9 +152,9 @@ variants:
       - ANY
     display-name: "<gradient:#f9a8d4:#ec4899><bold>Restorative %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier II forged variant"
-      - "<dark_gray>● <light_purple>Shift + right click to heal"
-      - "<dark_gray>● <white>8 second cooldown"
+      - "<gray>Any Tier II forged variant"
+      - "<dark_gray>● <light_purple>Shift + right click to heal."
+      - "<dark_gray>● <white>Cooldown: 8s."
     enchantments: []
     attributes: []
     powers:

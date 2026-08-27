@@ -90,10 +90,13 @@ public final class ForgePowerListener implements Listener {
         if (player == null || !player.isOnline()) {
             return;
         }
+        ItemStack item = getItemInHand(player, event);
+        if (isPassiveRefreshRelevantItem(item)) {
+            queuePassiveRefresh(player);
+        }
         if (!player.isSneaking()) {
             return;
         }
-        ItemStack item = getItemInHand(player, event);
         if (item == null || !item.hasItemMeta()) {
             return;
         }
@@ -102,6 +105,9 @@ public final class ForgePowerListener implements Listener {
             return;
         }
         ItemIdentityCodec.Identity identity = identityRead.getIdentity();
+        if (identity.isCursed()) {
+            return;
+        }
         String lastTierId = identity.getLastTierId();
         String lastVariantId = identity.getLastVariantId();
         if (lastTierId == null || lastVariantId == null) {
@@ -118,6 +124,22 @@ public final class ForgePowerListener implements Listener {
                 powerService.activateHeal(player, power, forgeId);
             }
         }
+    }
+
+    private boolean isPassiveRefreshRelevantItem(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return false;
+        }
+        ItemIdentityService.ForgeIdentityRead identityRead = identityService.readForgeIdentity(item);
+        if (identityRead != null && identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID) {
+            return true;
+        }
+        Optional<String> category = tierRepository.findEquipmentCategory(item.getType());
+        if (category.isPresent()) {
+            String categoryId = category.get();
+            return "armor".equalsIgnoreCase(categoryId) || "shield".equalsIgnoreCase(categoryId);
+        }
+        return false;
     }
 
     private ItemStack getItemInHand(Player player, PlayerInteractEvent event) {
@@ -160,7 +182,7 @@ public final class ForgePowerListener implements Listener {
                 ItemIdentityService.ForgeIdentityRead identityRead = identityService.readForgeIdentity(weapon);
                 if (identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID) {
                     ItemIdentityCodec.Identity identity = identityRead.getIdentity();
-                    if (!attributeBridge.isModernAttributesAvailable()) {
+                    if (!identity.isCursed() && !attributeBridge.isModernAttributesAvailable()) {
                         double attackBonus = sumAttackDamageBonus(identity);
                         if (attackBonus > 0) {
                             event.setDamage(event.getDamage() + attackBonus);
@@ -170,10 +192,24 @@ public final class ForgePowerListener implements Listener {
             }
         }
 
+        if (victim instanceof LivingEntity) {
+            if (damager instanceof Player) {
+                powerService.tracePowerEvent((Player) damager, "ON_HIT_EVENT", "damager=PLAYER");
+            } else if (damager instanceof Projectile) {
+                LivingEntity shooter = resolveLivingDamager(damager);
+                if (shooter instanceof Player) {
+                    powerService.tracePowerEvent((Player) shooter, "PROJECTILE_HIT_EVENT_IGNORED",
+                        "projectile=" + damager.getClass().getSimpleName());
+                }
+            }
+        }
+
         if (damager instanceof Player && victim instanceof LivingEntity) {
             Player attacker = (Player) damager;
             LivingEntity victimEntity = (LivingEntity) victim;
-            handleOnHit(attacker, victimEntity);
+            boolean lethalHit = victimEntity.getHealth() > 0
+                && event.getFinalDamage() >= victimEntity.getHealth();
+            handleOnHit(attacker, victimEntity, lethalHit);
         }
 
         if (victim instanceof Player && ((Player) victim).isBlocking()) {
@@ -223,6 +259,9 @@ public final class ForgePowerListener implements Listener {
                 continue;
             }
             ItemIdentityCodec.Identity identity = identityRead.getIdentity();
+            if (identity.isCursed()) {
+                continue;
+            }
             double generic = getMaxDamageReduction(identity,
                 ForgeAttributeDefinition.AttributeType.DAMAGE_REDUCTION_PERCENT);
             if (generic > genericMax) {
@@ -308,6 +347,9 @@ public final class ForgePowerListener implements Listener {
                 continue;
             }
             ItemIdentityCodec.Identity identity = read.getIdentity();
+            if (identity.isCursed()) {
+                continue;
+            }
             List<ForgePowerDefinition> powers = getPowersForForge(identity.getLastTierId(),
                 identity.getLastVariantId(), identity.getActivePowerIds());
             for (ForgePowerDefinition power : powers) {
@@ -319,7 +361,7 @@ public final class ForgePowerListener implements Listener {
         }
     }
 
-    private void handleOnHit(Player attacker, LivingEntity victim) {
+    private void handleOnHit(Player attacker, LivingEntity victim, boolean lethalHit) {
         if (attacker == null || !attacker.isOnline()) {
             return;
         }
@@ -329,19 +371,30 @@ public final class ForgePowerListener implements Listener {
         }
         ItemIdentityService.ForgeIdentityRead identityRead = identityService.readForgeIdentity(weapon);
         if (identityRead.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID) {
+            powerService.tracePowerEvent(attacker, "ON_HIT_REJECT_IDENTITY",
+                "status=" + identityRead.getStatus());
             return;
         }
         ItemIdentityCodec.Identity identity = identityRead.getIdentity();
+        if (identity.isCursed()) {
+            powerService.tracePowerEvent(attacker, "ON_HIT_REJECT_CURSED", "cursed=true");
+            return;
+        }
         String lastTierId = identity.getLastTierId();
         String lastVariantId = identity.getLastVariantId();
         if (lastTierId == null || lastVariantId == null) {
+            powerService.tracePowerEvent(attacker, "ON_HIT_REJECT_VARIANT",
+                "reason=missing-last-tier-or-variant");
             return;
         }
         UUID forgeId = identity.getForgeId();
         List<String> activePowerIds = identity.getActivePowerIds();
         List<ForgePowerDefinition> powers = getPowersForForge(lastTierId, lastVariantId, activePowerIds);
+        powerService.tracePowerEvent(attacker, "ON_HIT_RESOLVED",
+            "forge=" + forgeId + " tier=" + lastTierId + " variant=" + lastVariantId
+                + " powers=" + powers.size());
         for (ForgePowerDefinition power : powers) {
-            powerService.triggerOnHitPower(attacker, victim, power, forgeId);
+            powerService.triggerOnHitPower(attacker, victim, power, forgeId, lethalHit);
         }
     }
 
@@ -436,6 +489,9 @@ public final class ForgePowerListener implements Listener {
             return;
         }
         UUID playerId = player.getUniqueId();
+        if (playerId == null) {
+            return;
+        }
         TaskHandle prior = pendingPassiveRefresh.remove(playerId);
         if (prior != null) {
             prior.cancel();
@@ -477,6 +533,7 @@ public final class ForgePowerListener implements Listener {
             if (slot == ForgePowerDefinition.ActivationSlot.INVENTORY) {
                 ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
                 return read.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID
+                    && !read.getIdentity().isCursed()
                     && powerService.hasCachedInventoryForgeId(player, read.getIdentity().getForgeId());
             }
             if (isItemInSlot(player, item, slot)) {

@@ -213,9 +213,54 @@ The `SchedulerBridge` abstraction provides server-appropriate scheduling:
 
 ### Cross-Thread Discipline
 
-- All Bukkit API calls (inventory, player, world) happen on the main thread via scheduler.
-- Async operations are used for: file I/O, config reload, audit write, command dispatch.
-- Folia entity schedulers are used for player teleport and chunk-aware operations.
+- API work follows ownership rather than a universal main-thread rule. Player
+  mutations and player-owned particle sends use the entity scheduler; region or
+  chunk operations use the appropriate region-aware bridge. File I/O, config
+  reload, and audit writes are async where their owning service permits it.
+- Bukkit API calls must not be assumed to run on one global main thread. The
+  scheduler bridge selects the valid execution context for the platform.
+
+## Dynamic Particle Compatibility
+
+Particle rendering is split into runtime capability selection, semantic styles,
+pure geometry, and owned delivery:
+
+- `ParticleBridge` is the delivery boundary. It creates immutable
+  `ParticleRequest` values, sends `ParticleBatch` values, and schedules each
+  send with `runEntity` or `runEntityLater` for the viewing `Player`.
+- `ParticleProviderFactory` builds an ordered provider chain. When
+  `org.bukkit.Particle` is available, `ReflectiveBukkitParticleProvider` is
+  tried first; `LegacyEffectParticleProvider` remains the compatibility
+  provider; `FallbackParticleProvider` continues to the next provider after a
+  failure. Modern-only Bukkit symbols stay behind reflection.
+- The reflective provider indexes the runtime particle enum constants by enum
+  name and, when present, runtime `getKey()`. It does not maintain version
+  branches. Runtime `getDataType()` is authoritative for payload adaptation.
+  The resulting descriptor selects `NONE`, dust, spell, block-data,
+  material-data, item, trail, primitive, or custom handling.
+- A 1.21.8-style runtime descriptor can report `NONE` for the effect particle;
+  a 1.21.9-style descriptor can report `Spell`. The provider follows that
+  returned runtime data type, so both profiles use the same code path. It does
+  not guess constructors. An unknown typed particle accepts only a
+  `CustomPayload` whose value is assignable to the runtime-required type; an
+  incompatible payload is skipped so the request can use its next candidate or
+  provider fallback.
+- `LegacyEffectParticleProvider` adapts legacy `Effect` values and legacy
+  `MaterialData` or item payloads through the available direct or reflective
+  Spigot effect call. It is a fallback, not a second version-specific catalog.
+- `ParticleStyleCatalog` maps semantic style IDs to RGB values and ordered
+  candidate names. `ParticlePatternBuilder` and the pattern helpers perform
+  only bounded geometry math; they do not spawn particles or call Bukkit.
+- `ParticleNetworkRenderer` snapshots locations, interpolates straight
+  parent-to-child segments, and schedules five frame batches at delays 0, 2,
+  4, 6, and 8 ticks. Each `Player` viewer owns its delivery, including a
+  player target when that target is also shown the effect. A normal batch is
+  bounded at 2048 requests, keeping geometry compilation separate from spawn.
+
+Adding or changing this path must preserve the compatibility profile contract:
+runtime lookup first, `getDataType()` over version assumptions, ordered
+candidate fallback, and cosmetic failure isolation. See
+[CONTRIBUTING](../CONTRIBUTING.md).
 
 ## State Machine
 

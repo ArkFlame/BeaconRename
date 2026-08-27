@@ -31,7 +31,10 @@ break:
   target-tier: 0
   destroy-item: true
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
-  result-lore: []
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -40,20 +43,25 @@ break:
   reset-custom-model-data: true
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
-  lore: []
-  enchantment-candidates: []
+  lore:
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
 animation:
   duration-ticks: 20
   interval-ticks: 4
 variants:
   guardian_charm:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#cbd5e1:#60a5fa><bold>Guardian Charm %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier V amulet variant"
-      - "<white>Resistance and regeneration for 60 seconds while in inventory"
+      - "<gray>Amulet Tier V forged variant"
+      - "<dark_gray>● <blue>Resistance and regeneration while in inventory."
     enchantments: []
     attributes: []
     powers:
@@ -82,13 +90,13 @@ variants:
         activation-slots:
           - INVENTORY
   vital_charm:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#86efac:#166534><bold>Vital Charm %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier V amulet variant"
-      - "<green>Regeneration II for 60 seconds while held in main or off hand"
+      - "<gray>Amulet Tier V forged variant"
+      - "<dark_gray>● <green>Regeneration II while held in either hand."
     enchantments: []
     attributes: []
     powers:
@@ -104,3 +112,44 @@ variants:
         activation-slots:
           - MAIN_HAND
           - OFF_HAND
+  quickstep_relic:
+    weight: "25.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#38bdf8:#2563eb><bold>Quickstep Relic %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Amulet Tier V forged variant"
+      - "<dark_gray>● <aqua>Speed II while in inventory."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: quickstep_relic_passive
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - SPEED
+        duration-ticks: 1200
+        amplifier: 1
+        particle-candidates:
+          - CLOUD
+          - SPELL
+        activation-slots:
+          - INVENTORY
+  restoration_relic:
+    weight: "25.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#f0abfc:#a21caf><bold>Restoration Relic %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Amulet Tier V forged variant"
+      - "<dark_gray>● <light_purple>Heal on shift right-click."
+      - "<dark_gray>● <white>Cooldown: 6s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: restoration_relic_heal
+        type: SHIFT_RIGHT_CLICK_HEAL
+        cooldown-ticks: 120
+        heal-amount: "4.0"
+        particle-candidates:
+          - HEART

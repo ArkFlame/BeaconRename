@@ -6,6 +6,7 @@ import com.arkflame.flameforge.model.CurseDefinition;
 import com.arkflame.flameforge.model.ForgeAttributeDefinition;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierDefinition;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -16,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -24,12 +26,15 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
@@ -141,25 +146,72 @@ class ItemMutationServiceTest {
     }
 
     @Test
-    void curseMutationPersistsCursedIdentity() {
+    void curseMutationReplacesLoreUsesUnsafeVanishingAndStripsIdentityState() {
         ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
         ItemStack cloned = input.clone();
-        ItemMeta meta = createMockMeta(cloned, "Sword", Collections.emptyList());
+        ItemMeta meta = createMockMeta(cloned, "Sword", Arrays.asList(
+                "Old lore",
+                "\u00A70\u00A70FLAMEFORGE:old",
+                "\u00A76FLAMEFORGE_PWR:old",
+                "\u00A75FLAMEFORGE_ATTR:old",
+                "\u00A7cFLAMEFORGE_CURSED:true"));
         CurseDefinition curse = mock(CurseDefinition.class);
         when(curse.getName()).thenReturn("Cursed Blade");
         when(curse.getLore()).thenReturn(Collections.singletonList("Cursed lore"));
-        when(curse.getEnchantments()).thenReturn(Collections.emptyList());
+        when(curse.getEnchantments()).thenReturn(Arrays.asList("BINDING_CURSE", "VANISHING_CURSE"));
+        Enchantment binding = mock(Enchantment.class);
+        when(binding.getName()).thenReturn("BINDING_CURSE");
+        Enchantment vanishing = mock(Enchantment.class);
+        when(vanishing.getName()).thenReturn("VANISHING_CURSE");
+        when(enchantmentResolver.resolve("BINDING_CURSE")).thenReturn(Optional.of(binding));
+        when(enchantmentResolver.resolve("VANISHING_CURSE")).thenReturn(Optional.of(vanishing));
+        when(enchantmentResolver.resolveLevel(1)).thenReturn(1);
         UUID forgeId = UUID.randomUUID();
+        ItemIdentityCodec.Identity currentIdentity = ItemIdentityCodec.Identity.empty()
+                .withCurrentTier(2)
+                .withHighestTier(4)
+                .withReforgeCount(7)
+                .withLastTierId("tier2")
+                .withLastVariantId("variant")
+                .withForgeId(forgeId)
+                .withBaseMaterial("DIAMOND_SWORD")
+                .withBaseDisplayName("Diamond Sword")
+                .withOriginalEnchantments(Collections.singletonMap("sharpness", 3))
+                .withForgeEnchantments(Collections.singletonMap("power", 2))
+                .withActiveAttributeIds(Collections.singletonList("damage"))
+                .withActivePowerIds(Collections.singletonList("flame"));
 
         ItemMutationService.MutationResult result = mutationService.mutateCurse(
-                input, curse, false, ItemIdentityCodec.Identity.empty(), forgeId);
+                input, curse, false, currentIdentity, forgeId);
 
         assertTrue(result.isSuccess());
         assertNotNull(result.getResult());
+        verify(attributeBridge).removeFlameForgeAttributes(cloned);
         assertEquals("Cursed Blade", meta.getDisplayName());
-        assertTrue(meta.getLore().contains("Cursed lore"));
-        verify(identityService).writeForgeIdentity(any(), org.mockito.ArgumentMatchers.argThat(
-                ItemIdentityCodec.Identity::isCursed));
+        assertEquals(Collections.singletonList("Cursed lore"), meta.getLore());
+        verify(meta).addEnchant(vanishing, 1, true);
+        verify(meta, never()).addEnchant(eq(binding), anyInt(), anyBoolean());
+        verify(cloned).setItemMeta(meta);
+        org.mockito.ArgumentCaptor<List<String>> loreCaptor =
+                org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(meta, org.mockito.Mockito.times(3)).setLore(loreCaptor.capture());
+        assertEquals(Collections.singletonList("Old lore"), loreCaptor.getAllValues().get(0));
+        assertTrue(loreCaptor.getAllValues().get(1).isEmpty());
+        assertEquals(Collections.singletonList("Cursed lore"), loreCaptor.getAllValues().get(2));
+        verify(identityService).writeForgeIdentity(any(), org.mockito.ArgumentMatchers.argThat(written ->
+                written.isCursed()
+                        && written.getCurrentTier() == 2
+                        && written.getHighestTier() == 4
+                        && written.getReforgeCount() == 7
+                        && written.getLastTierId() == null
+                        && written.getLastVariantId() == null
+                        && written.getActiveAttributeIds().isEmpty()
+                        && written.getActivePowerIds().isEmpty()
+                        && written.getForgeEnchantments().isEmpty()
+                        && written.getOriginalEnchantments().equals(Collections.singletonMap("sharpness", 3))
+                        && written.getBaseMaterial().equals("DIAMOND_SWORD")
+                        && written.getBaseDisplayName().equals("Diamond Sword")
+                        && written.getForgeId().equals(forgeId)));
     }
 
     @Test

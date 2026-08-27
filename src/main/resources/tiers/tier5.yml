@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -109,10 +110,10 @@ variants:
       - WEAPON
     display-name: "<gradient:#facc15:#b91c1c><bold>Infernal %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier V forged variant"
-      - "<dark_gray>● <gold>20% infernal area-fire strike"
-      - "<dark_gray>● <red>+1 raw attack damage"
-      - "<dark_gray>● <yellow>Every 5th hit calls lightning"
+      - "<gray>Any Tier V forged variant"
+      - "<dark_gray>● <gold>20% infernal area-fire strike."
+      - "<dark_gray>● <red>+1 raw attack damage."
+      - "<dark_gray>● <yellow>Every fifth hit calls lightning."
     enchantments: []
     attributes:
       - id: infernal_damage
@@ -143,11 +144,11 @@ variants:
       - ANY
     display-name: "<gradient:#93c5fd:#1e3a8a><bold>Aegis %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier V forged variant"
-      - "<dark_gray>● <blue>12% damage reduction"
-      - "<dark_gray>● <white>Active while equipped"
-      - "<dark_gray>● <blue>12% chance to recover health on hit"
-      - "<dark_gray>● <white>Resistance while held in main hand"
+      - "<gray>Any Tier V forged variant"
+      - "<dark_gray>● <blue>12% damage reduction."
+      - "<dark_gray>● <white>Active while equipped."
+      - "<dark_gray>● <green>12% chance to recover health on hit."
+      - "<dark_gray>● <blue>Resistance while held in main hand."
     enchantments: []
     attributes:
       - id: aegis_guard
@@ -173,17 +174,16 @@ variants:
           - ENCHANT
           - SPELL
         activation-slots:
-          - MAINHAND
+           - MAIN_HAND
   vital:
     weight: "30.0"
     applicable-groups:
       - ANY
     display-name: "<gradient:#86efac:#16a34a><bold>Vital %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier V forged variant"
-      - "<dark_gray>● <green>Regeneration while equipped"
-      - "<dark_gray>● <white>Original material retained"
-      - "<dark_gray>● <green>Shift + right click to heal 3 health"
+      - "<gray>Any Tier V forged variant"
+      - "<dark_gray>● <green>Regeneration while equipped."
+      - "<dark_gray>● <green>Shift + right click to heal 3 health."
     enchantments: []
     attributes: []
     powers:
@@ -207,4 +207,4 @@ variants:
         particle-candidates:
           - HEART
         activation-slots:
-          - MAINHAND
+           - MAIN_HAND

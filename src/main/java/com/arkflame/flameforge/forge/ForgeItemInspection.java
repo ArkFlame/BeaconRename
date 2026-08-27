@@ -14,18 +14,10 @@ import org.bukkit.inventory.meta.ItemMeta;
 
 import java.lang.reflect.Method;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 public final class ForgeItemInspection {
-    private static final Set<String> CURSED_ENCHANTMENTS = new HashSet<>();
-    static {
-        CURSED_ENCHANTMENTS.add("BINDING_CURSE");
-        CURSED_ENCHANTMENTS.add("VANISHING_CURSE");
-    }
-
     public enum Status {
         READY,
         EMPTY,
@@ -103,6 +95,11 @@ public final class ForgeItemInspection {
                 break;
         }
 
+        final boolean freshUnowned = identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.NONE;
+        if (identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID && identity.isCursed()) {
+            return new InspectionResult(Status.CURSED, identity);
+        }
+
         int currentTier = identity.getCurrentTier();
         Material material = resolveForgeMaterial(identity, item);
         TierDefinition currentTierDef = tierRepository.findForMaterialAndLevel(material, currentTier).orElse(null);
@@ -124,7 +121,7 @@ public final class ForgeItemInspection {
             return new InspectionResult(Status.NEXT_TIER_DISABLED, identity);
         }
 
-        if (currentTier == 0) {
+        if (currentTier == 0 && freshUnowned) {
             Status nameStatus = checkTier0CustomName(item, identity);
             if (nameStatus != null) {
                 return new InspectionResult(nameStatus, identity);
@@ -144,10 +141,6 @@ public final class ForgeItemInspection {
             if (pdcStatus != null) {
                 return new InspectionResult(pdcStatus, identity);
             }
-        }
-
-        if (identity.isCursed()) {
-            return new InspectionResult(Status.CURSED, identity);
         }
 
         if (targetTierDef != null) {

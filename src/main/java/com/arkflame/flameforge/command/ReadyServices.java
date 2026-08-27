@@ -11,10 +11,12 @@ import com.arkflame.flameforge.forge.ForgeItemPolicy;
 import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
+import com.arkflame.flameforge.item.ForgeExampleItemService;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.item.ItemMutationService;
 import com.arkflame.flameforge.menu.MenuInputReturnService;
+import com.arkflame.flameforge.menu.WeaponsMenuService;
 import com.arkflame.flameforge.persistence.PlayerStateRepository;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.station.ForgeStationService;
@@ -46,6 +48,8 @@ public final class ReadyServices {
     private final ForgeVariantEligibility forgeVariantEligibility;
     private final MenuInputReturnService menuInputReturnService;
     private final ItemMutationService itemMutationService;
+    private final ForgeExampleItemService forgeExampleItemService;
+    private final WeaponsMenuService weaponsMenuService;
 
     public ReadyServices(ConfigService configService, TierRepository tierRepository,
                          ForgeStationService stationService, StationRepository stationRepository,
@@ -58,7 +62,9 @@ public final class ReadyServices {
                          EquipmentBridge equipmentBridge, ForgePowerService forgePowerService,
                          ForgeVariantEligibility forgeVariantEligibility,
                          MenuInputReturnService menuInputReturnService,
-                         ItemMutationService itemMutationService) {
+                         ItemMutationService itemMutationService,
+                         ForgeExampleItemService forgeExampleItemService,
+                         WeaponsMenuService weaponsMenuService) {
         this.configService = configService;
         this.tierRepository = tierRepository;
         this.stationService = stationService;
@@ -79,6 +85,8 @@ public final class ReadyServices {
         this.forgeVariantEligibility = forgeVariantEligibility;
         this.menuInputReturnService = menuInputReturnService;
         this.itemMutationService = itemMutationService;
+        this.forgeExampleItemService = forgeExampleItemService;
+        this.weaponsMenuService = weaponsMenuService;
     }
 
     public ConfigService getConfigService() {
@@ -159,6 +167,14 @@ public final class ReadyServices {
 
     public ItemMutationService getItemMutationService() {
         return itemMutationService;
+    }
+
+    public ForgeExampleItemService getForgeExampleItemService() {
+        return forgeExampleItemService;
+    }
+
+    public WeaponsMenuService getWeaponsMenuService() {
+        return weaponsMenuService;
     }
 
     public List<String> getTierIds() {

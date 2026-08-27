@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -109,9 +110,9 @@ variants:
       - WEAPON
     display-name: "<gradient:#581c87:#111827><bold>Withered %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier IV forged variant"
-      - "<dark_gray>● <dark_purple>20% wither strike"
-      - "<dark_gray>● <white>3 second cooldown"
+      - "<gray>Any Tier IV forged variant"
+      - "<dark_gray>● <dark_green>20% wither strike."
+      - "<dark_gray>● <white>Cooldown: 3s."
     enchantments: []
     attributes: []
     powers:
@@ -133,10 +134,10 @@ variants:
       - ANY
     display-name: "<gradient:#f97316:#7f1d1d><bold>Berserker %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier IV forged variant"
-      - "<dark_gray>● <red>+2 raw attack damage"
-      - "<dark_gray>● <white>Applied by FlameForge combat logic"
-      - "<dark_gray>● <red>10% chance to trigger an explosive blast"
+      - "<gray>Any Tier IV forged variant"
+      - "<dark_gray>● <red>+2 raw attack damage."
+      - "<dark_gray>● <white>Applied by FlameForge combat logic."
+      - "<dark_gray>● <red>10% chance to trigger an explosive blast."
     enchantments: []
     attributes:
       - id: berserker_damage
@@ -164,9 +165,9 @@ variants:
       - ANY
     display-name: "<gradient:#38bdf8:#8b5cf6><bold>Leaping %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier IV forged variant"
-      - "<dark_gray>● <aqua>Shift + right click to dash"
-      - "<dark_gray>● <white>6 second cooldown"
+      - "<gray>Any Tier IV forged variant"
+      - "<dark_gray>● <aqua>Shift + right click to dash."
+      - "<dark_gray>● <white>Cooldown: 6s."
     enchantments: []
     attributes: []
     powers:

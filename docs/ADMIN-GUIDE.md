@@ -55,6 +55,11 @@ Tier files live in `plugins/FlameForge/tiers/` (schema-version 2). Key rules:
 - Operator files **override by id**: a file whose `id` matches a bundled tier
   replaces it; a new id is added. Files that fail parsing are skipped with a
   warning and do not replace anything.
+- Bundled equipment has 28 forgeable category tiers: seven each for weapon,
+  armor, shield, and amulet, plus seven legacy `tier1` … `tier7` files kept
+  readable for migration. Weapon classification includes spear strings only
+  when the running material resolver supports them; old runtimes skip those
+  unavailable strings. Miner Charm is not a bundled amulet variant.
 - A tier is **forgeable only when its id appears in an equipment.yml category
   `progression`**. Custom tiers must be added to a progression to be usable.
 - Each category progression must contain exactly 7 tiers. Validation errors:
@@ -85,6 +90,10 @@ immediately (passive refresh runs after delivery).
 This is the fastest way to verify a new variant/power/attribute combination
 before players can roll it.
 
+`/flameforge weaponsmenu` opens paginated weapon progression examples. Clicking
+an entry gives a new forged example with a fresh forge id and refreshes passive
+powers; it performs no station transaction, cost, cooldown, or history write.
+
 ## Customizing Messages
 
 Edit `plugins/FlameForge/messages.yml`. Operator values override the bundled
@@ -113,7 +122,9 @@ If neither hologram plugin is installed, FlameForge logs
     registered reflectively only when the class exists.
   - `MaterialResolver` — alias tables (e.g. `golden_sword` →
     `GOLDEN_SWORD`/`GOLD_SWORD`) pick the first material present at runtime;
-    NETHERITE materials simply resolve to nothing on old servers.
+    spear strings are likewise usable only when the runtime material exists;
+    NETHERITE and other unavailable materials simply resolve to nothing on old
+    servers. No direct modern enum promise is made.
   - `AttributeBridge` — modern attribute APIs only when available; otherwise
     `ATTACK_DAMAGE_FLAT` is applied event-side.
   - Particles/sounds — per-server candidate lists (modern name first, legacy
@@ -158,3 +169,7 @@ plugin's automated tests do not cover live server execution:
 - **Legacy items no longer forge** — they are readable for migration, but only
   category-progression tiers are forgeable; reforge them through the current
   progression.
+- **Invalid identity or cursed item denied** — malformed/stale encoded identity
+  data is quarantined at runtime; encoded cursed state is terminal and cannot
+  be reforged. A fractured owned item is different: it can reforge under normal
+  policy, while fresh tier-0 items with foreign custom data remain protected.

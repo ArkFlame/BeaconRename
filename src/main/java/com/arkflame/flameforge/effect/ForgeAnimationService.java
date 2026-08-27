@@ -1,6 +1,14 @@
 package com.arkflame.flameforge.effect;
 
 import com.arkflame.flameforge.compat.effect.ParticleBridge;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticleNetworkRenderer;
+import com.arkflame.flameforge.compat.effect.particle.ParticleBatch;
+import com.arkflame.flameforge.compat.effect.particle.ParticleRequest;
+import com.arkflame.flameforge.compat.effect.particle.ParticleColor;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticlePattern;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticlePatternBuilder;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticlePoint;
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyle;
 import com.arkflame.flameforge.compat.effect.SoundResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
@@ -12,6 +20,7 @@ import com.arkflame.flameforge.text.TextBridge;
 import com.arkflame.flameforge.text.TextRenderer;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -53,7 +62,6 @@ public final class ForgeAnimationService {
     private static final double REVEAL_STAR_OUTER_RADIUS = 0.75;
     private static final double REVEAL_STAR_INNER_RADIUS = 0.32;
     private static final double REVEAL_HALO_OUTER_RADIUS = 0.45;
-    private static final double REVEAL_HALO_INNER_RADIUS = 0.20;
     private static final int REVEAL_EDGE_SAMPLES = 3;
     private static final String STEP_TYPE_PARTICLE = "particle";
     private static final String STEP_TYPE_SOUND = "sound";
@@ -66,6 +74,7 @@ public final class ForgeAnimationService {
     private final JavaPlugin plugin;
     private final SchedulerBridge scheduler;
     private final ParticleBridge particles;
+    private final ParticleNetworkRenderer networkRenderer;
     private final SoundResolver sounds;
     private final TextBridge text;
     private final TextRenderer textRenderer;
@@ -76,12 +85,22 @@ public final class ForgeAnimationService {
     private final Map<String, TaskHandle> scheduledTasks = new ConcurrentHashMap<>();
 
     public ForgeAnimationService(JavaPlugin plugin, SchedulerBridge scheduler,
+                                  ParticleBridge particles, SoundResolver sounds, TextBridge text,
+                                  TextRenderer textRenderer, ForgeItemVisualService itemVisuals,
+                                  ForgeAnimationThemeResolver themeResolver) {
+        this(plugin, scheduler, particles, sounds, text, textRenderer, itemVisuals,
+            themeResolver, null);
+    }
+
+    public ForgeAnimationService(JavaPlugin plugin, SchedulerBridge scheduler,
                                  ParticleBridge particles, SoundResolver sounds, TextBridge text,
                                  TextRenderer textRenderer, ForgeItemVisualService itemVisuals,
-                                 ForgeAnimationThemeResolver themeResolver) {
+                                 ForgeAnimationThemeResolver themeResolver,
+                                 ParticleNetworkRenderer networkRenderer) {
         this.plugin = plugin;
         this.scheduler = scheduler;
         this.particles = particles;
+        this.networkRenderer = networkRenderer;
         this.sounds = sounds;
         this.text = text;
         this.textRenderer = textRenderer;
@@ -93,7 +112,7 @@ public final class ForgeAnimationService {
                                  ParticleBridge particles, SoundResolver sounds, TextBridge text,
                                  TextRenderer textRenderer, ForgeItemVisualService itemVisuals) {
         this(plugin, scheduler, particles, sounds, text, textRenderer, itemVisuals,
-            new ForgeAnimationThemeResolver());
+            new ForgeAnimationThemeResolver(), null);
     }
 
     public AnimationHandle playAnimation(String transactionId, Player owner, Location stationLocation,
@@ -331,47 +350,47 @@ public final class ForgeAnimationService {
     }
 
     private void executeForgingParticleStep(Player owner, Location stationLocation,
-                                            ForgeAnimationProfile.ChargeParticle chargeParticle,
-                                            float progress, Location itemLoc, ForgeAnimationTheme theme) {
+                                             ForgeAnimationProfile.ChargeParticle chargeParticle,
+                                             float progress, Location itemLoc, ForgeAnimationTheme theme) {
         String particleKey;
         if (chargeParticle != null && chargeParticle.getCandidates() != null && !chargeParticle.getCandidates().isEmpty()) {
             particleKey = chargeParticle.getCandidates().get(0);
         } else {
             particleKey = "flame";
         }
-        for (Location spiralPoint : computeSpiralPoints(stationLocation, progress)) {
-            sendParticleSafe(owner, particleKey, spiralPoint, 2);
-        }
-        for (Location trailPoint : computeTrailPoints(stationLocation, progress)) {
-            sendParticleSafe(owner, particleKey, trailPoint, 1);
-        }
-        for (Location connectorPoint : computeConnectorPoints(stationLocation, itemLoc)) {
-            sendParticleSafe(owner, particleKey, connectorPoint, 1);
-        }
-        for (Location auraPoint : computeAuraPoints(stationLocation, itemLoc)) {
-            sendColoredDustSafe(owner, auraPoint, theme.getAuraRed(), theme.getAuraGreen(),
-                theme.getAuraBlue(), 1);
-        }
-        sendParticleSafe(owner, theme.getAuraParticle(), itemLoc, 1);
+        List<ParticleRequest> requests = new ArrayList<>();
+        World world = stationLocation.getWorld();
+        addPatternRequests(requests, particleKey, buildSpiralPattern(stationLocation, progress), 2, world);
+        addPatternRequests(requests, particleKey, buildTrailPattern(stationLocation, progress), 1, world);
+        addPatternRequests(requests, particleKey, buildConnectorPattern(stationLocation, itemLoc), 1, world);
+        addPatternRequests(requests, Collections.singletonList("DUST"),
+            buildAuraPattern(stationLocation, itemLoc), 1,
+            new ParticleRequest.Color(new ParticleColor(theme.getAuraRed(), theme.getAuraGreen(),
+                theme.getAuraBlue()), 1.0f), world);
+        addPointRequest(requests, itemLoc, theme.getStyle().getCandidates(), 1, new ParticleRequest.None());
+        sendBatchSafe(owner, requests);
     }
 
     private void executeRevealStep(Player owner, Location stationLocation, ForgeAnimationProfile profile,
                                    ForgeAnimationTheme theme, ForgeOutcomeCategory category, int revealTick) {
-        for (Location sample : computeRevealStarSamples(stationLocation,
-            REVEAL_STAR_OUTER_RADIUS, REVEAL_STAR_INNER_RADIUS)) {
-            sendColoredDustSafe(owner, sample, theme.getStarRed(), theme.getStarGreen(),
-                theme.getStarBlue(), 1);
-        }
-        for (Location vertex : computeRevealStarVertices(stationLocation,
-            REVEAL_STAR_OUTER_RADIUS, REVEAL_STAR_INNER_RADIUS)) {
-            sendParticleSafe(owner, theme.getStarParticle(), vertex, 1);
-        }
+        ParticleStyle style = theme.getStyle();
+        List<ParticleRequest> requests = new ArrayList<>();
+        ParticlePattern star = ParticlePatternBuilder.star(point(stationLocation, FORGING_CENTER_Y),
+            REVEAL_STAR_OUTER_RADIUS, REVEAL_STAR_INNER_RADIUS, REVEAL_STAR_VERTICES);
+        World world = stationLocation.getWorld();
+        addPatternRequests(requests, Collections.singletonList("DUST"), star, 1,
+            new ParticleRequest.Color(new ParticleColor(theme.getStarRed(), theme.getStarGreen(),
+                theme.getStarBlue()), 1.0f), world);
+        addPatternRequests(requests, style.getCandidates(), star, 1, world);
         if (revealTick == REVEAL_FEEDBACK_TICK) {
-            for (Location haloSample : computeRevealStarSamples(stationLocation,
-                REVEAL_HALO_OUTER_RADIUS, REVEAL_HALO_INNER_RADIUS)) {
-                sendColoredDustSafe(owner, haloSample, theme.getStarRed(), theme.getStarGreen(),
-                    theme.getStarBlue(), 1);
-            }
+            ParticlePattern halo = ParticlePatternBuilder.circle(point(stationLocation, FORGING_CENTER_Y),
+                REVEAL_HALO_OUTER_RADIUS, REVEAL_STAR_VERTICES * REVEAL_EDGE_SAMPLES);
+            addPatternRequests(requests, Collections.singletonList("DUST"), halo, 1,
+                new ParticleRequest.Color(new ParticleColor(theme.getStarRed(), theme.getStarGreen(),
+                    theme.getStarBlue()), 1.0f), world);
+        }
+        sendBatchSafe(owner, requests);
+        if (revealTick == REVEAL_FEEDBACK_TICK) {
             executeOutcomeFeedbackStep(owner, feedbackFor(profile, category));
         }
     }
@@ -403,34 +422,116 @@ public final class ForgeAnimationService {
 
     private void executeFinalBurst(Player owner, Location stationLocation) {
         Location center = stationLocation.clone().add(0, FORGING_CENTER_Y, 0);
-        sendParticleSafe(owner, "crit", center, 4);
-        sendParticleSafe(owner, "flame", center, 8);
+        List<ParticleRequest> requests = new ArrayList<>();
+        addPointRequest(requests, center, Collections.singletonList("crit"), 4, new ParticleRequest.None());
+        addPointRequest(requests, center, Collections.singletonList("flame"), 8, new ParticleRequest.None());
+        sendBatchSafe(owner, requests);
     }
 
-    private void sendParticleSafe(Player owner, String particleKey, Location location, int count) {
-        if (particles == null) {
+    private void sendBatchSafe(Player owner, List<ParticleRequest> requests) {
+        if (particles == null || requests.isEmpty()) {
             return;
         }
         try {
-            particles.sendToPlayer(owner, particleKey, location,
-                0.03f, 0.03f, 0.03f, 0.02f, count);
+            particles.sendBatch(owner, new ParticleBatch(requests));
         } catch (RuntimeException | LinkageError e) {
             plugin.getLogger().log(Level.WARNING,
-                "Forge particle failed for owner " + owner.getUniqueId(), e);
+                "Forge particle batch failed for owner " + owner.getUniqueId(), e);
         }
     }
 
-    private void sendColoredDustSafe(Player owner, Location location, int red, int green, int blue,
-                                     int count) {
-        if (particles == null) {
-            return;
+    private void addPatternRequests(List<ParticleRequest> requests, String particleKey,
+                                    ParticlePattern pattern, int count, World world) {
+        addPatternRequests(requests, Collections.singletonList(particleKey), pattern, count,
+            new ParticleRequest.None(), world);
+    }
+
+    private void addPatternRequests(List<ParticleRequest> requests, List<String> candidates,
+                                    ParticlePattern pattern, int count, World world) {
+        addPatternRequests(requests, candidates, pattern, count, new ParticleRequest.None(), world);
+    }
+
+    private void addPatternRequests(List<ParticleRequest> requests, List<String> candidates,
+                                    ParticlePattern pattern, int count, ParticleRequest.Payload payload,
+                                    World world) {
+        for (ParticlePoint point : pattern.getPoints()) {
+            addPointRequest(requests, point, candidates, count, payload, world);
         }
-        try {
-            particles.sendColoredDust(owner, location, red, green, blue, 1.0f, count);
-        } catch (RuntimeException | LinkageError e) {
-            plugin.getLogger().log(Level.FINE,
-                "Forge colored aura failed for owner " + owner.getUniqueId(), e);
+    }
+
+    private void addPointRequest(List<ParticleRequest> requests, Location location,
+                                  List<String> candidates, int count, ParticleRequest.Payload payload) {
+        addPointRequest(requests, point(location), candidates, count, payload,
+            location.getWorld());
+    }
+
+    private void addPointRequest(List<ParticleRequest> requests, ParticlePoint point,
+                                  List<String> candidates, int count, ParticleRequest.Payload payload,
+                                  World world) {
+        requests.add(new ParticleRequest(new ParticleRequest.ParticlePosition(
+            world, point.x(), point.y(), point.z()), candidates, count,
+            0, 0, 0, 0, payload));
+    }
+
+    private ParticlePoint point(Location location) {
+        return new ParticlePoint(location.getX(), location.getY(), location.getZ());
+    }
+
+    private ParticlePoint point(Location location, double yOffset) {
+        return new ParticlePoint(location.getX(), location.getY() + yOffset, location.getZ());
+    }
+
+    private ParticlePattern buildSpiralPattern(Location station, float progress) {
+        Location item = computeForgingItemLocation(station, progress);
+        double p = clamp01(progress);
+        double radius = SPIRAL_RADIUS + (SPIRAL_RADIUS_END - SPIRAL_RADIUS) * p;
+        ParticlePattern helix = ParticlePatternBuilder.helix(
+            new ParticlePoint(item.getX(), item.getY() - SPIRAL_HALF_HEIGHT, item.getZ()),
+            radius, 2 * SPIRAL_HALF_HEIGHT, 1, SPIRAL_SAMPLES_PER_STRAND);
+        double animationAngle = ITEM_PATH_ROTATIONS * Math.PI * p;
+        List<ParticlePoint> rotated = new ArrayList<>(helix.size());
+        for (int index = 0; index < helix.size(); index++) {
+            ParticlePoint point = helix.getPoints().get(index);
+            double x = point.x() - item.getX();
+            double z = point.z() - item.getZ();
+            int sample = index % SPIRAL_SAMPLES_PER_STRAND;
+            double sampleProgress = sample / (double) (SPIRAL_SAMPLES_PER_STRAND - 1);
+            rotated.add(new ParticlePoint(item.getX() + x * Math.cos(animationAngle) - z * Math.sin(animationAngle),
+                item.getY() - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT
+                    * (sampleProgress * sampleProgress * (3.0 - 2.0 * sampleProgress)),
+                item.getZ() + x * Math.sin(animationAngle) + z * Math.cos(animationAngle)));
         }
+        return new ParticlePattern(rotated);
+    }
+
+    private ParticlePattern buildTrailPattern(Location station, float progress) {
+        Location item = computeForgingItemLocation(station, progress);
+        double angle = ITEM_PATH_ROTATIONS * Math.PI * clamp01(progress);
+        double endDistance = 0.08 * ITEM_TRAIL_POINTS;
+        double endDescent = endDistance * 0.25;
+        double endHorizontal = Math.sqrt(endDistance * endDistance - endDescent * endDescent);
+        return ParticlePatternBuilder.line(
+            new ParticlePoint(item.getX() + Math.sin(angle) * 0.08, item.getY() - 0.02,
+                item.getZ() - Math.cos(angle) * Math.sqrt(0.08 * 0.08 - 0.02 * 0.02)),
+            new ParticlePoint(item.getX() + Math.sin(angle) * endHorizontal, item.getY() - endDescent,
+                item.getZ() - Math.cos(angle) * endHorizontal), ITEM_TRAIL_POINTS);
+    }
+
+    private ParticlePattern buildConnectorPattern(Location station, Location item) {
+        ParticlePattern line = ParticlePatternBuilder.line(point(station.clone().add(0, CONNECTOR_FORGE_TOP_Y, 0)),
+            point(item), 5);
+        return new ParticlePattern(line.getPoints().subList(1, 4));
+    }
+
+    private ParticlePattern buildAuraPattern(Location station, Location item) {
+        ParticlePattern circle = ParticlePatternBuilder.circle(point(item), AURA_ORBIT_RADIUS, AURA_SAMPLES);
+        List<ParticlePoint> points = new ArrayList<>(circle.size());
+        for (int index = 0; index < circle.size(); index++) {
+            ParticlePoint source = circle.getPoints().get(index);
+            points.add(new ParticlePoint(source.x(), source.y()
+                + (index % 2 == 0 ? -AURA_VERTICAL_OFFSET : AURA_VERTICAL_OFFSET), source.z()));
+        }
+        return new ParticlePattern(points);
     }
 
     private void executeFakeItemStep(Player owner, Location itemLoc, ItemStack item,
@@ -657,105 +758,8 @@ public final class ForgeAnimationService {
             (float) (ITEM_PATH_YAW_DEGREES * p), 0f);
     }
 
-    static List<Location> computeSpiralPoints(Location station, float progress) {
-        Location item = computeForgingItemLocation(station, progress);
-        double p = clamp01(progress);
-        double radius = SPIRAL_RADIUS + (SPIRAL_RADIUS_END - SPIRAL_RADIUS) * p;
-        double animationAngle = ITEM_PATH_ROTATIONS * Math.PI * p;
-        List<Location> points = new ArrayList<>(2 * SPIRAL_SAMPLES_PER_STRAND);
-        for (int strand = 0; strand < 2; strand++) {
-            for (int sample = 0; sample < SPIRAL_SAMPLES_PER_STRAND; sample++) {
-                double sampleProgress = (double) sample / (SPIRAL_SAMPLES_PER_STRAND - 1);
-                double angle = animationAngle + 2 * Math.PI * sampleProgress + strand * Math.PI;
-                double y = item.getY() - SPIRAL_HALF_HEIGHT + 2 * SPIRAL_HALF_HEIGHT * smoothClamp(sampleProgress);
-                points.add(new Location(station.getWorld(),
-                    item.getX() + Math.cos(angle) * radius,
-                    y,
-                    item.getZ() + Math.sin(angle) * radius));
-            }
-        }
-        return Collections.unmodifiableList(points);
-    }
-
-    static List<Location> computeTrailPoints(Location station, float progress) {
-        Location item = computeForgingItemLocation(station, progress);
-        double angle = ITEM_PATH_ROTATIONS * Math.PI * clamp01(progress);
-        List<Location> points = new ArrayList<>(ITEM_TRAIL_POINTS);
-        for (int index = 1; index <= ITEM_TRAIL_POINTS; index++) {
-            double distance = 0.08 * index;
-            double descent = Math.min(0.12, distance * 0.25);
-            double horizontalDistance = Math.sqrt(distance * distance - descent * descent);
-            points.add(new Location(station.getWorld(),
-                item.getX() + Math.sin(angle) * horizontalDistance,
-                item.getY() - descent,
-                item.getZ() - Math.cos(angle) * horizontalDistance));
-        }
-        return Collections.unmodifiableList(points);
-    }
-
-    private static List<Location> computeConnectorPoints(Location station, Location item) {
-        List<Location> points = new ArrayList<>(3);
-        Location start = station.clone().add(0, CONNECTOR_FORGE_TOP_Y, 0);
-        for (int index = 1; index <= 3; index++) {
-            double progress = index / 4.0;
-            points.add(new Location(station.getWorld(),
-                start.getX() + (item.getX() - start.getX()) * progress,
-                start.getY() + (item.getY() - start.getY()) * progress,
-                start.getZ() + (item.getZ() - start.getZ()) * progress));
-        }
-        return points;
-    }
-
-    private static List<Location> computeAuraPoints(Location station, Location item) {
-        List<Location> points = new ArrayList<>(AURA_SAMPLES);
-        for (int index = 0; index < AURA_SAMPLES; index++) {
-            double angle = index * Math.PI / 2.0;
-            double verticalOffset = (index % 2 == 0) ? -AURA_VERTICAL_OFFSET : AURA_VERTICAL_OFFSET;
-            points.add(new Location(station.getWorld(),
-                item.getX() + Math.cos(angle) * AURA_ORBIT_RADIUS,
-                item.getY() + verticalOffset,
-                item.getZ() + Math.sin(angle) * AURA_ORBIT_RADIUS));
-        }
-        return points;
-    }
-
-    private static List<Location> computeRevealStarVertices(Location station, double outerRadius,
-                                                            double innerRadius) {
-        Location center = station.clone().add(0, FORGING_CENTER_Y, 0);
-        List<Location> vertices = new ArrayList<>(REVEAL_STAR_VERTICES);
-        for (int index = 0; index < REVEAL_STAR_VERTICES; index++) {
-            double radius = (index % 2 == 0) ? outerRadius : innerRadius;
-            double angle = -Math.PI / 2.0 + index * (2.0 * Math.PI / REVEAL_STAR_VERTICES);
-            vertices.add(center.clone().add(Math.cos(angle) * radius, 0, Math.sin(angle) * radius));
-        }
-        return vertices;
-    }
-
-    private static List<Location> computeRevealStarSamples(Location station, double outerRadius,
-                                                           double innerRadius) {
-        List<Location> vertices = computeRevealStarVertices(station, outerRadius, innerRadius);
-        List<Location> samples = new ArrayList<>(REVEAL_STAR_VERTICES * REVEAL_EDGE_SAMPLES);
-        for (int edge = 0; edge < REVEAL_STAR_VERTICES; edge++) {
-            Location from = vertices.get(edge);
-            Location to = vertices.get((edge + 1) % REVEAL_STAR_VERTICES);
-            for (int step = 1; step <= REVEAL_EDGE_SAMPLES; step++) {
-                double t = step / (double) (REVEAL_EDGE_SAMPLES + 1);
-                samples.add(new Location(station.getWorld(),
-                    from.getX() + (to.getX() - from.getX()) * t,
-                    from.getY() + (to.getY() - from.getY()) * t,
-                    from.getZ() + (to.getZ() - from.getZ()) * t));
-            }
-        }
-        return samples;
-    }
-
     private static double clamp01(double progress) {
         return Math.max(0.0, Math.min(1.0, progress));
-    }
-
-    private static double smoothClamp(double progress) {
-        double clamped = clamp01(progress);
-        return clamped * clamped * (3.0 - 2.0 * clamped);
     }
 
     public void shutdown() {

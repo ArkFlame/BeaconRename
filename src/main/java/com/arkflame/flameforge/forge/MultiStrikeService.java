@@ -1,6 +1,11 @@
 package com.arkflame.flameforge.forge;
 
 import com.arkflame.flameforge.compat.effect.ParticleBridge;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticlePatternBuilder;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticleNetworkRenderer;
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyle;
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyleCatalog;
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyleId;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.model.ForgePowerDefinition;
 import org.bukkit.Location;
@@ -10,6 +15,7 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -27,17 +33,25 @@ public final class MultiStrikeService {
 
     private final SchedulerBridge scheduler;
     private final ParticleBridge particles;
+    private final ParticleNetworkRenderer networkRenderer;
 
     public interface StrikeAction {
         void apply(LivingEntity target);
     }
 
     public MultiStrikeService(SchedulerBridge scheduler, ParticleBridge particles) {
+        this(scheduler, particles,
+            new ParticleNetworkRenderer(scheduler, particles, new ParticlePatternBuilder()));
+    }
+
+    public MultiStrikeService(SchedulerBridge scheduler, ParticleBridge particles,
+                              ParticleNetworkRenderer networkRenderer) {
         if (scheduler == null || particles == null) {
             throw new IllegalArgumentException("Scheduler and particles are required");
         }
         this.scheduler = scheduler;
         this.particles = particles;
+        this.networkRenderer = networkRenderer;
     }
 
     public void execute(final Player viewer, final LivingEntity initialTarget,
@@ -94,7 +108,7 @@ public final class MultiStrikeService {
         visited.add(initialTarget.getUniqueId());
         final AtomicInteger targetCount = new AtomicInteger(1);
         scheduleStrikeChain(viewer, initialTarget, null, power, playersOnly, action,
-            visited, targetCount, targetLimit);
+            visited, targetCount, targetLimit, false);
     }
 
     private void scheduleStrike(final Player viewer, final LivingEntity target,
@@ -134,8 +148,9 @@ public final class MultiStrikeService {
                                      final Location parentHopLocation,
                                      final ForgePowerDefinition power, final boolean playersOnly,
                                      final StrikeAction action, final Set<UUID> visited,
-                                     final AtomicInteger targetCount, final int targetLimit) {
-        long delay = Math.max(0, power.getChainDelayTicks());
+                                     final AtomicInteger targetCount, final int targetLimit,
+                                     final boolean delayed) {
+        long delay = delayed ? Math.max(0, power.getChainDelayTicks()) : 0L;
         if (delay == 0L) {
             scheduler.runEntity(target, new Runnable() {
                 @Override
@@ -200,11 +215,11 @@ public final class MultiStrikeService {
             return;
         }
         action.apply(target);
-        if (parentHopLocation == null) {
-            renderTrail(viewer, target, childLocation, power);
-        } else {
-            renderChainTrail(viewer, parentHopLocation, target, childLocation, power);
-        }
+        Location edgeStart = parentHopLocation == null
+            ? raised(snapshot(viewer.getLocation()), 1.2D)
+            : raised(parentHopLocation, 1.0D);
+        Location edgeEnd = raised(childLocation, 1.0D);
+        renderChainNetwork(viewer, target, edgeStart, edgeEnd, power);
         if (targetCount.get() >= targetLimit) {
             return;
         }
@@ -280,7 +295,7 @@ public final class MultiStrikeService {
                         targetCount.incrementAndGet();
                     }
                     scheduleStrikeChain(viewer, candidate.entity, center, power, playersOnly,
-                        action, visited, targetCount, targetLimit);
+                        action, visited, targetCount, targetLimit, true);
                 }
             }
         });
@@ -350,25 +365,44 @@ public final class MultiStrikeService {
         }
     }
 
-    private void renderChainTrail(final Player viewer, final Location parentHopLocation,
-                                  final LivingEntity target, final Location childLocation,
-                                  final ForgePowerDefinition power) {
-        final Location parentPoint = snapshot(parentHopLocation);
-        final Location childPoint = snapshot(childLocation);
-        scheduler.runEntity(viewer, new Runnable() {
-            @Override
-            public void run() {
-                render(viewer, parentPoint, childPoint, power);
-            }
-        }, RETIRED);
-        if (target instanceof Player && !target.getUniqueId().equals(viewer.getUniqueId())) {
-            scheduler.runEntity(target, new Runnable() {
-                @Override
-                public void run() {
-                    render((Player) target, parentPoint, childPoint, power);
-                }
-            }, RETIRED);
+    private void renderChainNetwork(final Player viewer, final LivingEntity target,
+                                    final Location start, final Location end,
+                                    final ForgePowerDefinition power) {
+        final Location startPoint = snapshot(start);
+        final Location endPoint = snapshot(end);
+        if (startPoint == null || endPoint == null || startPoint.getWorld() == null
+            || !startPoint.getWorld().equals(endPoint.getWorld())) {
+            return;
         }
+        final List<Location> locations = Collections.unmodifiableList(Arrays.asList(startPoint, endPoint));
+        final ParticleStyle style = ParticleStyleCatalog.get(chainStyle(power));
+        final List<String> preferredCandidates = chainCandidates(power);
+        final int points = Math.max(2, power.getTrailPoints());
+        networkRenderer.render(viewer, locations, style, preferredCandidates, points, 5, 0.0D);
+        if (target instanceof Player && !target.getUniqueId().equals(viewer.getUniqueId())) {
+            networkRenderer.render((Player) target, locations, style, preferredCandidates,
+                points, 5, 0.0D);
+        }
+    }
+
+    private static ParticleStyleId chainStyle(final ForgePowerDefinition power) {
+        ForgePowerDefinition.PowerType type = power.getPowerType();
+        if (type == ForgePowerDefinition.PowerType.ON_HIT_CHAIN_DAMAGE) {
+            return ParticleStyleId.ELECTRIC_NETWORK;
+        }
+        if (type == ForgePowerDefinition.PowerType.ON_HIT_CHAIN_POTION) {
+            return ParticleStyleId.CONTAGION_NETWORK;
+        }
+        return ParticleStyleId.GENERIC_MAGIC;
+    }
+
+    private static List<String> chainCandidates(final ForgePowerDefinition power) {
+        ForgePowerDefinition.PowerType type = power.getPowerType();
+        if (type == ForgePowerDefinition.PowerType.ON_HIT_CHAIN_DAMAGE
+            || type == ForgePowerDefinition.PowerType.ON_HIT_CHAIN_POTION) {
+            return null;
+        }
+        return power.getParticleCandidates();
     }
 
     private void render(Player owner, Location start, Location end, ForgePowerDefinition power) {
@@ -397,6 +431,13 @@ public final class MultiStrikeService {
         return copy == null ? location : copy;
     }
 
+    private static Location raised(Location location, double yOffset) {
+        if (location == null) {
+            return null;
+        }
+        return location.clone().add(0, yOffset, 0);
+    }
+
     private static double distanceSquared(Location left, Location right) {
         double x = left.getX() - right.getX();
         double y = left.getY() - right.getY();
@@ -417,4 +458,5 @@ public final class MultiStrikeService {
             this.uuid = uuid;
         }
     }
+
 }

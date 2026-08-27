@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.effect;
 
+import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyleId;
 import com.arkflame.flameforge.model.ForgeAttributeDefinition;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgePowerDefinition;
@@ -10,27 +11,27 @@ import java.util.Objects;
 
 public final class ForgeAnimationThemeResolver {
     private static final ForgeAnimationTheme BREAK = new ForgeAnimationTheme(
-        "break", 239, 68, 68, 255, 130, 130, "smoke", "crit");
+        "break", ParticleStyleId.BREAK);
     private static final ForgeAnimationTheme CURSE = new ForgeAnimationTheme(
-        "curse", 168, 85, 247, 214, 180, 254, "portal", "spell");
+        "curse", ParticleStyleId.CURSE);
     private static final ForgeAnimationTheme ELECTRIC = new ForgeAnimationTheme(
-        "electric", 250, 204, 21, 254, 240, 138, "flame", "firework");
+        "electric", ParticleStyleId.ELECTRIC);
     private static final ForgeAnimationTheme EXPLOSIVE = new ForgeAnimationTheme(
-        "explosive", 249, 115, 22, 254, 185, 120, "flame", "firework");
+        "explosive", ParticleStyleId.EXPLOSIVE);
     private static final ForgeAnimationTheme CONTAGION = new ForgeAnimationTheme(
-        "contagion", 132, 204, 22, 199, 230, 132, "flame", "firework");
+        "contagion", ParticleStyleId.CONTAGION);
     private static final ForgeAnimationTheme POISON = new ForgeAnimationTheme(
-        "poison", 34, 197, 94, 134, 227, 165, "flame", "firework");
+        "poison", ParticleStyleId.POISON);
     private static final ForgeAnimationTheme BLEED = new ForgeAnimationTheme(
-        "bleed", 220, 38, 38, 250, 150, 150, "flame", "firework");
+        "bleed", ParticleStyleId.BLEED);
     private static final ForgeAnimationTheme SWIFT = new ForgeAnimationTheme(
-        "swift", 56, 189, 248, 180, 226, 254, "flame", "firework");
+        "swift", ParticleStyleId.SWIFT);
     private static final ForgeAnimationTheme HEAL = new ForgeAnimationTheme(
-        "heal", 244, 114, 182, 250, 186, 216, "flame", "firework");
+        "heal", ParticleStyleId.HEAL);
     private static final ForgeAnimationTheme DEFENSIVE = new ForgeAnimationTheme(
-        "defensive", 96, 165, 250, 178, 212, 254, "flame", "firework");
+        "defensive", ParticleStyleId.DEFENSIVE);
     private static final ForgeAnimationTheme SUCCESS = new ForgeAnimationTheme(
-        "success", 245, 158, 11, 254, 214, 130, "flame", "firework");
+        "success", ParticleStyleId.SUCCESS);
 
     public ForgeAnimationTheme resolve(ForgeOutcomeCategory category, ForgeVariant usedVariant) {
         Objects.requireNonNull(category, "category");

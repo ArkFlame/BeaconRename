@@ -69,4 +69,36 @@ class CommandNodeTest {
         assertFalse(CommandNode.SETUP_TIER_CREATE.getUsage().contains("<priority>"));
         assertFalse(CommandNode.SETUP_TIER_CLONE.getUsage().contains("<priority>"));
     }
+
+    @Test
+    void weaponsMenuNodeIsAdminChildVisibleOnlyWithPermission() {
+        CommandNode weaponsMenu = null;
+        for (CommandNode node : CommandNode.values()) {
+            if ("weaponsmenu".equals(node.getRoot())
+                && node.getPermission().isPresent()
+                && "flameforge.command.weaponsmenu".equals(node.getPermission().get())) {
+                weaponsMenu = node;
+            }
+        }
+        assertNotNull(weaponsMenu);
+        assertEquals("weaponsmenu", weaponsMenu.getUsage());
+        assertEquals("weaponsmenu", weaponsMenu.getSuggestion());
+        assertEquals("flameforge.command.weaponsmenu", weaponsMenu.getPermission().get());
+        assertEquals("help.descriptions.weaponsmenu", weaponsMenu.getDescriptionKey().get());
+        assertEquals(CommandNode.Category.ADMINISTRATION, weaponsMenu.getCategory());
+        assertEquals(CommandNode.AccessClass.ADMIN, weaponsMenu.getAccessClass());
+        assertTrue(weaponsMenu.isReadyOnly());
+        assertFalse(weaponsMenu.isAlias());
+
+        CommandSender denied = mock(CommandSender.class);
+        when(denied.hasPermission(anyString())).thenReturn(false);
+        assertFalse(weaponsMenu.isPermitted(denied));
+        assertFalse(weaponsMenu.visibleTo(denied));
+
+        CommandSender admin = mock(CommandSender.class);
+        when(admin.hasPermission(anyString())).thenReturn(true);
+        assertTrue(weaponsMenu.isPermitted(admin));
+        assertTrue(weaponsMenu.visibleTo(admin));
+        assertTrue(CommandNode.permittedRootNames(admin, "weap").contains("weaponsmenu"));
+    }
 }

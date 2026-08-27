@@ -52,6 +52,11 @@ class MessageCatalogCoverageTest {
             "testitem.material-unavailable", "testitem.material-category-mismatch",
             "testitem.variant-ineligible", "testitem.mutation-failed", "testitem.success");
 
+    private static final List<String> WEAPONSMENU_KEYS = Arrays.asList(
+            "help.descriptions.weaponsmenu",
+            "weaponsmenu.no-permission", "weaponsmenu.player-only",
+            "weaponsmenu.give-failed", "weaponsmenu.given");
+
     private static final List<String> TIER_INFO_CONTRACT_KEYS = Arrays.asList(
             "tier-info.level", "tier-info.requirements-combine", "tier-info.requirement-xp",
             "tier-info.requirement-money", "tier-info.requirements-items-header",
@@ -89,6 +94,7 @@ class MessageCatalogCoverageTest {
         catalog.addAll(COMMAND_KEYS_ADDED);
         catalog.addAll(STATION_TELEPORT_DYNAMIC_KEYS);
         catalog.addAll(TESTITEM_KEYS);
+        catalog.addAll(WEAPONSMENU_KEYS);
         catalog.addAll(TIER_INFO_CONTRACT_KEYS);
         catalog.add("tiers.entry");
 
@@ -222,6 +228,12 @@ class MessageCatalogCoverageTest {
                 .string("tier_id", "my_tier").string("variant_id", "my_variant").string("material", "DIAMOND"));
         messages.put("testitem.success", arguments()
                 .string("tier_id", "my_tier").string("variant_id", "my_variant").string("material", "DIAMOND_SWORD"));
+        messages.put("weaponsmenu.no-permission", arguments().string("permission", "flameforge.command.weaponsmenu"));
+        messages.put("weaponsmenu.player-only", arguments());
+        messages.put("weaponsmenu.give-failed", arguments()
+                .string("tier_id", "my_tier").string("variant_id", "my_variant"));
+        messages.put("weaponsmenu.given", arguments()
+                .string("tier_id", "my_tier").string("variant_id", "my_variant"));
         messages.put("command.failed", arguments().string("reason", "broken"));
         messages.put("command.player-only", arguments());
         messages.put("command.loading", arguments());

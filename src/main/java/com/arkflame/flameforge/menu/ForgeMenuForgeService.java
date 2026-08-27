@@ -6,11 +6,15 @@ import com.arkflame.flameforge.forge.ForgePlanResult;
 import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.model.PlayerForgeState;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
+import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.MessageService;
+import net.kyori.adventure.text.Component;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
-import java.util.Collections;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.logging.Level;
@@ -121,14 +125,33 @@ public final class ForgeMenuForgeService {
             forgeService.confirmAndExecute(player, session, claimedItem, plan, resolution -> {
                 scheduler.runEntity(player,
                     () -> {
-                        if (resolution.isSuccess()) {
-                            forgePowerService.refreshPassivePowers(player);
-                            messageService.send(player, "forge.confirm.complete");
-                        } else {
+                        if (!resolution.isSuccess()) {
                             String errorReason = resolution.getErrorMessage();
                             messageService.send(player, "forge.confirm.failed",
-                                Collections.singletonMap("reason", errorReason != null ? errorReason : "unknown"),
-                                Collections.emptyMap());
+                                MessageArguments.create().string("reason",
+                                    errorReason != null ? errorReason : "unknown"));
+                            return;
+                        }
+
+                        ForgeOutcomeCategory category = resolution.getCategory();
+                        if (category == ForgeOutcomeCategory.SUCCESS) {
+                            forgePowerService.refreshPassivePowers(player);
+                            messageService.send(player, "forge.confirm.success",
+                                MessageArguments.create().component("item", itemComponent(resolution.getMutatedItem())));
+                        } else if (category == ForgeOutcomeCategory.CURSE) {
+                            forgePowerService.refreshPassivePowers(player);
+                            messageService.send(player, "forge.confirm.cursed");
+                        } else if (category == ForgeOutcomeCategory.BREAK) {
+                            forgePowerService.refreshPassivePowers(player);
+                            if (resolution.hasItemOutput()) {
+                                messageService.send(player, "forge.confirm.fractured",
+                                    MessageArguments.create().component("item", itemComponent(resolution.getMutatedItem())));
+                            } else {
+                                messageService.send(player, "forge.confirm.shattered");
+                            }
+                        } else {
+                            messageService.send(player, "forge.confirm.failed",
+                                MessageArguments.create().string("reason", "unknown terminal outcome"));
                         }
                     },
                     () -> {
@@ -146,5 +169,23 @@ public final class ForgeMenuForgeService {
                 messageService.send(player, "menu.forge-start-failed");
             }
         }
+    }
+
+    private Component itemComponent(ItemStack item) {
+        if (item == null) {
+            return Component.text("item");
+        }
+
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null && meta.hasDisplayName()) {
+            String displayName = meta.getDisplayName();
+            if (displayName != null && !displayName.trim().isEmpty()) {
+                return messageService.getRenderer().fromLegacy(displayName);
+            }
+        }
+
+        String typeName = item.getType() != null ? item.getType().name() : "ITEM";
+        String humanized = typeName.replace('_', ' ').toLowerCase(Locale.ROOT);
+        return Component.text(Character.toUpperCase(humanized.charAt(0)) + humanized.substring(1));
     }
 }

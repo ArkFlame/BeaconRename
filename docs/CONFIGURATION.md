@@ -37,10 +37,27 @@ Bundled defaults (schema-version 2):
 - `animation-profile`, `menu-profile` — default profile names.
 - `cost-display`, `cost-colors` — cost formatting.
 - `forge.passive-refresh-ticks`, `forge.power-cooldown-max-entries` (default 4096),
-  `forge.reject-foreign-persistent-data`, `forge.menu.profile` — power/cooldown and menu runtime settings.
+  `forge.power-trace` (default `false`), `forge.reject-foreign-persistent-data`,
+  `forge.menu.profile` — power/cooldown, focused diagnostics, and menu runtime settings.
 - `holograms` — `enabled`, `provider-order` (default `FancyHolograms`,
   `DecentHolograms`), `offset-y`, `transparent-background`, `lines` (MiniMessage
   lines with `%forge_id%` placeholder).
+
+### Forge power trace
+
+`forge.power-trace` defaults to `false`. Set it to `true` to log focused power
+diagnostics with the `[PowerTrace]` prefix. The setting is read from the
+published configuration snapshot, so `/flameforge reload` applies it without a
+restart. Logs include player UUID, power identity, decision stage, cooldown
+remaining time, and sanitized decision detail; enable it only while diagnosing
+power routing and behavior, then disable it. Player UUIDs are identifying data;
+protect diagnostic logs and limit their retention.
+
+Draining has a 10% chance gate and a 3-second cooldown gate; both must allow the
+power before it applies. `CHANCE_MISS` means chance gate failed. It does not
+mean the power is stuck in cooldown. `PROJECTILE_HIT_EVENT_IGNORED` is
+diagnostic evidence for a separate routing decision. It does not establish
+projectile spear powers as supported.
 
 ## equipment.yml (categories and progression)
 
@@ -48,10 +65,17 @@ Bundled defaults (schema-version 2):
 
 | Category | ID      | Fallback | Progression                                  | Materials                          |
 |----------|---------|----------|----------------------------------------------|------------------------------------|
-| Weapon   | `weapon`| no       | `weapon_tier1` … `weapon_tier7`              | swords, axes, bow, crossbow, trident, mace |
+| Weapon   | `weapon`| no       | `weapon_tier1` … `weapon_tier7`              | swords, axes, bow, crossbow, trident, mace, supported spear strings |
 | Armor    | `armor` | no       | `armor_tier1` … `armor_tier7`                | helmets, chestplates, leggings, boots, turtle helmet, elytra |
 | Shield   | `shield`| no       | `shield_tier1` … `shield_tier7`              | `SHIELD`                           |
 | Amulet   | `amulet`| yes      | `amulet_tier1` … `amulet_tier7`              | none (fallback)                    |
+
+Bundled resources contain 28 category tiers across these four progressions,
+plus seven legacy `tier1` … `tier7` files kept readable for old identities.
+Spear strings classify as weapons only when `MaterialResolver` can resolve
+them on the running server; unavailable strings are skipped on older runtimes.
+The bundled amulet variants include Curative, Fleet, Iron Token, and Medic
+Token examples; Miner Charm is not bundled.
 
 ### Amulet fallback
 
@@ -164,6 +188,17 @@ variants:
 - Power-level `cooldown-ticks` is authored in ticks (20 ticks = 1 second) and
   enforced internally as ticks. The shipped tier files pair the two: a variant
   lore line such as `Cooldown: 2s` corresponds to `cooldown-ticks: 40`.
+- Positive cooldowns shown in player-facing variant lore use seconds; zero means
+  no cooldown. This display does not change the internal tick-based power
+  enforcement.
+
+### Passive duration
+
+For `PASSIVE_POTION`, `duration-ticks` is an internal refresh/lease input. The
+runtime applies a short lease and refreshes it while the item remains in its
+activation slot; it is not the visible lifetime promised by the lore. Player
+lore describes the public condition, such as `Resistance I while held` or
+`Regeneration I while in inventory`.
 
 ### Power definitions (inside `variants.<id>.powers`)
 
@@ -211,6 +246,10 @@ All strings use MiniMessage. Key groups: `startup`, `command`, `help`, `open`,
 `forge-interact`, `reload`, `validate`, `tiers`, `tier-info`, `preview`,
 `testitem`, `history`, `station*`, `tp`, `setup*`, `forge` (outcome titles),
 `cooldown`, `cost`, `validation`, `announcements`, `menu`, `delivery`.
+Forge confirmation messages remain distinct: `forge.confirm.success`,
+`forge.confirm.cursed`, `forge.confirm.fractured`, and
+`forge.confirm.shattered`; mutation or execution errors use
+`forge.confirm.failed`.
 
 Layering: the bundled `messages.yml` inside the JAR is the default. Operator
 overrides in `plugins/FlameForge/messages.yml` take precedence per key; any key

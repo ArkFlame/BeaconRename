@@ -11,17 +11,40 @@ Every forge attempt resolves to exactly one of three outcome categories:
 |----------|-----------------------------------------------------|
 | SUCCESS  | Input item returned in mutated form (variant applied) |
 | BREAK    | Break policy applied (reset/strip; may destroy the item) |
-| CURSE    | Item permanently cursed and can no longer be forged  |
+| CURSE    | Item encoded as cursed and can no longer be forged    |
 
 Break/curse behavior is configured per tier (`break` / `curse` sections of the
 tier file). Chances are configured per tier (`chances.success/break/curse`).
 Forge costs and station cooldowns apply to the attempt itself; variants are
 selected from eligible variants by weight.
 
+### Item state and result messages
+
+- `SUCCESS` replaces prior FlameForge metadata with the selected variant and
+  returns the item. The success message renders the mutated display name,
+  including its configured colors.
+- `BREAK` follows the tier's break policy. A non-destroyed fractured item keeps
+  its fractured colored display and can be submitted again under normal item
+  policy; a destroyed result has no item output. The menu distinguishes
+  `forge.confirm.fractured` from `forge.confirm.shattered`.
+- `CURSE` strips prior FlameForge powers, FlameForge attributes, and FlameForge
+  lore, then writes an encoded cursed identity. Cursed state is terminal and
+  inspection rejects it before normal forging. This does not broadly remove
+  arbitrary potion effects from a player or item.
+- A malformed or stale encoded FlameForge identity is runtime-quarantined as
+  `INVALID_IDENTITY` and denied rather than treated as a fresh item.
+- Tier-0 custom name, lore, model data, or foreign persistent data protection
+  applies to fresh unowned items. An owned fractured item can reforge under
+  normal policy; a fresh foreign tier-0 custom item remains protected.
+
 ### Result themes (animation palettes)
 
 `ForgeAnimationThemeResolver` picks the animation theme from the outcome
 category and the used variant's powers/attributes:
+
+The table below describes forge-result animation defaults. Combat chain trails
+use the separate semantic families documented under Particle semantics; the
+electric chain trail does not use a firework spark.
 
 | Theme      | Triggering power/attribute                                      | Primary color | Particle |
 |------------|-----------------------------------------------------------------|---------------|----------|
@@ -49,7 +72,9 @@ An empty slot list means "held in either hand".
 - **ON_HIT_POTION / ON_HIT_FIRE / ON_HIT_HEAL** — trigger on attack against any
   LivingEntity when the chance roll passes and the per-player power cooldown
   (per forge id) has expired. Potion applies to the victim; fire sets the
-  victim's fire ticks; heal heals the attacker.
+  victim's fire ticks; heal heals the attacker. For configured fire powers, a
+  lethal hit guarantees primary ignition before the chance roll; a chance miss
+  does not force area-of-effect fire on nearby entities.
 - **EVERY_N_HIT_LIGHTNING / EVERY_N_HIT_KNOCKBACK** — a per-player/per-forge
   hit counter increments on each eligible hit; on the `hit-interval`-th hit the
   counter resets, the chance is rolled, and lightning strikes the victim's
@@ -71,8 +96,10 @@ An empty slot list means "held in either hand".
   an activation slot. Potion is applied to the attacker, knockback pushes the
   attacker away, heal heals the defender.
 - **PASSIVE_POTION** — while a forged item with this power is in an activation
-  slot (INVENTORY counts via the cached inventory forge ids), the potion effect
-  is re-applied every `duration-ticks`.
+  slot (INVENTORY counts via the cached inventory forge ids), `duration-ticks`
+  supplies an internal short refresh lease. It is not a visible effect
+  lifetime; lore describes conditions such as Resistance I while held or
+  Regeneration I while in inventory.
 - **SHIFT_RIGHT_CLICK_DASH / SHIFT_RIGHT_CLICK_HEAL** — activated by
   sneak + right-click (air or block) with the forged item in the interacted
   hand; dash launches the player along their facing direction
@@ -88,8 +115,9 @@ An empty slot list means "held in either hand".
 - **True chain** (`executeChain`, used by contagion/electric chain powers):
   hop semantics A→B→C: after the current target is struck, candidates near the
   current target are discovered and the *next* target is scheduled with a
-  `chain-delay-ticks` delay; the trail is rendered between the parent hop
-  location and the child target (a connected segment chain).
+  `chain-delay-ticks` delay. Each parent-hop edge renders as a straight line
+  using five frames at delays 0/2/4/6/8 ticks; it is a visual network of
+  parent-to-child segments, not a curved or particle-spark promise.
 - **Deduplication**: the attacker's uuid and every visited target uuid are
   tracked in a shared visited set; no entity is struck twice and the attacker
   is never a target.
@@ -103,19 +131,45 @@ An empty slot list means "held in either hand".
 
 ### Particle semantics
 
-- Every shipped power carries `particle-candidates`; the first candidate is
-  used (e.g. `FLAME`/`LAVA` for fire, `HAPPY_VILLAGER`/`VILLAGER_HAPPY`/`SPELL`
-  for poison, `ELECTRIC_SPARK`/`NOTE`/`CRIT` for lightning, `CRIT`/`HEART` for
-  bleed, `EXPLOSION*` for explosive, `HEART` for heal, `CLOUD`/`INSTANT_EFFECT`
-  for speed, `ENCHANT`/`SPELL` for resistance, `WITCH`/`LARGE_SMOKE` for
-  wither).
-- Semantic fallbacks exist per power family (HEART/green/WITCH/yellow/flame/
-  red/electric/etc.) and colored dust is used when the runtime particle name is
-  unavailable.
+- Every shipped power carries `particle-candidates`; candidates are resolved
+  through runtime-safe semantic families. Fire uses `FLAME`/`LAVA`, direct
+  poison uses a green family, lightning uses the electric family, bleed uses
+  `CRIT`, explosive uses `EXPLOSION*`, heal uses `HEART`, speed uses
+  `CLOUD`/`INSTANT_EFFECT`, resistance uses `ENCHANT`/`SPELL`, and wither uses
+  `WITCH`/`LARGE_SMOKE`.
+- Chain damage uses yellow dust with `END_ROD`/`ENCHANT`/`NOTE`/`CRIT`; it does
+  not request a firework spark. Chain poison uses green dust with
+  `SPELL`/`HAPPY_VILLAGER`/`CRIT`. Colored dust is used when available, with
+  runtime fallbacks otherwise.
+- Bleed activation and each pulse show redstone block-break visuals, red dust,
+  and CRIT.
 - **Cosmetic failure never aborts a power**: particle/colored-dust errors are
   caught per-effect and only logged; the power effect itself still executes.
-- Passive potions emit particles only on activation and on each scheduled
+- Passive potions emit particles only on activation and on each scheduled lease
   refresh; there is no continuous particle loop.
+
+### Dynamic particle architecture
+
+- Result and power semantics select a `ParticleStyle` from
+  `ParticleStyleCatalog`. A style is an RGB palette plus an ordered candidate
+  list; it is not a promise that one Bukkit enum exists on every server.
+- Chain powers use the ordered network path. `MultiStrikeService` selects the
+  electric or contagion network style, and `ParticleNetworkRenderer` renders
+  each parent-to-child edge as straight interpolated geometry in five frames
+  at delays 0, 2, 4, 6, and 8 ticks. Each receiving `Player` owns its scheduled
+  spawn through `ParticleBridge`; this is not a global broadcast or a curved
+  particle-spark promise.
+- Runtime particle enum names and keys are indexed from the running API.
+  `getDataType()` chooses the payload contract, including the 1.21.8 `NONE`
+  versus 1.21.9 `Spell` effect distinction. Typed adaptation is attempted
+  only when the request payload matches; unknown typed data uses
+  `CustomPayload`, then the ordered candidate and provider fallbacks continue.
+  Legacy `Effect` is the older provider path.
+- Pattern math is pure and bounded. Particle points become requests, related
+  requests are grouped into batches, and entity-owned scheduling performs the
+  actual send. A failure in a candidate, typed adapter, provider, or cosmetic
+  batch is isolated and logged at the compatibility boundary; the combat or
+  forge power still executes.
 
 ### Passive activation and reconciliation
 
@@ -140,7 +194,8 @@ cooldown check is `cooldownTicks × 50ms` against a monotonic clock, keyed by
 player + forge id + power id, with a 4096-entry eviction cap (configurable via
 `forge.power-cooldown-max-entries`). Tier cooldowns use `cooldown-seconds`
 and are displayed in seconds (e.g. `/flameforge tier info`). Variant lore
-cooldown text uses the seconds convention (e.g. 40 ticks → "Cooldown: 2s").
+cooldown text for positive cooldowns uses seconds (e.g. 40 ticks →
+"Cooldown: 2s"); zero means no cooldown.
 
 ## Armor Reduction Composition
 

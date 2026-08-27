@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -109,10 +110,9 @@ variants:
       - ANY
     display-name: "<gradient:#b8b8b8:#ffffff><bold>Tempered %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier I forged variant"
-      - "<dark_gray>● <white>Reliable first refinement"
-      - "<dark_gray>● <white>Original material retained"
-      - "<dark_gray>● <red>8% chance to cause bleeding"
+      - "<gray>Any Tier I forged variant"
+      - "<dark_gray>● <white>Reliable first refinement."
+      - "<dark_gray>● <red>8% chance to cause bleeding."
     enchantments:
       - candidates:
           - DURABILITY
@@ -131,16 +131,14 @@ variants:
         pulse-interval-ticks: 12
         particle-candidates:
           - CRIT
-          - HEART
   venomous:
     weight: "30.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#4ade80:#166534><bold>Venomous %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier I forged variant"
-      - "<dark_gray>● <green>15% poison strike"
-      - "<dark_gray>● <white>Original enchantments retained"
+      - "<gray>Any Tier I forged variant"
+      - "<dark_gray>● <green>15% poison strike."
     enchantments: []
     attributes: []
     powers:
@@ -162,9 +160,8 @@ variants:
       - ANY
     display-name: "<gradient:#67e8f9:#2563eb><bold>Swift %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier I forged variant"
-      - "<dark_gray>● <aqua>Speed while actively equipped"
-      - "<dark_gray>● <white>Works with the original material"
+      - "<gray>Any Tier I forged variant"
+      - "<dark_gray>● <aqua>Speed while equipped."
     enchantments: []
     attributes: []
     powers:

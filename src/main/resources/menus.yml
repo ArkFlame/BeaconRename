@@ -85,3 +85,33 @@ default:
     chance-curse: "<dark_gray>• <dark_purple>Curse <white>%curse_chance%%"
 
     variant-entry: "<dark_gray>• %variant_name% <gray>— <aqua>%variant_chance%%"
+
+weapons-preview:
+  title: "<gold><bold>Weapons</bold> <gray>%page%/%pages% "
+  size: 54
+  background:
+    materials:
+      - GRAY_STAINED_GLASS_PANE
+      - "STAINED_GLASS_PANE:7"
+      - GLASS_PANE
+    name: " "
+  previous:
+    materials:
+      - ARROW
+    name: "<yellow><bold>Previous Page</bold>"
+    lore:
+      - "<gray>Go to page <white>%target_page% "
+  next:
+    materials:
+      - ARROW
+    name: "<yellow><bold>Next Page</bold>"
+    lore:
+      - "<gray>Go to page <white>%target_page% "
+  page-info:
+    materials:
+      - PAPER
+      - BOOK
+    name: "<gradient:#f97316:#facc15><bold>Weapon Catalog</bold></gradient>"
+    lore:
+      - "<gray>Page <white>%page%<gray>/<white>%pages%"
+      - "<gray>Click a weapon to receive one."

@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,15 +105,14 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   annihilator:
-    weight: "34.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#fde047:#ef4444><bold>Annihilator %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier VI forged variant"
-      - "<dark_gray>Power: Chain damage on hit"
-      - "<dark_gray>Cooldown: 4s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <yellow>Chain damage on hit."
+      - "<dark_gray>● <white>Cooldown: 4s."
     enchantments: []
     attributes: []
     powers:
@@ -130,16 +130,15 @@ variants:
           - NOTE
           - CRIT
   reaper:
-    weight: "33.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#e11d48:#4c0519><bold>Reaper %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier VI forged variant"
-      - "<dark_gray>Power: Bleed and heal on hit"
-      - "<dark_gray>Bleed Cooldown: 3s"
-      - "<dark_gray>Heal Cooldown: 4s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <red>Bleed and heal on hit."
+      - "<dark_gray>● <white>Bleed Cooldown: 3s."
+      - "<dark_gray>● <white>Heal Cooldown: 4s."
     enchantments: []
     attributes: []
     powers:
@@ -152,7 +151,6 @@ variants:
         pulse-interval-ticks: 12
         particle-candidates:
           - CRIT
-          - HEART
       - id: reaper_heal
         type: ON_HIT_HEAL
         cooldown-ticks: 80
@@ -161,15 +159,14 @@ variants:
         particle-candidates:
           - HEART
   demolisher:
-    weight: "33.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#fb923c:#7c2d12><bold>Demolisher %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier VI forged variant"
-      - "<dark_gray>Power: Explosive strike"
-      - "<dark_gray>Cooldown: 5s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <gold>Explosive strike."
+      - "<dark_gray>● <white>Cooldown: 5s."
     enchantments: []
     attributes: []
     powers:
@@ -187,3 +184,53 @@ variants:
           - EXPLOSION_NORMAL
           - EXPLOSION_EMITTER
           - FLAME
+  inferno:
+    weight: "20.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#facc15:#b91c1c><bold>Inferno %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VI forged variant"
+      - "<dark_gray>● <gold>Area fire on hit."
+      - "<dark_gray>● <white>Cooldown: 3s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: inferno_fire
+        type: ON_HIT_AOE_FIRE
+        cooldown-ticks: 60
+        chance: "0.25"
+        fire-ticks: 100
+        radius: "4.5"
+        max-targets: 6
+        particle-candidates:
+          - FLAME
+          - LAVA
+  plaguebound:
+    weight: "20.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#bef264:#14532d><bold>Plaguebound %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VI forged variant"
+      - "<dark_gray>● <green>Chain poison on hit."
+      - "<dark_gray>● <white>Cooldown: 4s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: plaguebound_chain
+        type: ON_HIT_CHAIN_POTION
+        cooldown-ticks: 80
+        chance: "0.22"
+        effect-candidates:
+          - POISON
+        duration-ticks: 100
+        amplifier: 1
+        radius: "5.5"
+        max-targets: 6
+        chain-delay-ticks: 2
+        trail-points: 12
+        particle-candidates:
+          - SPELL
+          - HAPPY_VILLAGER
+          - CRIT

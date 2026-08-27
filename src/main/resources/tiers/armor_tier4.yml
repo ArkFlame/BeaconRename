@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,13 +105,13 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   arcane_ward:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - ARMOR
     display-name: "<gradient:#c084fc:#4338ca><bold>Arcane Ward %base_name%</bold></gradient>"
     lore:
       - "<gray>Armor Tier IV forged variant"
-      - "<dark_gray>● <light_purple>40% magic damage reduction"
+      - "<dark_gray>● <blue>40% magic damage reduction."
     enchantments: []
     attributes:
       - id: arcane_ward_reduction
@@ -118,16 +119,56 @@ variants:
         value: "0.40"
     powers: []
   guardian:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - ARMOR
     display-name: "<gradient:#fef3c7:#64748b><bold>Guardian %base_name%</bold></gradient>"
     lore:
       - "<gray>Armor Tier IV forged variant"
-      - "<dark_gray>● <white>10% damage reduction"
+      - "<dark_gray>● <blue>10% damage reduction."
     enchantments: []
     attributes:
       - id: guardian_reduction
         type: DAMAGE_REDUCTION_PERCENT
         value: "0.10"
+    powers: []
+  fleetward:
+    weight: "25.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#38bdf8:#2563eb><bold>Fleetward %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier IV forged variant"
+      - "<dark_gray>● <aqua>Speed II while equipped."
+      - "<dark_gray>● <blue>8% damage reduction."
+    enchantments: []
+    attributes:
+      - id: fleetward_reduction
+        type: DAMAGE_REDUCTION_PERCENT
+        value: "0.08"
+    powers:
+      - id: fleetward_speed
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - SPEED
+        duration-ticks: 60
+        amplifier: 1
+        particle-candidates:
+          - CLOUD
+        activation-slots:
+          - ARMOR
+  venomward:
+    weight: "25.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#4ade80:#166534><bold>Venomward %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier IV forged variant"
+      - "<dark_gray>● <green>55% poison damage reduction."
+    enchantments: []
+    attributes:
+      - id: venomward_reduction
+        type: POISON_DAMAGE_REDUCTION_PERCENT
+        value: "0.55"
     powers: []

@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,18 +105,18 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   aegis:
-    weight: "100.0"
+    weight: "34.0"
     applicable-groups:
       - SHIELD
     display-name: "<gradient:#fef3c7:#60a5fa><bold>Aegis %base_name%</bold></gradient>"
     lore:
       - "<gray>Shield Tier VII forged variant"
-      - "<dark_gray>● <white>15% damage reduction"
-      - "<dark_gray>● <white>45% chance to recover 2 health"
-      - "<dark_gray>● <white>Heal Cooldown: 4s"
-      - "<dark_gray>● <white>100% chance to knock back attackers"
-      - "<dark_gray>● <white>1.75 horizontal, 0.4 vertical strength"
-      - "<dark_gray>● <white>Knockback Cooldown: 3s"
+      - "<dark_gray>● <blue>15% damage reduction."
+      - "<dark_gray>● <green>45% chance to recover 2 health."
+      - "<dark_gray>● <white>Heal Cooldown: 4s."
+      - "<dark_gray>● <white>100% chance to knock back attackers."
+      - "<dark_gray>● <white>1.75 horizontal, 0.4 vertical strength."
+      - "<dark_gray>● <white>Knockback Cooldown: 3s."
     enchantments: []
     attributes:
       - id: aegis_guard
@@ -136,5 +137,64 @@ variants:
         horizontal-strength: "1.75"
         vertical-strength: "0.4"
         particle-candidates:
-          - CLOUD
-          - CRIT
+           - CLOUD
+           - CRIT
+  doomguard:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#84cc16:#14532d><bold>Doomguard %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier VII forged variant"
+      - "<dark_gray>● <green>Poison attackers."
+      - "<dark_gray>● <blue>10% damage reduction."
+      - "<dark_gray>● <white>Cooldown: 4s."
+    enchantments: []
+    attributes:
+      - id: doomguard_reduction
+        type: DAMAGE_REDUCTION_PERCENT
+        value: "0.10"
+    powers:
+      - id: doomguard_potion
+        type: ON_BLOCK_POTION
+        cooldown-ticks: 80
+        chance: "0.30"
+        effect-candidates:
+          - POISON
+        duration-ticks: 80
+        amplifier: 1
+        particle-candidates:
+          - SPELL
+  savior:
+    weight: "33.0"
+    applicable-groups:
+      - SHIELD
+    display-name: "<gradient:#f9a8d4:#22c55e><bold>Savior %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Shield Tier VII forged variant"
+      - "<dark_gray>● <green>Heal while blocking."
+      - "<dark_gray>● <blue>Resistance while offhand."
+      - "<dark_gray>● <white>Cooldown: 5s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: savior_heal
+        type: ON_BLOCK_HEAL
+        cooldown-ticks: 100
+        chance: "0.35"
+        heal-amount: "2.5"
+        particle-candidates:
+          - HEART
+      - id: savior_resistance
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - DAMAGE_RESISTANCE
+          - RESISTANCE
+        duration-ticks: 60
+        amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
+        activation-slots:
+          - OFF_HAND

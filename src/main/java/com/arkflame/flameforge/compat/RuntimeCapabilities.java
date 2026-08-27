@@ -28,7 +28,6 @@ public final class RuntimeCapabilities {
         detect("nms.NBTBlockPosition", () -> exists("net.minecraft.core.BlockPosition"));
         detect("nms.NBTTagCompound", () -> exists("net.minecraft.nbt.NBTTagCompound"));
         detect("nms.NMSHandler", () -> hasNMSHandler());
-        detect("particle.ParticleParam", () -> hasParticleParam());
         detect("packet.PlayOutChat", () -> hasPacketPlayOutChat());
         initialized = true;
     }
@@ -59,13 +58,6 @@ public final class RuntimeCapabilities {
                 || exists("net.minecraft.server.v1_21_R1.NBTCompressedStreamTools");
     }
 
-    private boolean hasParticleParam() {
-        return exists("net.minecraft.server.v1_17_R1.ParticleParam")
-                || exists("net.minecraft.server.v1_18_R2.ParticleParam")
-                || exists("net.minecraft.server.v1_19_R1.ParticleParam")
-                || exists("net.minecraft.server.v1_20_R1.ParticleParam");
-    }
-
     private boolean hasPacketPlayOutChat() {
         return exists("net.minecraft.server.v1_8_R3.PacketPlayOutChat")
                 || exists("net.minecraft.server.v1_12_R1.PacketPlayOutChat")
@@ -86,10 +78,6 @@ public final class RuntimeCapabilities {
 
     public boolean isNMSupported() {
         return isSupported("nms.NMSHandler");
-    }
-
-    public boolean isModernParticlesSupported() {
-        return isSupported("particle.ParticleParam");
     }
 
     public boolean isModernChatSupported() {

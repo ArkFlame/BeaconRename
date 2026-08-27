@@ -9,8 +9,10 @@ import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierDefinition;
 import com.arkflame.flameforge.persistence.AuditLogService;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -89,5 +91,32 @@ class OutcomeExecutorTest {
         assertNotNull(result.getError());
         assertTrue(result.getError().contains("null variant"));
         verifyNoInteractions(mutation);
+    }
+
+    @Test
+    void curseMutationUsesIdentityCurseStateOnly() {
+        ItemMeta meta = mock(ItemMeta.class);
+        Enchantment vanishing = mock(Enchantment.class);
+        when(vanishing.getName()).thenReturn("VANISHING_CURSE");
+        when(input.hasItemMeta()).thenReturn(true);
+        when(input.getItemMeta()).thenReturn(meta);
+        when(meta.getEnchants()).thenReturn(Collections.singletonMap(vanishing, 1));
+        CurseDefinition curse = mock(CurseDefinition.class);
+        when(tier.getCurseDefinition()).thenReturn(curse);
+        when(mutation.mutateCurse(any(), eq(curse), anyBoolean(), any(), eq(forgeId)))
+                .thenReturn(ItemMutationService.MutationResult.success(input));
+
+        ItemIdentityCodec.Identity unmarked = ItemIdentityCodec.Identity.empty();
+        when(identity.readForgeIdentity(input)).thenReturn(new ItemIdentityService.ForgeIdentityRead(
+                ItemIdentityService.ForgeIdentityStatus.VALID, unmarked));
+        executor.execute(plan, input, player, forgeId, ForgeOutcomeCategory.CURSE, null);
+        verify(mutation).mutateCurse(eq(input), eq(curse), eq(false), any(), eq(forgeId));
+
+        clearInvocations(mutation);
+        ItemIdentityCodec.Identity marked = unmarked.withCursed(true);
+        when(identity.readForgeIdentity(input)).thenReturn(new ItemIdentityService.ForgeIdentityRead(
+                ItemIdentityService.ForgeIdentityStatus.VALID, marked));
+        executor.execute(plan, input, player, forgeId, ForgeOutcomeCategory.CURSE, null);
+        verify(mutation).mutateCurse(eq(input), eq(curse), eq(true), any(), eq(forgeId));
     }
 }

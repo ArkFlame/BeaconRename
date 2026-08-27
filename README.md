@@ -9,15 +9,23 @@ configured tiers, variants, costs, cooldowns, powers, and visual effects.
 
 | Platform      | Version        | Notes                                     |
 |---------------|----------------|-------------------------------------------|
-| Spigot/Paper  | 1.8.8 – 1.21+ | API version 1.13 minimum (`api-version`)  |
-| Folia         | Supported      | `folia-supported: true`, region/entity schedulers |
+| Spigot/Bukkit/Paper/Folia | 1.8.8 – modern 1.21.x | Runtime capability profile; no version-specific particle branches |
+| Folia         | Supported      | `folia-supported: true`, entity/region schedulers |
 | Java          | 8+             | Compiled for Java 8 bytecode              |
 | PacketEvents  | 2.13.0 (Spigot)| Hard dependency (external plugin)         |
 
 Modern server capabilities (offhand API, swap-hand events, NETHERITE
 materials, attribute APIs, particle/sound names) are isolated behind
 runtime-detecting compatibility bridges; the plugin still runs on 1.8.8 where
-those capabilities fall back gracefully.
+those capabilities fall back gracefully. Spear material strings classify as
+weapons when the running server's material resolver supports them; unavailable
+strings are skipped on older runtimes, with no direct modern enum promise.
+
+Particle compatibility is dynamic: the particle bridge selects available
+capabilities and payload data types at runtime. Semantic styles provide ordered
+candidate families, pattern builders calculate geometry, and network renderers
+batch frames before entity-owned player scheduling sends them. See
+[CONTRIBUTING](CONTRIBUTING.md) for the rules for extending this architecture.
 
 ## Build and Install
 
@@ -48,15 +56,20 @@ The shaded JAR is `target/FlameForge-1.0.2.jar`.
    determines the exact next tier in its category's progression.
 4. `/flameforge testitem weapon_tier1 bloodletter` — spawn a forged test item
    to check variants and powers without a forge transaction.
+5. `/flameforge weaponsmenu` — browse weapon progression examples and receive
+   fresh forged examples without station, cost, cooldown, or history effects.
 
 ## Equipment Progression
 
 Items are classified by category in `equipment.yml`: `weapon`, `armor`,
-`shield`, and `amulet` (fallback for anything unmatched). Each category has a
-7-tier progression (`weapon_tier1..7`, `armor_tier1..7`, `shield_tier1..7`,
-`amulet_tier1..7`). The legacy `tier1..tier7` identities remain readable so
-old forged items keep resolving during migration. Operator tier files in
-`tiers/` override bundled tiers by id; a tier is forgeable only when its id is
+`shield`, and `amulet` (fallback for anything unmatched). Bundled progression
+has 28 forgeable category tiers: seven each for
+`weapon_tier1..7`, `armor_tier1..7`, `shield_tier1..7`, and
+`amulet_tier1..7`. Weapon materials include swords, axes, bow, crossbow,
+trident, mace, and spear strings when available. The seven legacy `tier1..7`
+files remain readable only so old forged items keep resolving during
+migration. No Miner Charm variant is bundled. Operator tier files in `tiers/`
+override bundled tiers by id; a tier is forgeable only when its id is
 referenced by a category progression. Incomplete progressions are validation
 errors.
 
@@ -66,14 +79,19 @@ errors.
   no tier buttons — the item's identity drives progression; requirements,
   chances, and variants are shown on the confirm button.
 - **Outcomes**: SUCCESS (variant mutation), BREAK (reset/strip, optionally
-  destroy), CURSE (permanent, no further forging), with per-tier chances.
+  destroy), CURSE (terminal, no further forging), with per-tier chances and
+  distinct success, curse, fractured, and destroyed messages.
 - **Powers**: on-hit potion/fire/heal/bleed/explosive, every-N-hit
   lightning/knockback, radial AOE fire, chain potion/damage (true A→B→C hops
   with dedupe and target caps), on-block potion/knockback/heal, passive
   potions, shift-right-click dash/heal. Activation slots include main/off
-  hand, armor slots, and inventory.
+  hand, armor slots, and inventory; passive duration ticks are internal
+  refresh leases, not visible effect lifetimes.
 - **Particles**: per-power particle candidates with semantic fallbacks;
-  cosmetic failures never abort a power.
+  chain trails use straight parent-hop frames, bleed uses redstone block-break,
+  red dust, and CRIT, and cosmetic failures never abort a power. Runtime
+  particle names, keys, and typed payloads are selected from the server's
+  capabilities rather than version branches.
 - **Armor**: semantic damage-reduction attributes composed per damage cause,
   capped at 80%; flat attack bonus via native attributes when available.
 - **Animation**: PacketEvents fake-item orbit/rise with double spiral, trail,
@@ -101,6 +119,7 @@ reference: [COMMANDS-AND-PERMISSIONS](docs/COMMANDS-AND-PERMISSIONS.md).
 | `/flameforge tier info <tier>`               | `flameforge.command.tier.info`    | op      |
 | `/flameforge preview <tier> [material]`      | `flameforge.command.preview`      | op      |
 | `/flameforge testitem <tier> <variant> [material]` | `flameforge.command.testitem` | op |
+| `/flameforge weaponsmenu`                          | `flameforge.command.weaponsmenu` | op |
 | `/flameforge reload` / `/flameforge validate`| `flameforge.command.reload` / `.validate` | op |
 | `/flameforge station add|remove|list|info|teleport` | `flameforge.command.station.*` | op |
 | `/flameforge tp <id>`                        | `flameforge.command.station.teleport` | op |
@@ -139,4 +158,6 @@ template variables.
 - [CONFIGURATION](docs/CONFIGURATION.md) — config files, equipment catalog, tier schema, messages
 - [COMMANDS-AND-PERMISSIONS](docs/COMMANDS-AND-PERMISSIONS.md) — command reference, permissions, tab completion
 - [OUTCOMES-AND-HOOKS](docs/OUTCOMES-AND-HOOKS.md) — outcomes, power semantics, particles, armor, hooks
+- [ARCHITECTURE](docs/ARCHITECTURE.md) — runtime compatibility and service architecture
+- [CONTRIBUTING](CONTRIBUTING.md) — compatibility-safe contribution rules
 - [ADMIN-GUIDE](docs/ADMIN-GUIDE.md) — build/install, editing, validation, compatibility, smoke tests

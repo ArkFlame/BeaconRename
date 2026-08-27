@@ -31,7 +31,10 @@ break:
   target-tier: 0
   destroy-item: true
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
-  result-lore: []
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -40,20 +43,25 @@ break:
   reset-custom-model-data: true
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
-  lore: []
-  enchantment-candidates: []
+  lore:
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
 animation:
   duration-ticks: 20
   interval-ticks: 4
 variants:
   eternal_charm:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#fef3c7:#22c55e><bold>Eternal Charm %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier VII amulet variant"
-      - "<green>Regeneration II and speed II for 60 seconds while in inventory"
+      - "<gray>Amulet Tier VII forged variant"
+      - "<dark_gray>● <green>Regeneration II and speed II while in inventory."
     enchantments: []
     attributes: []
     powers:
@@ -82,13 +90,13 @@ variants:
         activation-slots:
           - INVENTORY
   paragon_charm:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#f9a8d4:#60a5fa><bold>Paragon Charm %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier VII amulet variant"
-      - "<aqua>Regeneration II and resistance for 60 seconds while held in main or off hand"
+      - "<gray>Amulet Tier VII forged variant"
+      - "<dark_gray>● <green>Regeneration II and resistance while held in either hand."
     enchantments: []
     attributes: []
     powers:
@@ -104,6 +112,71 @@ variants:
         activation-slots:
           - MAIN_HAND
           - OFF_HAND
+  celestial_relic:
+    weight: "25.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#fef3c7:#22c55e><bold>Celestial Relic %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Amulet Tier VII forged variant"
+      - "<dark_gray>● <aqua>Speed II while held."
+      - "<dark_gray>● <blue>Resistance while held."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: celestial_relic_speed
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - SPEED
+        duration-ticks: 1200
+        amplifier: 1
+        particle-candidates:
+          - CLOUD
+        activation-slots:
+          - MAIN_HAND
+          - OFF_HAND
+      - id: celestial_relic_resistance
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - DAMAGE_RESISTANCE
+          - RESISTANCE
+        duration-ticks: 1200
+        amplifier: 0
+        particle-candidates:
+          - ENCHANT
+          - SPELL
+        activation-slots:
+          - MAIN_HAND
+          - OFF_HAND
+  miracle_relic:
+    weight: "25.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#f9a8d4:#60a5fa><bold>Miracle Relic %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Amulet Tier VII forged variant"
+      - "<dark_gray>● <light_purple>Heal and dash on shift right-click."
+      - "<dark_gray>● <white>Cooldown: 8s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: miracle_relic_heal
+        type: SHIFT_RIGHT_CLICK_HEAL
+        cooldown-ticks: 160
+        heal-amount: "5.0"
+        particle-candidates:
+          - HEART
+      - id: miracle_relic_dash
+        type: SHIFT_RIGHT_CLICK_DASH
+        cooldown-ticks: 160
+        horizontal-strength: "2.6"
+        vertical-strength: "1.2"
+        particle-candidates:
+          - ENCHANT
+          - CLOUD
+          - CRIT
       - id: paragon_charm_resistance
         type: PASSIVE_POTION
         cooldown-ticks: 0

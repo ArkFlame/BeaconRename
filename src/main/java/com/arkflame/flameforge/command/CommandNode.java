@@ -53,6 +53,8 @@ public enum CommandNode {
     TEST_ITEM("testitem", "testitem <tier> <variant> [material]", "testitem",
         "flameforge.command.testitem", "help.descriptions.testitem",
         Category.ADMINISTRATION, true, false, AccessClass.ADMIN),
+    WEAPONS_MENU("weaponsmenu", "weaponsmenu", "weaponsmenu", "flameforge.command.weaponsmenu",
+        "help.descriptions.weaponsmenu", Category.ADMINISTRATION, true, false, AccessClass.ADMIN),
     SETUP_TIER_CREATE("setup", "setup tier create <id> <level>", "setup tier create",
         "flameforge.command.setup.tier", "help.descriptions.setup-tier-create",
         Category.ADMINISTRATION, true, false, AccessClass.ADMIN),

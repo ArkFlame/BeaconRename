@@ -28,6 +28,7 @@ Usage notation: `<arg>` required, `[arg]` optional, `[id|auto]` alternative.
 | `/flameforge reload`                           | `flameforge.command.reload`       | op      | ADMIN  | Reload configuration                |
 | `/flameforge validate`                         | `flameforge.command.validate`     | op      | ADMIN  | Validate configuration              |
 | `/flameforge testitem <tier> <variant> [material]` | `flameforge.command.testitem` | op | ADMIN | Test forge item mutations        |
+| `/flameforge weaponsmenu`                         | `flameforge.command.weaponsmenu` | op | ADMIN | Browse forged weapon examples   |
 | `/flameforge setup tier create <id> <level>`   | `flameforge.command.setup.tier`   | op      | ADMIN  | Create a new tier                   |
 | `/flameforge setup tier clone <source> <id> <level>` | `flameforge.command.setup.tier` | op | ADMIN | Clone an existing tier          |
 
@@ -80,6 +81,7 @@ tree (only `tp` is listed).
   (`startup-retry-started`). Guards against concurrent reloads.
 - **validate** — READY-only parse-only validation; never applies changes.
 - **testitem** — see the dedicated section below.
+- **weaponsmenu** — see the dedicated section below.
 - **setup tier create / clone** — create writes a new empty tier file with the
   given id and level (no default outcomes — edit the file); clone copies an
   existing tier file to a new id/level. Both fail on duplicate ids and
@@ -118,6 +120,22 @@ Argument handling:
 On success the item is returned to the player and
 `testitem.success` (tier/variant/material) is shown.
 
+## /flameforge weaponsmenu
+
+`/flameforge weaponsmenu`
+
+- **Permission**: `flameforge.command.weaponsmenu` (op; child of `flameforge.admin`).
+- **Sender**: player-only. **State**: READY-only. No arguments.
+- **Semantics**: opens a paginated preview menu of forged weapon examples. Each
+  page lists the variants of the weapon-category tier progression (28 per
+  page); previews are built with the same shared `ForgeExampleItemService`
+  used by `/flameforge testitem`. Clicking an entry grants the player a *new*
+  forged example item with a fresh forge id (`weaponsmenu.given`) and refreshes
+  passive powers; a failed build replies `weaponsmenu.give-failed`. No economy,
+  cooldown, station, or history is involved.
+- **Purpose**: admin testing aid for browsing weapon variants and handing out
+  examples without a forge transaction.
+
 ### Tab completion
 
 - Root level: permitted root subcommands matching the typed prefix, sorted
@@ -128,7 +146,7 @@ On success the item is returned to the player and
 - `tier info`: tier ids. `preview`: tier ids then materials.
 - `tp` / `station` / `setup`: station ids / station subcommands / setup tier
   subcommands respectively.
-- `reload`, `validate`, `tiers` complete nothing.
+- `reload`, `validate`, `tiers`, `weaponsmenu` complete nothing.
 
 ## Permission Tree
 
@@ -151,6 +169,7 @@ flameforge.use                    (default true)  — root command usage
 ├─ flameforge.command.station.teleport (op)— /flameforge tp / station teleport
 ├─ flameforge.command.setup.tier  (op)     — /flameforge setup tier create|clone
 ├─ flameforge.command.testitem    (op)     — /flameforge testitem
+├─ flameforge.command.weaponsmenu (op)     — /flameforge weaponsmenu
 flameforge.bypass.cost            (op)     — bypass forge costs
 flameforge.bypass.cooldown        (op)     — bypass forge cooldowns
 flameforge.admin                  (op)     — grants every node above (children)

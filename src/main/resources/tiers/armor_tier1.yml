@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -48,8 +48,9 @@ break:
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,13 +105,13 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   fleet:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - ARMOR
     display-name: "<gradient:#67e8f9:#2563eb><bold>Fleet %base_name%</bold></gradient>"
     lore:
       - "<gray>Armor Tier I forged variant"
-      - "<dark_gray>● <aqua>Speed while equipped"
+      - "<dark_gray>● <aqua>Speed while equipped."
     enchantments: []
     attributes: []
     powers:
@@ -128,16 +129,53 @@ variants:
         activation-slots:
           - ARMOR
   guarded:
-    weight: "50.0"
+    weight: "25.0"
     applicable-groups:
       - ARMOR
     display-name: "<gradient:#d1d5db:#64748b><bold>Guarded %base_name%</bold></gradient>"
     lore:
       - "<gray>Armor Tier I forged variant"
-      - "<dark_gray>● <white>5% damage reduction"
+      - "<dark_gray>● <blue>5% damage reduction."
     enchantments: []
     attributes:
       - id: guarded_reduction
         type: DAMAGE_REDUCTION_PERCENT
         value: "0.05"
+    powers: []
+  mending:
+    weight: "25.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#86efac:#16a34a><bold>Mending %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier I forged variant"
+      - "<dark_gray>● <green>Regeneration I while equipped."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: mending_regeneration
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - REGENERATION
+        duration-ticks: 60
+        amplifier: 0
+        particle-candidates:
+          - HEART
+          - HAPPY_VILLAGER
+        activation-slots:
+          - ARMOR
+  featherstep:
+    weight: "25.0"
+    applicable-groups:
+      - ARMOR
+    display-name: "<gradient:#bae6fd:#0284c7><bold>Featherstep %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Armor Tier I forged variant"
+      - "<dark_gray>● <aqua>20% fall damage reduction."
+    enchantments: []
+    attributes:
+      - id: featherstep_reduction
+        type: FALL_DAMAGE_REDUCTION_PERCENT
+        value: "0.20"
     powers: []

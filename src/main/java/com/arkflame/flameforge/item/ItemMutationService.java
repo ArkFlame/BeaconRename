@@ -208,10 +208,14 @@ public final class ItemMutationService {
         final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
         final ItemStack clone = input.clone();
         clone.setAmount(1);
+        attributeBridge.removeFlameForgeAttributes(clone);
         final ItemMeta meta = clone.getItemMeta();
         if (meta == null) {
             return MutationResult.fail("item has no meta");
         }
+
+        removeFlameForgeMetadata(meta);
+        meta.setLore(new ArrayList<>());
 
         if (curse.getName() != null && !curse.getName().isEmpty()) {
             applyName(meta, curse.getName(), arguments);
@@ -221,11 +225,9 @@ public final class ItemMutationService {
             applyLore(meta, curse.getLore(), arguments);
         }
 
-        if (!currentlyCursed && curse.getEnchantments() != null && !curse.getEnchantments().isEmpty()) {
+        if (curse.getEnchantments() != null && !curse.getEnchantments().isEmpty()) {
             applyFirstSupportedCurse(meta, curse.getEnchantments());
         }
-
-        setCursedFlag(clone, true);
 
         try {
             clone.setItemMeta(meta);
@@ -360,6 +362,11 @@ public final class ItemMutationService {
 
         return current
                 .withForgeId(actualForgeId)
+                .withLastTierId(null)
+                .withLastVariantId(null)
+                .withActiveAttributeIds(Collections.emptyList())
+                .withActivePowerIds(Collections.emptyList())
+                .withForgeEnchantments(Collections.emptyMap())
                 .withCursed(true);
     }
 
@@ -481,58 +488,16 @@ public final class ItemMutationService {
             Optional<Enchantment> opt = enchantmentResolver.resolve(key);
             if (opt.isPresent()) {
                 Enchantment curse = opt.get();
-                if (enchantmentResolver.isCursed(curse)) {
+                if ("VANISHING_CURSE".equals(curse.getName())) {
                     try {
                         int level = enchantmentResolver.resolveLevel(1);
-                        meta.addEnchant(curse, level, false);
+                        meta.addEnchant(curse, level, true);
                         return;
                     } catch (Exception e) {
                         throw new RuntimeException("failed to apply curse enchant " + curse.getName(), e);
                     }
                 }
             }
-        }
-    }
-
-    private void setCursedFlag(ItemStack item, boolean cursed) {
-        if (item == null) {
-            return;
-        }
-        final ItemMeta meta = item.getItemMeta();
-        if (meta == null) {
-            return;
-        }
-        try {
-            java.lang.reflect.Method getPdcMethod = ItemMeta.class.getMethod("getPersistentDataContainer");
-            Object pdc = getPdcMethod.invoke(meta);
-            if (pdc != null) {
-                Class<?> nskClass = Class.forName("org.bukkit.NamespacedKey");
-                Class<?> pdcTypeClass = Class.forName("org.bukkit.persistence.PersistentDataType");
-                Object stringType = pdcTypeClass.getField("STRING").get(null);
-                Object key = nskClass.getConstructor(String.class, String.class).newInstance("flameforge", "cursed");
-                java.lang.reflect.Method setMethod = pdc.getClass().getMethod("set",
-                        nskClass, pdcTypeClass, Object.class);
-                setMethod.invoke(pdc, key, stringType, cursed ? "true" : "false");
-                item.setItemMeta(meta);
-                return;
-            }
-        } catch (Exception ignored) {
-        }
-        try {
-            List<String> lore = meta.getLore();
-            if (lore == null) {
-                lore = new ArrayList<>();
-            } else {
-                lore = new ArrayList<>(lore);
-            }
-            lore.removeIf(l -> l != null && l.startsWith(CURSED_PREFIX));
-            if (cursed) {
-                lore.add(CURSED_PREFIX + "true");
-            }
-            meta.setLore(lore);
-            item.setItemMeta(meta);
-        } catch (Exception e) {
-            throw new RuntimeException("failed to set cursed flag", e);
         }
     }
 

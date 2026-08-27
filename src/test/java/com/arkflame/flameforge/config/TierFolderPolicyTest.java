@@ -1,8 +1,10 @@
 package com.arkflame.flameforge.config;
 
+import com.arkflame.flameforge.compat.material.MaterialResolver;
 import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.Material;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -133,6 +135,25 @@ class TierFolderPolicyTest {
             .map(TierDefinition::getId).orElse(null));
         assertEquals(7, repository.maxLevelFor(Material.DIAMOND_SWORD));
         assertEquals(7, repository.maxLevelFor(Material.WOOL));
+    }
+
+    @Test
+    void modernDiamondSpearResolvesToWeaponProgressionWhenAvailable() throws Exception {
+        java.util.Optional<Material> spear = MaterialResolver.getInstance().resolve("DIAMOND_SPEAR");
+        Assumptions.assumeTrue(spear.isPresent(), "DIAMOND_SPEAR unavailable on runtime");
+
+        JavaPlugin plugin = mock(JavaPlugin.class);
+        when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
+        stubAllBundledResources(plugin);
+        Files.createDirectories(tempDir.resolve("tiers"));
+
+        TierRepository repository = new TierRepository(plugin);
+        ValidationReport report = repository.load();
+
+        assertFalse(report.hasErrors());
+        assertEquals("weapon", repository.findEquipmentCategory(spear.get()).orElse(null));
+        assertEquals("weapon_tier1", repository.findForMaterialAndLevel(spear.get(), 1)
+            .map(TierDefinition::getId).orElse(null));
     }
 
     @Test

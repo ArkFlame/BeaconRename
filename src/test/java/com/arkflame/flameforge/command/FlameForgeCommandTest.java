@@ -8,9 +8,11 @@ import com.arkflame.flameforge.config.EquipmentCatalog;
 import com.arkflame.flameforge.config.TierRepository;
 import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
+import com.arkflame.flameforge.item.ForgeExampleItemService;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.item.ItemMutationService;
 import com.arkflame.flameforge.menu.MenuInputReturnService;
+import com.arkflame.flameforge.menu.WeaponsMenuService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierDefinition;
 import com.arkflame.flameforge.persistence.StationRepository;
@@ -117,7 +119,7 @@ class FlameForgeCommandTest {
     }
 
     @Test
-    void testItemDeliversExactForgedVariantOnce() {
+    void testItemDelegatesToSharedExampleItemServiceAndDeliversExactItem() {
         ForgeVariant crit = variant("crit_variant", "ANY");
         TierDefinition tier = tierWithVariants("weapon_tier3", crit);
         ItemMutationService mutation = mock(ItemMutationService.class);
@@ -135,8 +137,7 @@ class FlameForgeCommandTest {
         command.onCommand(player, mock(Command.class), "flameforge",
             new String[]{"testitem", "weapon_tier3", "crit_variant", "iron_sword"});
 
-        verify(mutation).mutateSuccess(any(ItemStack.class), eq(tier), eq(crit),
-            any(com.arkflame.flameforge.item.ItemIdentityCodec.Identity.class), any(UUID.class));
+        verify(ready).getForgeExampleItemService();
         ArgumentCaptor<ItemStack> delivered = ArgumentCaptor.forClass(ItemStack.class);
         verify(returns).returnToPlayer(delivered.capture(), eq(player));
         assertSame(resultItem, delivered.getValue());
@@ -223,6 +224,38 @@ class FlameForgeCommandTest {
         verifyNoInteractions(mutation);
     }
 
+    @Test
+    void weaponsMenuDelegatesOpenWhenPlayerPermittedAndReady() {
+        WeaponsMenuService weaponsMenu = mock(WeaponsMenuService.class);
+        ReadyServices ready = mock(ReadyServices.class);
+        when(ready.getWeaponsMenuService()).thenReturn(weaponsMenu);
+        command.markReady(ready);
+
+        Player player = mock(Player.class);
+        when(player.hasPermission(anyString())).thenReturn(true);
+        assertTrue(command.onCommand(player, mock(Command.class), "flameforge",
+            new String[]{"weaponsmenu"}));
+        verify(weaponsMenu).open(player, 0);
+    }
+
+    @Test
+    void weaponsMenuRejectsConsole() {
+        ReadyServices ready = mock(ReadyServices.class);
+        command.markReady(ready);
+        command.onCommand(permittedSender(), mock(Command.class), "flameforge",
+            new String[]{"weaponsmenu"});
+        assertTrue(messages.keys.contains("weaponsmenu.player-only"));
+        verify(ready, never()).getWeaponsMenuService();
+    }
+
+    @Test
+    void weaponsMenuRequiresPermission() {
+        CommandSender denied = mock(CommandSender.class);
+        command.onCommand(denied, mock(Command.class), "flameforge",
+            new String[]{"weaponsmenu"});
+        assertTrue(messages.keys.contains("weaponsmenu.no-permission"));
+    }
+
     private CommandSender permittedSender() {
         CommandSender sender = mock(CommandSender.class);
         when(sender.hasPermission(anyString())).thenReturn(true);
@@ -256,12 +289,16 @@ class FlameForgeCommandTest {
         when(tierRepository.findById(tier.getId())).thenReturn(Optional.of(tier));
         when(tierRepository.findEquipmentCategory(any(Material.class))).thenReturn(Optional.of("weapon"));
         ReadyServices ready = mock(ReadyServices.class);
-        when(ready.getForgeVariantEligibility())
-            .thenReturn(new ForgeVariantEligibility(ItemIdentityService.getInstance(), tierRepository));
+        ForgeVariantEligibility eligibility =
+            new ForgeVariantEligibility(ItemIdentityService.getInstance(), tierRepository);
+        when(ready.getForgeVariantEligibility()).thenReturn(eligibility);
         when(ready.getItemIdentityService()).thenReturn(ItemIdentityService.getInstance());
         when(ready.getItemMutationService()).thenReturn(mutation);
         when(ready.getMenuInputReturnService()).thenReturn(returns);
         when(ready.getForgePowerService()).thenReturn(powers);
+        when(ready.getForgeExampleItemService()).thenReturn(new ForgeExampleItemService(
+            tierRepository, com.arkflame.flameforge.compat.material.MaterialResolver.getInstance(),
+            eligibility, ItemIdentityService.getInstance(), mutation));
         command.markReady(ready);
         return ready;
     }

@@ -37,8 +37,8 @@ break:
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
   result-lore:
     - "<dark_gray>Forge fracture"
-    - "<red>✦ Previous forge powers were stripped."
-    - "<gray>Reforge the item to rebuild it."
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -46,10 +46,11 @@ break:
   reset-powers: true
   reset-custom-model-data: true
 curse:
-  display-name: "<gradient:#7f1d1d:#111827><bold>☠ Cursed %base_name%</bold></gradient>"
+  display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
   lore:
-    - "<dark_red>☠ This item is permanently cursed."
-    - "<gray>Cursed items cannot be forged again."
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
   enchantment-candidates:
     - VANISHING_CURSE
     - CURSE_OF_VANISHING
@@ -104,15 +105,14 @@ animation:
     subtitle: "<dark_red>This item cannot be forged again."
 variants:
   tempest:
-    weight: "34.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#fde047:#38bdf8><bold>Tempest %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier VII forged variant"
-      - "<dark_gray>Power: Chain damage and lightning"
-      - "<dark_gray>Cooldown: 4s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <yellow>Chain damage and lightning."
+      - "<dark_gray>● <white>Cooldown: 4s."
     enchantments: []
     attributes: []
     powers:
@@ -137,16 +137,15 @@ variants:
           - NOTE
           - CRIT
   plague_lord:
-    weight: "33.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#a3e635:#14532d><bold>Plague Lord %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier VII forged variant"
-      - "<dark_gray>Power: Chain poison and bleed"
-      - "<dark_gray>Chain Cooldown: 4s"
-      - "<dark_gray>Bleed Cooldown: 3s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <green>Chain poison and bleed."
+      - "<dark_gray>● <white>Chain Cooldown: 4s."
+      - "<dark_gray>● <white>Bleed Cooldown: 3s."
     enchantments: []
     attributes: []
     powers:
@@ -172,18 +171,16 @@ variants:
         pulse-count: 4
         particle-candidates:
           - CRIT
-          - HEART
   bloodstorm:
-    weight: "33.0"
+    weight: "20.0"
     applicable-groups:
       - WEAPON
     display-name: "<gradient:#ef4444:#7f1d1d><bold>Bloodstorm %base_name%</bold></gradient>"
     lore:
       - "<gray>Weapon Tier VII forged variant"
-      - "<dark_gray>Power: Bleed and dash"
-      - "<dark_gray>Bleed Cooldown: 3s"
-      - "<dark_gray>Dash Cooldown: 5s"
-      - "<dark_gray>Original material retained"
+      - "<dark_gray>● <red>Bleed and dash."
+      - "<dark_gray>● <white>Bleed Cooldown: 3s."
+      - "<dark_gray>● <white>Dash Cooldown: 5s."
     enchantments: []
     attributes: []
     powers:
@@ -195,7 +192,6 @@ variants:
         pulse-count: 4
         particle-candidates:
           - CRIT
-          - HEART
       - id: bloodstorm_dash
         type: SHIFT_RIGHT_CLICK_DASH
         cooldown-ticks: 100
@@ -205,3 +201,70 @@ variants:
           - INSTANT_EFFECT
           - SPELL_INSTANT
           - CRIT
+  cataclysm:
+    weight: "20.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#fca5a5:#7f1d1d><bold>Cataclysm %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VII forged variant"
+      - "<dark_gray>● <gold>Explosive strike and fire on hit."
+      - "<dark_gray>● <white>Cooldowns: 5s and 4s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: cataclysm_explosion
+        type: ON_HIT_EXPLOSIVE
+        cooldown-ticks: 100
+        chance: "0.22"
+        damage-amount: "2"
+        radius: "4.5"
+        max-targets: 6
+        trail-points: 10
+        primary-knockback-multiplier: "1.8"
+        secondary-damage-multiplier: "0.45"
+        particle-candidates:
+          - EXPLOSION_LARGE
+          - EXPLOSION
+          - FLAME
+      - id: cataclysm_fire
+        type: ON_HIT_AOE_FIRE
+        cooldown-ticks: 80
+        chance: "0.18"
+        fire-ticks: 120
+        radius: "4"
+        max-targets: 6
+        particle-candidates:
+          - FLAME
+          - LAVA
+  soulreaver:
+    weight: "20.0"
+    applicable-groups:
+      - WEAPON
+    display-name: "<gradient:#f0abfc:#4c0519><bold>Soulreaver %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Weapon Tier VII forged variant"
+      - "<dark_gray>● <green>Heal on hit."
+      - "<dark_gray>● <dark_green>Wither on hit."
+      - "<dark_gray>● <white>Cooldown: 4s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: soulreaver_heal
+        type: ON_HIT_HEAL
+        cooldown-ticks: 80
+        chance: "0.20"
+        heal-amount: "1.5"
+        particle-candidates:
+          - HEART
+      - id: soulreaver_wither
+        type: ON_HIT_POTION
+        cooldown-ticks: 80
+        chance: "0.20"
+        effect-candidates:
+          - WITHER
+        duration-ticks: 100
+        amplifier: 1
+        particle-candidates:
+          - WITCH
+          - SMOKE_LARGE

@@ -50,6 +50,7 @@ help:
     tier-info: "Show tier details"
     preview: "Preview forge outcomes"
     testitem: "Test forge item mutations"
+    weaponsmenu: "Browse and receive forged weapon examples"
     history: "View your forge history"
     station-teleport: "Teleport to a forge station"
     station-add: "Add a new forge station"
@@ -163,6 +164,13 @@ testitem:
   variant-ineligible: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Variant '<white>%variant_id%<gray>' is not eligible for material <white>%material% <gray>in tier '<white>%tier_id%<gray>'."
   mutation-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Item mutation failed for <white>%material% <gray>in tier '<white>%tier_id%<gray>' variant '<white>%variant_id%<gray>'."
   success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Test item created: <white>%material% <gray>for tier <white>%tier_id% <gray>variant <white>%variant_id%<gray>."
+
+# Weapons menu command
+weaponsmenu:
+  no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
+  player-only: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>This command can only be used by a player."
+  give-failed: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Could not build that forged weapon example."
+  given: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Received <white>%variant_id% <dark_gray>(%tier_id%)"
 
 # History command
 history:
@@ -291,7 +299,10 @@ forge:
     title: "<aqua><bold>WARD PROTECTED"
     subtitle: "<white>Your item was protected by a ward"
   confirm:
-    complete: "<green>Forge completed."
+    success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Forge succeeded. You got <item>."
+    cursed: "<gradient:#ef4444:#7f1d1d><bold>☠</bold></gradient> <red>Your item was cursed."
+    fractured: "<gradient:#ef4444:#f97316><bold>✖</bold></gradient> <gray>Forge failed. Your item fractured into <item>."
+    shattered: "<gradient:#ef4444:#7f1d1d><bold>✖</bold></gradient> <red>Forge failed. Your item shattered."
     failed: "<red>Forging failed: <white>%reason%"
 
 # Cooldown messages

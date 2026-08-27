@@ -31,7 +31,10 @@ break:
   target-tier: 0
   destroy-item: true
   result-display-name: "<gradient:#ef4444:#7f1d1d><bold>Fractured %base_name%</bold></gradient>"
-  result-lore: []
+  result-lore:
+    - "<dark_gray>Forge fracture"
+    - "<red>● Previous forge powers were stripped."
+    - "<gray>Reforge the item."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -40,44 +43,25 @@ break:
   reset-custom-model-data: true
 curse:
   display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
-  lore: []
-  enchantment-candidates: []
+  lore:
+    - "<gray>Forge curse"
+    - "<dark_gray>● <red>Previous forge powers were stripped."
+    - "<dark_gray>● <dark_red>This item cannot be reforged."
+  enchantment-candidates:
+    - VANISHING_CURSE
+    - CURSE_OF_VANISHING
 animation:
   duration-ticks: 20
   interval-ticks: 4
 variants:
-  miners_charm:
-    weight: "50.0"
-    applicable-groups:
-      - AMULET
-    display-name: "<gradient:#fde68a:#ca8a04><bold>Miners Charm %base_name%</bold></gradient>"
-    lore:
-      - "<gray>Tier II amulet variant"
-      - "<yellow>Haste for 60 seconds while in inventory"
-    enchantments: []
-    attributes: []
-    powers:
-      - id: miners_charm_passive
-        type: PASSIVE_POTION
-        cooldown-ticks: 0
-        effect-candidates:
-          - FAST_DIGGING
-          - HASTE
-        duration-ticks: 1200
-        amplifier: 0
-        particle-candidates:
-          - ENCHANT
-          - CRIT
-        activation-slots:
-          - INVENTORY
   ironheart:
-    weight: "50.0"
+    weight: "34.0"
     applicable-groups:
       - AMULET
     display-name: "<gradient:#d1d5db:#475569><bold>Ironheart %base_name%</bold></gradient>"
     lore:
-      - "<gray>Tier II amulet variant"
-      - "<white>Resistance for 60 seconds while held in main or off hand"
+      - "<gray>Amulet Tier II forged variant"
+      - "<dark_gray>● <blue>Resistance while held in either hand."
     enchantments: []
     attributes: []
     powers:
@@ -92,6 +76,50 @@ variants:
         particle-candidates:
           - ENCHANT
           - SPELL
+        activation-slots:
+           - MAIN_HAND
+           - OFF_HAND
+  sprinters_token:
+    weight: "33.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#38bdf8:#2563eb><bold>Sprinters Token %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Amulet Tier II forged variant"
+      - "<dark_gray>● <aqua>Speed while in inventory."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: sprinters_token_passive
+        type: PASSIVE_POTION
+        cooldown-ticks: 0
+        effect-candidates:
+          - SPEED
+        duration-ticks: 1200
+        amplifier: 0
+        particle-candidates:
+          - CLOUD
+          - SPELL
+        activation-slots:
+          - INVENTORY
+  menders_token:
+    weight: "33.0"
+    applicable-groups:
+      - AMULET
+    display-name: "<gradient:#86efac:#15803d><bold>Menders Token %base_name%</bold></gradient>"
+    lore:
+      - "<gray>Amulet Tier II forged variant"
+      - "<dark_gray>● <light_purple>Heal on shift right-click."
+      - "<dark_gray>● <white>Cooldown: 5s."
+    enchantments: []
+    attributes: []
+    powers:
+      - id: menders_token_heal
+        type: SHIFT_RIGHT_CLICK_HEAL
+        cooldown-ticks: 100
+        heal-amount: "2.0"
+        particle-candidates:
+          - HEART
         activation-slots:
           - MAIN_HAND
           - OFF_HAND

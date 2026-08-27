@@ -7,13 +7,18 @@ import com.arkflame.flameforge.forge.ForgePlanResult;
 import com.arkflame.flameforge.forge.ForgePowerService;
 import com.arkflame.flameforge.forge.ForgeResolution;
 import com.arkflame.flameforge.forge.ForgeService;
+import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.PlayerForgeState;
+import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.MessageService;
+import com.arkflame.flameforge.text.TextRenderer;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -117,12 +122,137 @@ class ForgeMenuForgeServiceTest {
     @Test
     void successfulForgeRefreshesPassivePowersOnceOnPlayerCallback() {
         Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        when(resolution.getCategory()).thenReturn(ForgeOutcomeCategory.SUCCESS);
+
+        callback.accept(resolution);
+
+        verify(forgePowerService, times(1)).refreshPassivePowers(fixture.player);
+        verify(messageService).send(eq(fixture.player), eq("forge.confirm.success"), any(MessageArguments.class));
+        verify(settlementService, never()).settleOnlineOrQueue(any(ForgeMenuContext.class), any(Player.class));
+    }
+
+    @Test
+    void successfulForgePreservesRichSuccessItemComponent() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        TextRenderer renderer = mock(TextRenderer.class);
+        Component richItem = Component.text("Rich Blade");
+        ItemStack output = mock(ItemStack.class);
+        ItemMeta meta = mock(ItemMeta.class);
+        when(messageService.getRenderer()).thenReturn(renderer);
+        when(output.getItemMeta()).thenReturn(meta);
+        when(meta.hasDisplayName()).thenReturn(true);
+        when(meta.getDisplayName()).thenReturn("§bRich Blade");
+        when(renderer.fromLegacy("§bRich Blade")).thenReturn(richItem);
+
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        when(resolution.getCategory()).thenReturn(ForgeOutcomeCategory.SUCCESS);
+        when(resolution.getMutatedItem()).thenReturn(output);
+
+        callback.accept(resolution);
+
+        ArgumentCaptor<MessageArguments> arguments = ArgumentCaptor.forClass(MessageArguments.class);
+        verify(messageService).send(eq(fixture.player), eq("forge.confirm.success"), arguments.capture());
+        assertSame(richItem, arguments.getValue().getComponentValues().get("item"));
+    }
+
+    @Test
+    void cursedForgeUsesCursedConfirmation() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        when(resolution.getCategory()).thenReturn(ForgeOutcomeCategory.CURSE);
+
+        callback.accept(resolution);
+
+        verify(forgePowerService, times(1)).refreshPassivePowers(fixture.player);
+        verify(messageService).send(fixture.player, "forge.confirm.cursed");
+    }
+
+    @Test
+    void fracturedForgePreservesRichFracturedItemComponent() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        TextRenderer renderer = mock(TextRenderer.class);
+        Component richItem = Component.text("Fractured Blade");
+        ItemStack output = mock(ItemStack.class);
+        ItemMeta meta = mock(ItemMeta.class);
+        when(messageService.getRenderer()).thenReturn(renderer);
+        when(output.getItemMeta()).thenReturn(meta);
+        when(meta.hasDisplayName()).thenReturn(true);
+        when(meta.getDisplayName()).thenReturn("§cFractured Blade");
+        when(renderer.fromLegacy("§cFractured Blade")).thenReturn(richItem);
+
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        when(resolution.getCategory()).thenReturn(ForgeOutcomeCategory.BREAK);
+        when(resolution.hasItemOutput()).thenReturn(true);
+        when(resolution.getMutatedItem()).thenReturn(output);
+
+        callback.accept(resolution);
+
+        ArgumentCaptor<MessageArguments> arguments = ArgumentCaptor.forClass(MessageArguments.class);
+        verify(messageService).send(eq(fixture.player), eq("forge.confirm.fractured"), arguments.capture());
+        assertSame(richItem, arguments.getValue().getComponentValues().get("item"));
+    }
+
+    @Test
+    void shatteredForgeUsesShatteredConfirmationWithoutItemOutput() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        when(resolution.getCategory()).thenReturn(ForgeOutcomeCategory.BREAK);
+        when(resolution.hasItemOutput()).thenReturn(false);
+
+        callback.accept(resolution);
+
+        verify(messageService).send(fixture.player, "forge.confirm.shattered");
+    }
+
+    @Test
+    void failedForgeUsesFailureReasonAndNoCompleteCaller() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(false);
+        when(resolution.getErrorMessage()).thenReturn("Delivery failed");
+
+        callback.accept(resolution);
+
+        ArgumentCaptor<MessageArguments> arguments = ArgumentCaptor.forClass(MessageArguments.class);
+        verify(messageService).send(eq(fixture.player), eq("forge.confirm.failed"), arguments.capture());
+        assertEquals("Delivery failed", arguments.getValue().getStringValues().get("reason"));
+        verify(messageService, never()).send(eq(fixture.player), eq("forge.confirm.complete"));
+        verify(forgePowerService, never()).refreshPassivePowers(any(Player.class));
+    }
+
+    @Test
+    void unknownSuccessfulCategoryUsesUnknownTerminalOutcomeFailure() {
+        Fixture fixture = fixture(new ItemStack(Material.DIAMOND, 1));
+        Consumer<ForgeResolution> callback = submit(fixture);
+        ForgeResolution resolution = mock(ForgeResolution.class);
+        when(resolution.isSuccess()).thenReturn(true);
+        when(resolution.getCategory()).thenReturn(null);
+
+        callback.accept(resolution);
+
+        ArgumentCaptor<MessageArguments> arguments = ArgumentCaptor.forClass(MessageArguments.class);
+        verify(messageService).send(eq(fixture.player), eq("forge.confirm.failed"), arguments.capture());
+        assertEquals("unknown terminal outcome", arguments.getValue().getStringValues().get("reason"));
+        verify(forgePowerService, never()).refreshPassivePowers(any(Player.class));
+    }
+
+    private Consumer<ForgeResolution> submit(Fixture fixture) {
         ForgePlan plan = mock(ForgePlan.class);
         when(plan.isAffordable()).thenReturn(true);
         when(forgeService.createPlan(eq(fixture.player), eq(fixture.session), any(ItemStack.class)))
                 .thenReturn(ForgePlanResult.ready(plan));
-        ForgeResolution resolution = mock(ForgeResolution.class);
-        when(resolution.isSuccess()).thenReturn(true);
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Consumer<ForgeResolution>> callbackCaptor = ArgumentCaptor.forClass(Consumer.class);
 
@@ -130,10 +260,7 @@ class ForgeMenuForgeServiceTest {
 
         verify(forgeService).confirmAndExecute(eq(fixture.player), eq(fixture.session),
                 any(ItemStack.class), eq(plan), callbackCaptor.capture());
-        callbackCaptor.getValue().accept(resolution);
-
-        verify(forgePowerService, times(1)).refreshPassivePowers(fixture.player);
-        verify(settlementService, never()).settleOnlineOrQueue(any(ForgeMenuContext.class), any(Player.class));
+        return callbackCaptor.getValue();
     }
 
     private Fixture fixture(ItemStack input) {

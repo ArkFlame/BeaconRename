@@ -13,7 +13,5 @@ class RuntimePlatformTest {
 
         assertEquals(first.isFolia(), second.isFolia());
         assertEquals(first.isTeleportAsyncAvailable(), second.isTeleportAsyncAvailable());
-        assertEquals(first.isModernParticleApiAvailable(), second.isModernParticleApiAvailable());
-        assertEquals(first.isLegacySpigotEffectAvailable(), second.isLegacySpigotEffectAvailable());
     }
 }

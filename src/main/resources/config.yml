@@ -127,6 +127,7 @@ cost-colors:
 forge:
   passive-refresh-ticks: 20
   power-cooldown-max-entries: 4096
+  power-trace: false
   reject-foreign-persistent-data: true
   menu:
     profile: default
