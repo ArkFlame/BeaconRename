@@ -57,6 +57,7 @@ class ForgePowerServiceTest {
         when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
         when(attacker.getMaxHealth()).thenReturn(20.0);
         when(attacker.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(attacker);
         ForgePowerDefinition power = mock(ForgePowerDefinition.class);
         when(power.getId()).thenReturn("draining");
         when(power.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.ON_HIT_HEAL);
@@ -84,6 +85,7 @@ class ForgePowerServiceTest {
         when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
         when(attacker.getMaxHealth()).thenReturn(20.0);
         when(attacker.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(attacker);
         ForgePowerDefinition power = mock(ForgePowerDefinition.class);
         when(power.getId()).thenReturn("chance");
         when(power.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.ON_HIT_HEAL);
@@ -105,6 +107,7 @@ class ForgePowerServiceTest {
         when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
         when(attacker.getMaxHealth()).thenReturn(20.0);
         when(attacker.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(attacker);
         ForgePowerDefinition power = mock(ForgePowerDefinition.class);
         when(power.getId()).thenReturn("regressed");
         when(power.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.ON_HIT_HEAL);
@@ -130,6 +133,7 @@ class ForgePowerServiceTest {
         when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
         when(attacker.getMaxHealth()).thenReturn(20.0);
         when(attacker.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(attacker);
         ForgePowerDefinition powerA = hitHealPower("power-a");
         ForgePowerDefinition powerB = hitHealPower("power-b");
         UUID forgeA = UUID.randomUUID();
@@ -149,6 +153,7 @@ class ForgePowerServiceTest {
         when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
         when(attacker.getMaxHealth()).thenReturn(20.0);
         when(attacker.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(attacker);
         ForgePowerDefinition power = hitHealPower("atomic");
         UUID forgeId = UUID.randomUUID();
         ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -177,6 +182,7 @@ class ForgePowerServiceTest {
         when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
         when(attacker.getMaxHealth()).thenReturn(20.0);
         when(attacker.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(attacker);
         ForgePowerDefinition power = hitHealPower("zero");
         UUID forgeId = UUID.randomUUID();
 
@@ -210,6 +216,7 @@ class ForgePowerServiceTest {
         when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         when(player.getMaxHealth()).thenReturn(20.0);
         when(player.getHealth()).thenReturn(10.0);
+        stubPlayerLocation(player);
         ForgePowerDefinition power = hitHealPower("trace");
         UUID forgeId = UUID.randomUUID();
         ForgePowerDefinition enabledMiss = hitHealPower("trace-miss-enabled");
@@ -244,6 +251,10 @@ class ForgePowerServiceTest {
         when(power.getChance()).thenReturn(BigDecimal.ONE);
         when(power.getHealAmount()).thenReturn(BigDecimal.ONE);
         return power;
+    }
+
+    private static void stubPlayerLocation(Player player) {
+        when(player.getLocation()).thenReturn(new Location(mock(World.class), 0, 0, 0));
     }
 
     @Test
@@ -663,6 +674,7 @@ class ForgePowerServiceTest {
         when(lightning.getHitInterval()).thenReturn(1);
         when(lightning.getChance()).thenReturn(BigDecimal.ONE);
         when(lightning.getCooldownTicks()).thenReturn(0);
+        when(lightning.getParticleCandidates()).thenReturn(Collections.emptyList());
 
         assertTrue(service.triggerOnHitPower(attacker, victim, lightning, UUID.randomUUID()));
 
@@ -674,6 +686,7 @@ class ForgePowerServiceTest {
 
     @Test
     void healEmitsHeartParticlesAroundHealedPlayer() {
+        World world = mock(World.class);
         ParticleBridge particles = mock(ParticleBridge.class);
         ForgePowerService service = service(mock(SchedulerBridge.class), mock(PotionEffectResolver.class),
             mock(EquipmentBridge.class), mock(ItemIdentityService.class), mock(MultiStrikeService.class),
@@ -683,21 +696,96 @@ class ForgePowerServiceTest {
         when(player.getUniqueId()).thenReturn(UUID.randomUUID());
         when(player.getMaxHealth()).thenReturn(20.0);
         when(player.getHealth()).thenReturn(10.0);
-        when(player.getLocation()).thenReturn(new Location(mock(World.class), 0, 0, 0));
+        when(player.getLocation()).thenReturn(new Location(world, 0, 64, 0));
 
         ForgePowerDefinition heal = mock(ForgePowerDefinition.class);
         when(heal.getId()).thenReturn("heal");
         when(heal.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.SHIFT_RIGHT_CLICK_HEAL);
         when(heal.getCooldownTicks()).thenReturn(0);
         when(heal.getHealAmount()).thenReturn(BigDecimal.ONE);
+        when(heal.getParticleCandidates()).thenReturn(Collections.singletonList("HEART"));
 
         assertTrue(service.activateHeal(player, heal, forgeId));
 
         verify(player).setHealth(11.0);
-        verify(particles).sendFirstAvailable(eq(player), any(Location.class), anyList(),
+        ArgumentCaptor<Location> particleLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles).sendFirstAvailable(eq(player), particleLocation.capture(),
+            eq(Arrays.asList("HEART", "VILLAGER_HAPPY", "HAPPY_VILLAGER")),
+            eq(0.35F), eq(0.45F), eq(0.35F), eq(0F), eq(5));
+        assertEquals(0.0, particleLocation.getValue().getX(), 0.0001);
+        assertEquals(65.0, particleLocation.getValue().getY(), 0.0001);
+        assertEquals(0.0, particleLocation.getValue().getZ(), 0.0001);
+        ArgumentCaptor<Location> dustLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles).sendColoredDust(eq(player), dustLocation.capture(),
+            eq(244), eq(114), eq(182), anyFloat(), eq(5));
+    }
+
+    @Test
+    void onHitHealEmitsConfiguredHeartParticlesAroundAttacker() {
+        World world = mock(World.class);
+        ParticleBridge particles = mock(ParticleBridge.class);
+        ForgePowerService service = service(new FakeSchedulerBridge(), mock(PotionEffectResolver.class),
+            mock(EquipmentBridge.class), mock(ItemIdentityService.class), mock(MultiStrikeService.class),
+            particles, mock(TierRepository.class));
+        Player attacker = mock(Player.class);
+        LivingEntity victim = mock(LivingEntity.class);
+        UUID forgeId = UUID.randomUUID();
+        when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(attacker.getMaxHealth()).thenReturn(20.0);
+        when(attacker.getHealth()).thenReturn(10.0);
+        when(attacker.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+
+        ForgePowerDefinition heal = mock(ForgePowerDefinition.class);
+        when(heal.getId()).thenReturn("on-hit-heal");
+        when(heal.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.ON_HIT_HEAL);
+        when(heal.getCooldownTicks()).thenReturn(0);
+        when(heal.getChance()).thenReturn(BigDecimal.ONE);
+        when(heal.getHealAmount()).thenReturn(BigDecimal.ONE);
+        when(heal.getParticleCandidates()).thenReturn(Collections.singletonList("HEART"));
+
+        assertTrue(service.triggerOnHitPower(attacker, victim, heal, forgeId));
+
+        verify(attacker).setHealth(11.0);
+        ArgumentCaptor<Location> particleLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles).sendFirstAvailable(eq(attacker), particleLocation.capture(),
+            eq(Arrays.asList("HEART", "VILLAGER_HAPPY", "HAPPY_VILLAGER")),
+            eq(0.35F), eq(0.45F), eq(0.35F), eq(0F), eq(5));
+        assertEquals(0.0, particleLocation.getValue().getX(), 0.0001);
+        assertEquals(65.0, particleLocation.getValue().getY(), 0.0001);
+        assertEquals(0.0, particleLocation.getValue().getZ(), 0.0001);
+        ArgumentCaptor<Location> dustLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles).sendColoredDust(eq(attacker), dustLocation.capture(),
+            eq(244), eq(114), eq(182), anyFloat(), eq(5));
+    }
+
+    @Test
+    void configuredLightningCandidateIsFirstAndLightningSideEffectRemains() {
+        World world = mock(World.class);
+        ParticleBridge particles = mock(ParticleBridge.class);
+        ForgePowerService service = service(new FakeSchedulerBridge(), mock(PotionEffectResolver.class),
+            mock(EquipmentBridge.class), mock(ItemIdentityService.class), mock(MultiStrikeService.class),
+            particles, mock(TierRepository.class));
+        Player attacker = mock(Player.class);
+        when(attacker.getUniqueId()).thenReturn(UUID.randomUUID());
+        LivingEntity victim = mock(LivingEntity.class);
+        when(victim.getLocation()).thenReturn(new Location(world, 10, 20, 30));
+
+        ForgePowerDefinition lightning = mock(ForgePowerDefinition.class);
+        when(lightning.getId()).thenReturn("configured-electric");
+        when(lightning.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.EVERY_N_HIT_LIGHTNING);
+        when(lightning.getHitInterval()).thenReturn(1);
+        when(lightning.getChance()).thenReturn(BigDecimal.ONE);
+        when(lightning.getCooldownTicks()).thenReturn(0);
+        when(lightning.getParticleCandidates()).thenReturn(Collections.singletonList("NOTE"));
+
+        assertTrue(service.triggerOnHitPower(attacker, victim, lightning, UUID.randomUUID()));
+
+        ArgumentCaptor<Location> lightningLocation = ArgumentCaptor.forClass(Location.class);
+        verify(world).strikeLightning(lightningLocation.capture());
+        ArgumentCaptor<Location> particleLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles).sendFirstAvailable(eq(attacker), particleLocation.capture(),
+            eq(Arrays.asList("NOTE", "ELECTRIC_SPARK", "END_ROD", "ENCHANT", "CRIT")),
             eq(0F), eq(0F), eq(0F), eq(0F), eq(1));
-        verify(particles).sendColoredDust(eq(player), any(Location.class),
-            eq(244), eq(114), eq(182), anyFloat(), anyInt());
     }
 
     @Test
@@ -1232,7 +1320,8 @@ class ForgePowerServiceTest {
         verify(particles, times(3)).sendColoredDust(eq(attacker), any(Location.class),
             eq(220), eq(38), eq(38), anyFloat(), eq(2));
         verify(particles, times(3)).sendFirstAvailable(eq(attacker), any(Location.class),
-            eq(Collections.singletonList("CRIT")), eq(0F), eq(0F), eq(0F), eq(0F), eq(2));
+            eq(Arrays.asList("CRIT", "REDSTONE", "DUST")),
+            eq(0F), eq(0F), eq(0F), eq(0F), eq(2));
         verify(victim, times(2)).damage(5.0);
         verify(particles, never()).sendFirstAvailable(eq(attacker), any(Location.class),
             eq(Collections.singletonList("HEART")), eq(0F), eq(0F), eq(0F), eq(0F), anyInt());

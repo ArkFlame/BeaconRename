@@ -205,16 +205,72 @@ class TierLoreStyleContractTest {
             assertFalse(yaml.saveToString().contains("miners_charm"), file);
             ConfigurationSection variants = yaml.getConfigurationSection("variants");
             for (String variantId : variants.getKeys(false)) {
-                ConfigurationSection powers = variants.getConfigurationSection(variantId + ".powers");
+                List<?> powers = variants.getList(variantId + ".powers");
                 if (powers == null) {
                     continue;
                 }
-                for (String powerId : powers.getKeys(false)) {
-                    ConfigurationSection power = powers.getConfigurationSection(powerId);
-                    if (power != null && "ON_HIT_BLEED".equals(power.getString("type"))) {
-                        assertFalse(power.getStringList("particle-candidates").contains("HEART"),
-                            file + " " + variantId + " bleed particle");
+                for (Object rawPower : powers) {
+                    if (!(rawPower instanceof Map)) {
+                        continue;
                     }
+                    Map<?, ?> power = (Map<?, ?>) rawPower;
+                    String type = power.get("type") == null ? "" : String.valueOf(power.get("type"));
+                    if ("ON_HIT_BLEED".equals(type)) {
+                        String powerId = power.get("id") == null ? "<missing>" : String.valueOf(power.get("id"));
+                        Object rawParticles = power.get("particle-candidates");
+                        List<?> particles = rawParticles instanceof List
+                            ? (List<?>) rawParticles : java.util.Collections.emptyList();
+                        assertFalse(particles.contains("HEART"),
+                            file + " " + variantId + " " + powerId + " " + type + " bleed particle");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    void everyShippedPowerDeclaresAtLeastOneParticleCandidate() {
+        for (String file : BUNDLED_TIER_FILES) {
+            ConfigurationSection variants = load(file).getConfigurationSection("variants");
+            for (String variantId : variantIds(file)) {
+                List<?> powers = variants.getList(variantId + ".powers");
+                assertNotNull(powers, file + " " + variantId + " <missing> <missing> powers list");
+                for (Object rawPower : powers) {
+                    assertTrue(rawPower instanceof Map,
+                        file + " " + variantId + " <missing> <missing> power entry");
+                    Map<?, ?> power = (Map<?, ?>) rawPower;
+                    String powerId = power.get("id") == null ? "<missing>" : String.valueOf(power.get("id"));
+                    String type = power.get("type") == null ? "<missing>" : String.valueOf(power.get("type"));
+                    Object rawParticles = power.get("particle-candidates");
+                    assertTrue(rawParticles instanceof List && !((List<?>) rawParticles).isEmpty(),
+                        file + " " + variantId + " " + powerId + " " + type + " particle candidates");
+                }
+            }
+        }
+    }
+
+    @Test
+    void everyShippedHealPowerIsHeartFirst() {
+        List<String> healTypes = Arrays.asList("ON_HIT_HEAL", "ON_BLOCK_HEAL", "SHIFT_RIGHT_CLICK_HEAL");
+        for (String file : BUNDLED_TIER_FILES) {
+            ConfigurationSection variants = load(file).getConfigurationSection("variants");
+            for (String variantId : variantIds(file)) {
+                List<?> powers = variants.getList(variantId + ".powers");
+                assertNotNull(powers, file + " " + variantId + " <missing> <missing> powers list");
+                for (Object rawPower : powers) {
+                    assertTrue(rawPower instanceof Map,
+                        file + " " + variantId + " <missing> <missing> power entry");
+                    Map<?, ?> power = (Map<?, ?>) rawPower;
+                    String powerId = power.get("id") == null ? "<missing>" : String.valueOf(power.get("id"));
+                    String type = power.get("type") == null ? "<missing>" : String.valueOf(power.get("type"));
+                    if (!healTypes.contains(type)) {
+                        continue;
+                    }
+                    Object rawParticles = power.get("particle-candidates");
+                    assertTrue(rawParticles instanceof List && !((List<?>) rawParticles).isEmpty(),
+                        file + " " + variantId + " " + powerId + " " + type + " heal particle candidates");
+                    assertEquals("HEART", ((List<?>) rawParticles).get(0),
+                        file + " " + variantId + " " + powerId + " " + type + " first heal particle");
                 }
             }
         }
