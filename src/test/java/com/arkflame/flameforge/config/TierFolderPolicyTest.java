@@ -52,7 +52,7 @@ class TierFolderPolicyTest {
         assertFalse(repository.all().isEmpty());
 
         Files.write(operatorFile,
-            ("schema-version: 2\nid: operator-extension\nlevel: 99\n")
+            ("schema-version: 2\nid: operator-extension\nlevel: 99\nvariants:\n  base:\n    weight: 1.0\n")
                 .getBytes(StandardCharsets.UTF_8));
         ValidationReport validReport = repository.load();
 

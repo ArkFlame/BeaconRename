@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.config;
 
+import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.Material;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -77,13 +78,17 @@ public class TierRepository {
     }
 
     public LoadCandidate loadCandidate() {
+        return loadCandidate(BreakPolicy.DefaultText.ENGLISH);
+    }
+
+    public LoadCandidate loadCandidate(BreakPolicy.DefaultText breakDefaults) {
         ValidationReport report = new ValidationReport();
         Map<String, TierDefinition> loadedTiers = new LinkedHashMap<>();
 
-        loadBundledLegacyTiers(loadedTiers, report);
+        loadBundledLegacyTiers(loadedTiers, report, breakDefaults);
 
         EquipmentCatalog bundledCatalog = loadBundledCatalog(report);
-        loadBundledCategoryTiers(bundledCatalog, loadedTiers, report);
+        loadBundledCategoryTiers(bundledCatalog, loadedTiers, report, breakDefaults);
 
         if (tiersDirectory.exists() && tiersDirectory.isDirectory()) {
             File[] files = tiersDirectory.listFiles((dir, name) ->
@@ -93,7 +98,7 @@ public class TierRepository {
                 Arrays.sort(files, Comparator.comparing(File::getName));
 
                 for (File file : files) {
-                    report.merge(loadOperatorTierFile(file, loadedTiers));
+                    report.merge(loadOperatorTierFile(file, loadedTiers, breakDefaults));
                 }
             }
         }
@@ -104,7 +109,8 @@ public class TierRepository {
         return new LoadCandidate(loadedTiers, buildAscending(loadedTiers), effectiveCatalog, report);
     }
 
-    private void loadBundledLegacyTiers(Map<String, TierDefinition> loadedTiers, ValidationReport report) {
+    private void loadBundledLegacyTiers(Map<String, TierDefinition> loadedTiers, ValidationReport report,
+                                        BreakPolicy.DefaultText breakDefaults) {
         for (int i = 1; i <= MAX_PROGRESSION_SIZE; i++) {
             String bundledResourceName = TIER_PREFIX + i + TIER_EXTENSION;
             try (InputStream bundledStream = plugin.getResource("tiers/" + bundledResourceName)) {
@@ -115,7 +121,7 @@ public class TierRepository {
                 }
 
                 ValidationReport bundledReport = new ValidationReport();
-                TierDefinition tier = TierParser.parseBundled(bundledStream, bundledReport, bundledResourceName);
+                TierDefinition tier = TierParser.parseBundled(bundledStream, bundledReport, bundledResourceName, breakDefaults);
 
                 if (bundledReport.hasErrors()) {
                     for (ValidationIssue issue : bundledReport.getErrors()) {
@@ -157,7 +163,7 @@ public class TierRepository {
     }
 
     private void loadBundledCategoryTiers(EquipmentCatalog bundledCatalog, Map<String, TierDefinition> loadedTiers,
-                                          ValidationReport report) {
+                                          ValidationReport report, BreakPolicy.DefaultText breakDefaults) {
         for (EquipmentCatalog.Category category : bundledCatalog.all()) {
             for (String progressionId : category.getProgression()) {
                 if (loadedTiers.containsKey(progressionId)) {
@@ -173,7 +179,7 @@ public class TierRepository {
                     }
 
                     ValidationReport bundledReport = new ValidationReport();
-                    TierDefinition tier = TierParser.parseBundled(bundledStream, bundledReport, bundledResourceName);
+                    TierDefinition tier = TierParser.parseBundled(bundledStream, bundledReport, bundledResourceName, breakDefaults);
 
                     if (bundledReport.hasErrors()) {
                         for (ValidationIssue issue : bundledReport.getErrors()) {
@@ -356,7 +362,8 @@ public class TierRepository {
         return candidate.validationReport;
     }
 
-    private ValidationReport loadOperatorTierFile(File file, Map<String, TierDefinition> loadedTiers) {
+    private ValidationReport loadOperatorTierFile(File file, Map<String, TierDefinition> loadedTiers,
+                                                  BreakPolicy.DefaultText breakDefaults) {
         ValidationReport report = new ValidationReport();
         String fileName = file.getName();
 
@@ -375,7 +382,7 @@ public class TierRepository {
             }
 
             YamlValues values = new YamlValues(yaml, isolatedReport);
-            TierDefinition tier = TierParser.parse(values, isolatedReport);
+            TierDefinition tier = TierParser.parse(values, isolatedReport, breakDefaults);
 
             if (isolatedReport.hasErrors()) {
                 for (ValidationIssue issue : isolatedReport.getErrors()) {

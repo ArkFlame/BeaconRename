@@ -422,7 +422,19 @@ delivery:
   full-inventory: "<yellow>Your inventory is full. Item dropped at your feet."
 
 # Hover labels shown by %health%, %food%, %xp_level% placeholders. Translate freely.
+# Default name and lore for a tier's break result when its break section omits them.
+break-policy:
+  result-display-name: "<gradient:#ef4444:#f97316><bold>Fractured %base_name%</bold></gradient>"
+  result-lore:
+    - "<gray>The forge fractured this item."
+    - "<dark_gray>Its enhancements were reset."
+holograms:
+  default-lines:
+    - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
+    - "<gray>RIGHT CLICK"
 placeholders:
+  unknown: "???"
+  empty-hand: "???"
   hover:
     health: "Health"
     health-points: "Health"

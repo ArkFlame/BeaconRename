@@ -39,6 +39,8 @@ Bundled defaults (schema-version 2):
 - `forge.passive-refresh-ticks`, `forge.power-cooldown-max-entries` (default 4096),
   `forge.power-trace` (default `false`), `forge.reject-foreign-persistent-data`,
   `forge.menu.profile` — power/cooldown, focused diagnostics, and menu runtime settings.
+- `forge.keep-custom-name` (default `true`) — a player-set name (for example an anvil rename)
+  survives reforge; `false` applies the variant name on every reforge.
 - `forge.weapon-particles.enabled` (default `true`) — enables weapon particle visuals.
 - `forge.weapon-particles.held.enabled` (default `true`) — enables held-item visuals.
 - `forge.weapon-particles.held.holder-only` (default `true`) — sends held visuals only to
@@ -46,7 +48,8 @@ Bundled defaults (schema-version 2):
 - `forge.weapon-particles.hit.enabled` (default `true`) — enables weapon hit visuals.
 - `holograms` — `enabled`, `provider-order` (default `FancyHolograms`,
   `DecentHolograms`), `offset-y` (default `1.25`), `transparent-background` (default
-  `true`), and `lines` (default FlameForge gradient plus `RIGHT CLICK`; MiniMessage).
+  `true`), and `lines` (MiniMessage). When `lines` is empty the fallback is
+  `holograms.default-lines` in `messages.yml` (bundled: FlameForge gradient plus `RIGHT CLICK`).
 
 ### Weapon particles
 
@@ -161,8 +164,8 @@ break:                    # break outcome behavior
   reset-tier: true
   target-tier: 0
   destroy-item: false     # amulet tier 1 ships with true
-  result-display-name: "..."
-  result-lore: [...]
+  result-display-name: "..."   # optional; omitted -> messages.yml break-policy.result-display-name
+  result-lore: [...]           # optional; omitted/empty -> messages.yml break-policy.result-lore
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true
@@ -263,6 +266,12 @@ Forge confirmation messages remain distinct: `forge.confirm.success`,
 `forge.confirm.shattered`; mutation or execution errors use
 `forge.confirm.failed`.
 
+New keys: `break-policy.result-display-name` and `break-policy.result-lore` supply the
+break result name and lore used when a tier's `break` section omits them, or when a tier has no
+`break` section. They are read once per load (reload included). Blank or missing values fall back to
+the built-in English text. Bundled tier files set their own break name, so these keys only affect
+tiers that omit it.
+
 New key: `menu.item-fallback` (default `item`) is the name shown for an item with no
 display name in forge messages.
 
@@ -274,7 +283,12 @@ placeholders in messages are logged once and rendered empty.
 Supported global placeholders: `%player_name%`, `%player%`, `%display_name%`,
 `%world%`, `%world_name%`, `%online%`, `%online_players%`, `%max_players%`,
 `%health%`, `%health_points%`, `%food%`, `%xp_level%`, `%item_name%`,
-`%item_in_hand%`. Command-specific placeholders (`%tier_id%`, `%station_id%`,
+`%item_in_hand%`. Missing values render the `placeholders.unknown` text (bundled `???`), and an
+empty hand renders `placeholders.empty-hand` (bundled `???`); both are set in `messages.yml`.
+The `placeholders.hover.*` labels are configurable the same way. When the economy is unavailable,
+the menu money row uses `requirement-money-unavailable` from `menus.yml`. Tier validation rejects
+a negative `level`, `input.cooldown-seconds`, or money/XP `amount`, and a tier with no variants,
+with a validation message instead of an exception. Command-specific placeholders (`%tier_id%`, `%station_id%`,
 `%permission%`, etc.) are documented per command in
 [COMMANDS-AND-PERMISSIONS.md](COMMANDS-AND-PERMISSIONS.md).
 

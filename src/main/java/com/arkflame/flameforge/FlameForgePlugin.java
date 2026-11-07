@@ -395,7 +395,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         ItemDisplayNameResolver itemDisplayNameResolver = new ItemDisplayNameResolver(itemIdentityService, configService);
         forgeVariantEligibility = new ForgeVariantEligibility(itemIdentityService, tierRepository);
         AttributeBridge attributeBridge = AttributeBridge.getInstance();
-        itemMutationService = new ItemMutationService(itemIdentityService, attributeBridge, new EnchantmentResolver(), textRenderer, itemDisplayNameResolver);
+        itemMutationService = new ItemMutationService(itemIdentityService, attributeBridge, new EnchantmentResolver(), textRenderer, configService);
         ForgeItemInspection forgeItemInspection = new ForgeItemInspection(itemIdentityCodec, itemIdentityService, attributeBridge, tierRepository, forgeVariantEligibility);
         forgeItemPolicy = new ForgeItemPolicy(forgeItemInspection);
         potionEffectResolver = new PotionEffectResolver();
@@ -799,6 +799,9 @@ public final class FlameForgePlugin extends JavaPlugin {
         final java.util.Map<String, String> labels = new java.util.HashMap<>();
         for (final String key : new String[] {"health", "health-points", "food", "xp-level"}) {
             messageService.findMessageString("placeholders.hover." + key).ifPresent(v -> labels.put(key, v));
+        }
+        for (final String key : new String[] {"unknown", "empty-hand"}) {
+            messageService.findMessageString("placeholders." + key).ifPresent(v -> labels.put(key, v));
         }
         textPlaceholders.setLabels(labels);
     }

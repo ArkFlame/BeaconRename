@@ -129,6 +129,8 @@ forge:
   power-cooldown-max-entries: 4096
   power-trace: false
   reject-foreign-persistent-data: true
+  # Keep a player-set (anvil rename) item name when the item is reforged.
+  keep-custom-name: true
   menu:
     profile: default
   weapon-particles:

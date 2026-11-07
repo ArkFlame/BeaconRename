@@ -101,9 +101,10 @@ public final class ParticleNetworkRenderer {
         final List<ParticlePoint> frozenGeometry = emittedGeometry;
         final List<String> frozenCandidates = candidates;
         if (bridge != null) {
-            World world = snapshots.get(0).getWorld();
+            // Every frame emits the same geometry; build the immutable batch once.
+            ParticleBatch batch = createBatch(snapshots.get(0).getWorld(), frozenGeometry, style,
+                frozenCandidates);
             for (int frame = 0; frame < frames; frame++) {
-                ParticleBatch batch = createBatch(world, frozenGeometry, style, frozenCandidates);
                 bridge.sendBatchLater(viewer, batch, frame * 2L);
             }
             return;

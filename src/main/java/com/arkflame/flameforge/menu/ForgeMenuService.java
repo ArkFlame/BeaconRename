@@ -51,6 +51,7 @@ public final class ForgeMenuService {
         REQUIREMENT_LINE_DEFAULTS.put("requirement-xp-missing", "<red>\u2718 <gray>XP: <white>%xp_available%/%xp_required%");
         REQUIREMENT_LINE_DEFAULTS.put("requirement-money-met", "<green>\u2714 <gray>Money: <white>%money_available%/%money_required%");
         REQUIREMENT_LINE_DEFAULTS.put("requirement-money-missing", "<red>\u2718 <gray>Money: <white>%money_available%/%money_required%");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-money-unavailable", "<red>\u2718 <gray>Money: <red>economy unavailable");
         REQUIREMENT_LINE_DEFAULTS.put("requirement-item-met", "<green>\u2714 <gray>%item_name%: <white>%item_available%/%item_required%");
         REQUIREMENT_LINE_DEFAULTS.put("requirement-item-missing", "<red>\u2718 <gray>%item_name%: <white>%item_available%/%item_required%");
     }
@@ -435,8 +436,9 @@ public final class ForgeMenuService {
             MessageArguments args = MessageArguments.create()
                     .string("money_available", String.valueOf(available))
                     .string("money_required", String.valueOf(required));
-            lines.add(requirementLine(dynamicLines,
-                    available.compareTo(required) >= 0 ? "requirement-money-met" : "requirement-money-missing", args));
+            String moneyKey = !plan.getCostQuote().isEconomyAvailable() ? "requirement-money-unavailable"
+                    : available.compareTo(required) >= 0 ? "requirement-money-met" : "requirement-money-missing";
+            lines.add(requirementLine(dynamicLines, moneyKey, args));
         }
 
         if (reqs.getItems().isEnabled() && !reqs.getItems().getItems().isEmpty()) {

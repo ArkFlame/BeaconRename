@@ -8,21 +8,19 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PotionEffectResolver {
     private static final int MAX_CACHE_ENTRIES = 256;
     private static final Object NOT_FOUND = new Object();
 
-    private final Map<String, Object> cache = new HashMap<>(MAX_CACHE_ENTRIES);
-    private int cacheSize = 0;
+    // Caches hits and misses; config strings are arbitrary, so the size bound counts every entry.
+    private final Map<String, Object> cache = new ConcurrentHashMap<>();
 
     private final Map<String, String[]> ALIASES;
-    private final Map<String, PotionEffectType> EFFECTS_BY_NAME;
 
     public PotionEffectResolver() {
         this.ALIASES = buildAliases();
-        this.EFFECTS_BY_NAME = buildEffectIndex();
     }
 
     private Map<String, String[]> buildAliases() {
@@ -49,9 +47,7 @@ public final class PotionEffectResolver {
         aliases.put("absorption", new String[]{"ABSORPTION", "ABSORPTION"});
         aliases.put("saturation", new String[]{"SATURATION", "SATURATION"});
         aliases.put("levitation", new String[]{"LEVITATION", "LEVITATION"});
-        aliases.put("saturation", new String[]{"SATURATION", "SATURATION"});
         aliases.put("glowing", new String[]{"GLOWING", "GLOWING"});
-        aliases.put("levitation", new String[]{"LEVITATION", "LEVITATION"});
         aliases.put("luck", new String[]{"LUCK", "LUCK"});
         aliases.put("unluck", new String[]{"UNLUCK", "UNLUCK"});
         aliases.put("slow_falling", new String[]{"SLOW_FALLING", "SLOW_FALLING"});
@@ -61,18 +57,6 @@ public final class PotionEffectResolver {
         aliases.put("hero_of_the_village", new String[]{"HERO_OF_THE_VILLAGE", "HERO_OF_THE_VILLAGE"});
         aliases.put("darkness", new String[]{"DARKNESS", "DARKNESS"});
         return Collections.unmodifiableMap(aliases);
-    }
-
-    private Map<String, PotionEffectType> buildEffectIndex() {
-        Map<String, PotionEffectType> index = new HashMap<>();
-        if (PotionEffectType.values().length > 0) {
-            for (PotionEffectType type : PotionEffectType.values()) {
-                if (type != null && type.getName() != null) {
-                    index.put(type.getName(), type);
-                }
-            }
-        }
-        return index;
     }
 
     public Optional<PotionEffectType> resolve(List<String> candidates) {
@@ -148,26 +132,13 @@ public final class PotionEffectResolver {
     }
 
     private void putInCache(String key, Object value) {
-        if (cacheSize >= MAX_CACHE_ENTRIES && !cache.containsKey(key)) {
-            evictRandomEntry();
+        if (cache.size() >= MAX_CACHE_ENTRIES) {
+            cache.clear();
         }
         cache.put(key, value);
-        if (value != NOT_FOUND) {
-            cacheSize = Math.max(cacheSize, cache.size());
-        }
-    }
-
-    private void evictRandomEntry() {
-        for (Map.Entry<String, Object> entry : cache.entrySet()) {
-            if (entry.getValue() != NOT_FOUND) {
-                cache.remove(entry.getKey());
-                break;
-            }
-        }
     }
 
     public void clearCache() {
         cache.clear();
-        cacheSize = 0;
     }
 }

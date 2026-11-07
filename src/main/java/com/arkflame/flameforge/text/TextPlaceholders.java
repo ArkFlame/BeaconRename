@@ -35,6 +35,7 @@ public final class TextPlaceholders {
             case "health": return "Health";
             case "health-points": return "Health";
             case "food": return "Food Level";
+            case "unknown": case "empty-hand": return "???";
             default: return "Experience Level";
         }
     }
@@ -44,11 +45,11 @@ public final class TextPlaceholders {
     }
 
     private void initializeDefaults() {
-        dynamicReplacements.put("%player_name%", player -> player != null ? player.getName() : "???");
-        dynamicReplacements.put("%player%", player -> player != null ? player.getName() : "???");
-        dynamicReplacements.put("%display_name%", player -> player != null ? player.getDisplayName() : "???");
-        dynamicReplacements.put("%world%", player -> player != null ? player.getWorld().getName() : "???");
-        dynamicReplacements.put("%world_name%", player -> player != null ? player.getWorld().getName() : "???");
+        dynamicReplacements.put("%player_name%", player -> player != null ? player.getName() : label("unknown"));
+        dynamicReplacements.put("%player%", player -> player != null ? player.getName() : label("unknown"));
+        dynamicReplacements.put("%display_name%", player -> player != null ? player.getDisplayName() : label("unknown"));
+        dynamicReplacements.put("%world%", player -> player != null ? player.getWorld().getName() : label("unknown"));
+        dynamicReplacements.put("%world_name%", player -> player != null ? player.getWorld().getName() : label("unknown"));
         dynamicReplacements.put("%online%", player -> player != null
                 ? String.valueOf(player.getServer().getOnlinePlayers().size()) : "0");
         dynamicReplacements.put("%online_players%", player -> player != null
@@ -58,19 +59,19 @@ public final class TextPlaceholders {
         dynamicComponents.put("%health%", player -> player != null
                 ? Component.text(String.format("%.1f", player.getHealth())).hoverEvent(
                         HoverEvent.showText(Component.text(label("health") + ": " + String.format("%.1f", player.getHealth())))
-                ) : Component.text("???"));
+                ) : Component.text(label("unknown")));
         dynamicComponents.put("%health_points%", player -> player != null
                 ? Component.text(String.format("%.1f", player.getHealth())).hoverEvent(
                         HoverEvent.showText(Component.text(label("health-points")))
-                ) : Component.text("???"));
+                ) : Component.text(label("unknown")));
         dynamicComponents.put("%food%", player -> player != null
                 ? Component.text(String.valueOf(player.getFoodLevel())).hoverEvent(
                         HoverEvent.showText(Component.text(label("food")))
-                ) : Component.text("???"));
+                ) : Component.text(label("unknown")));
         dynamicComponents.put("%xp_level%", player -> player != null
                 ? Component.text(String.valueOf(player.getLevel())).hoverEvent(
                         HoverEvent.showText(Component.text(label("xp-level")))
-                ) : Component.text("???"));
+                ) : Component.text(label("unknown")));
         dynamicComponents.put("%item_name%", player -> {
             if (player != null && player.getItemInHand() != null) {
                 final ItemStack item = player.getItemInHand();
@@ -79,7 +80,7 @@ public final class TextPlaceholders {
                 }
                 return Component.text(item.getType().name());
             }
-            return Component.text("???");
+            return Component.text(label("empty-hand"));
         });
         dynamicComponents.put("%item_in_hand%", player -> {
             if (player != null && player.getItemInHand() != null) {
@@ -89,7 +90,7 @@ public final class TextPlaceholders {
                 }
                 return Component.text(item.getType().name());
             }
-            return Component.text("???");
+            return Component.text(label("empty-hand"));
         });
     }
 

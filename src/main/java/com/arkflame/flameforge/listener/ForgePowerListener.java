@@ -12,6 +12,7 @@ import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeAttributeDefinition;
 import com.arkflame.flameforge.model.ForgePowerDefinition;
 import com.arkflame.flameforge.model.ForgeVariant;
+import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -43,7 +44,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 public final class ForgePowerListener implements Listener {
 
@@ -221,21 +221,40 @@ public final class ForgePowerListener implements Listener {
     }
 
     private double sumAttackDamageBonus(ItemIdentityCodec.Identity identity) {
-        String lastTierId = identity.getLastTierId();
-        String lastVariantId = identity.getLastVariantId();
+        ForgeVariant variant = findVariant(identity);
         List<String> activeAttributeIds = identity.getActiveAttributeIds();
-        if (lastTierId == null || lastVariantId == null || activeAttributeIds == null) {
+        if (variant == null || activeAttributeIds == null) {
             return 0;
         }
-        return tierRepository.findById(lastTierId)
-            .map(tier -> tier.getVariants().stream()
-                .filter(v -> lastVariantId.equals(v.getId()))
-                .flatMap(v -> v.getAttributes().stream())
-                .filter(attr -> activeAttributeIds.contains(attr.getId()))
-                .filter(attr -> attr.getType() == ForgeAttributeDefinition.AttributeType.ATTACK_DAMAGE_FLAT)
-                .mapToDouble(ForgeAttributeDefinition::getMultiplier)
-                .sum())
-            .orElse(0.0);
+        double sum = 0.0;
+        for (ForgeAttributeDefinition attr : variant.getAttributes()) {
+            if (attr.getType() == ForgeAttributeDefinition.AttributeType.ATTACK_DAMAGE_FLAT
+                && activeAttributeIds.contains(attr.getId())) {
+                sum += attr.getMultiplier();
+            }
+        }
+        return sum;
+    }
+
+    /** Single owner of the identity -> tier -> variant lookup used by the damage and power paths. */
+    private ForgeVariant findVariant(ItemIdentityCodec.Identity identity) {
+        return findVariant(identity.getLastTierId(), identity.getLastVariantId());
+    }
+
+    private ForgeVariant findVariant(String lastTierId, String lastVariantId) {
+        if (lastTierId == null || lastVariantId == null) {
+            return null;
+        }
+        Optional<TierDefinition> tier = tierRepository.findById(lastTierId);
+        if (!tier.isPresent()) {
+            return null;
+        }
+        for (ForgeVariant variant : tier.get().getVariants()) {
+            if (lastVariantId.equals(variant.getId())) {
+                return variant;
+            }
+        }
+        return null;
     }
 
     private double computeDamageReduction(Player player, EntityDamageEvent.DamageCause cause) {
@@ -286,22 +305,18 @@ public final class ForgePowerListener implements Listener {
 
     private double getMaxDamageReduction(ItemIdentityCodec.Identity identity,
                                          ForgeAttributeDefinition.AttributeType type) {
-        String lastTierId = identity.getLastTierId();
-        String lastVariantId = identity.getLastVariantId();
+        ForgeVariant variant = findVariant(identity);
         List<String> activeAttributeIds = identity.getActiveAttributeIds();
-        if (lastTierId == null || lastVariantId == null || activeAttributeIds == null) {
+        if (variant == null || activeAttributeIds == null) {
             return 0.0;
         }
-        return tierRepository.findById(lastTierId)
-            .map(tier -> tier.getVariants().stream()
-                .filter(v -> lastVariantId.equals(v.getId()))
-                .flatMap(v -> v.getAttributes().stream())
-                .filter(attr -> activeAttributeIds.contains(attr.getId()))
-                .filter(attr -> attr.getType() == type)
-                .mapToDouble(ForgeAttributeDefinition::getMultiplier)
-                .max()
-                .orElse(0.0))
-            .orElse(0.0);
+        double max = Double.NEGATIVE_INFINITY;
+        for (ForgeAttributeDefinition attr : variant.getAttributes()) {
+            if (attr.getType() == type && activeAttributeIds.contains(attr.getId())) {
+                max = Math.max(max, attr.getMultiplier());
+            }
+        }
+        return max == Double.NEGATIVE_INFINITY ? 0.0 : max;
     }
 
     private ForgeAttributeDefinition.AttributeType causeAttributeType(EntityDamageEvent.DamageCause cause) {
@@ -625,14 +640,17 @@ public final class ForgePowerListener implements Listener {
         if (activePowerIds == null || activePowerIds.isEmpty()) {
             return new ArrayList<>();
         }
+        ForgeVariant variant = findVariant(lastTierId, lastVariantId);
+        if (variant == null) {
+            return new ArrayList<>();
+        }
         Set<String> activeSet = new HashSet<>(activePowerIds);
-        return tierRepository.findById(lastTierId)
-                .map(tier -> tier.getVariants().stream()
-                        .filter(v -> lastVariantId.equals(v.getId()))
-                        .map(ForgeVariant::getPowers)
-                        .flatMap(List::stream)
-                        .filter(power -> activeSet.contains(power.getId()))
-                        .collect(Collectors.toList()))
-                .orElse(new ArrayList<>());
+        List<ForgePowerDefinition> result = new ArrayList<>();
+        for (ForgePowerDefinition power : variant.getPowers()) {
+            if (activeSet.contains(power.getId())) {
+                result.add(power);
+            }
+        }
+        return result;
     }
 }

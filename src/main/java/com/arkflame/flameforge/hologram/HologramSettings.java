@@ -70,6 +70,10 @@ public final class HologramSettings {
         double offsetY = snapshot.getRootDouble("holograms.offset-y", 1.25);
         boolean transparentBackground = snapshot.getRootBoolean("holograms.transparent-background", true);
         List<String> lines = snapshot.getRootStringList("holograms.lines");
+        if (lines == null || lines.isEmpty()) {
+            List<String> messageDefaults = snapshot.findMessageLines("holograms.default-lines");
+            lines = messageDefaults == null || messageDefaults.isEmpty() ? null : messageDefaults;
+        }
         return fromConfig(providerOrder, enabled, offsetY, transparentBackground, lines);
     }
 

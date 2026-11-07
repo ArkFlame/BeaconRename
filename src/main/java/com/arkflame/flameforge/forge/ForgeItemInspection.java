@@ -218,7 +218,9 @@ public final class ForgeItemInspection {
         if (!meta.hasDisplayName()) {
             return null;
         }
-        if (identity.getCurrentTier() > 0) {
+        // A previously forged item may carry a player's anvil rename; reforge keeps that name
+        // (forge.keep-custom-name), so it must not block the reforge.
+        if (identity.getCurrentTier() > 0 || identity.getLastVariantId() != null) {
             return null;
         }
         return Status.CUSTOM_NAME;

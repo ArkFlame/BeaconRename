@@ -1,5 +1,7 @@
 package com.arkflame.flameforge.item;
 
+import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
@@ -62,6 +64,65 @@ class ItemMutationServiceTest {
                 java.util.Optional.of((ItemStack) invocation.getArgument(0)));
         mutationService = new ItemMutationService(
                 identityService, attributeBridge, enchantmentResolver, textRenderer, displayNameResolver);
+    }
+
+    @Test
+    void reforgeKeepsPlayerSetAnvilNameWhenEnabled() {
+        ItemMutationService service = serviceWithConfig(true);
+        ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
+        ItemStack cloned = input.clone();
+        createMockMeta(input, "Dragon Slayer", Collections.singletonList("Old lore"));
+        createMockMeta(cloned, null, Collections.singletonList("Old lore"));
+
+        ItemMutationService.MutationResult result = service.mutateSuccess(
+                input, forgeTier(), forgeVariant("Forged Sword"), ItemIdentityCodec.Identity.empty(),
+                UUID.randomUUID());
+
+        assertTrue(result.isSuccess());
+        assertEquals("Dragon Slayer", result.getResult().getItemMeta().getDisplayName());
+    }
+
+    @Test
+    void reforgeAppliesVariantNameWhenKeepCustomNameDisabled() {
+        ItemMutationService service = serviceWithConfig(false);
+        ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
+        ItemStack cloned = input.clone();
+        createMockMeta(input, "Dragon Slayer", Collections.singletonList("Old lore"));
+        createMockMeta(cloned, null, Collections.singletonList("Old lore"));
+
+        ItemMutationService.MutationResult result = service.mutateSuccess(
+                input, forgeTier(), forgeVariant("Forged Sword"), ItemIdentityCodec.Identity.empty(),
+                UUID.randomUUID());
+
+        assertTrue(result.isSuccess());
+        assertEquals("Forged Sword", result.getResult().getItemMeta().getDisplayName());
+    }
+
+    private ItemMutationService serviceWithConfig(boolean keepCustomName) {
+        ConfigService configService = mock(ConfigService.class);
+        when(configService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder()
+                .putRoot("forge.keep-custom-name", keepCustomName)
+                .build());
+        return new ItemMutationService(identityService, attributeBridge, enchantmentResolver,
+                textRenderer, configService);
+    }
+
+    private static TierDefinition forgeTier() {
+        TierDefinition tier = mock(TierDefinition.class);
+        when(tier.getLevel()).thenReturn(3);
+        when(tier.getId()).thenReturn("tier3");
+        return tier;
+    }
+
+    private static ForgeVariant forgeVariant(String name) {
+        ForgeVariant variant = mock(ForgeVariant.class);
+        when(variant.getName()).thenReturn(name);
+        when(variant.getLore()).thenReturn(Collections.emptyList());
+        when(variant.getPowerIds()).thenReturn(Collections.emptyList());
+        when(variant.getAttributes()).thenReturn(Collections.emptyList());
+        when(variant.getEnchantments()).thenReturn(Collections.emptyList());
+        when(variant.getId()).thenReturn("variant");
+        return variant;
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.arkflame.flameforge.config;
 
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
+import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -36,7 +37,10 @@ public class ConfigService {
     private volatile ConfigSnapshot previousSnapshot;
     private final Object reloadLock = new Object();
 
-    private volatile TaskHandle pendingReloadTask;
+    // Guarded by reloadLock. The flag, not the handle, marks a reload as in flight, so a
+    // scheduler that runs the task synchronously cannot leave a stale handle behind.
+    private boolean reloadInFlight;
+    private TaskHandle pendingReloadTask;
 
     public ConfigService(JavaPlugin plugin, SchedulerBridge scheduler, TierRepository tierRepository) {
         this.plugin = plugin;
@@ -85,7 +89,7 @@ public class ConfigService {
     }
 
     private BuildCandidate buildCandidate() {
-        TierRepository.LoadCandidate tierCandidate = tierRepository.loadCandidate();
+        TierRepository.LoadCandidate tierCandidate = tierRepository.loadCandidate(loadBreakDefaultText());
 
         org.bukkit.configuration.file.YamlConfiguration candidateConfig = loadCandidateConfig();
 
@@ -110,6 +114,16 @@ public class ConfigService {
         ConfigSnapshot snapshot = builder.build();
         validateMenuTree(snapshot, report);
         return new BuildCandidate(snapshot, tierCandidate);
+    }
+
+    private BreakPolicy.DefaultText loadBreakDefaultText() {
+        ConfigSnapshot.Builder textBuilder = ConfigSnapshot.builder();
+        loadBundledMessages(textBuilder);
+        overlayOperatorMessages(textBuilder);
+        ConfigSnapshot texts = textBuilder.build();
+        return BreakPolicy.DefaultText.of(
+            texts.findMessageString("break-policy.result-display-name").orElse(null),
+            texts.findMessageLines("break-policy.result-lore"));
     }
 
     private org.bukkit.configuration.file.YamlConfiguration loadCandidateConfig() {
@@ -503,7 +517,7 @@ public class ConfigService {
 
     public boolean hasPendingReload() {
         synchronized (reloadLock) {
-            return pendingReloadTask != null;
+            return reloadInFlight;
         }
     }
 
@@ -511,8 +525,9 @@ public class ConfigService {
         synchronized (reloadLock) {
             if (pendingReloadTask != null) {
                 pendingReloadTask.cancel();
-                pendingReloadTask = null;
             }
+            pendingReloadTask = null;
+            reloadInFlight = false;
         }
     }
 
@@ -520,7 +535,7 @@ public class ConfigService {
 
     public CompletableFuture<ReloadResult> reloadAsync() {
         synchronized (reloadLock) {
-            if (pendingReloadTask != null) {
+            if (reloadInFlight) {
                 return CompletableFuture.completedFuture(ReloadResult.alreadyRunning());
             }
 
@@ -529,8 +544,9 @@ public class ConfigService {
 
             final CompletableFuture<ReloadResult> future = new CompletableFuture<>();
 
+            reloadInFlight = true;
             try {
-                pendingReloadTask = scheduler.runAsync(plugin, () -> {
+                TaskHandle handle = scheduler.runAsync(plugin, () -> {
                     try {
                         ReloadResult result = performReload();
                         future.complete(result);
@@ -539,13 +555,18 @@ public class ConfigService {
                     } finally {
                         synchronized (reloadLock) {
                             pendingReloadTask = null;
+                            reloadInFlight = false;
                         }
                     }
                 });
-            } catch (Throwable failure) {
-                synchronized (reloadLock) {
-                    pendingReloadTask = null;
+                // A synchronous scheduler has already finished the task here; only keep the
+                // handle while the reload is still in flight.
+                if (reloadInFlight) {
+                    pendingReloadTask = handle;
                 }
+            } catch (Throwable failure) {
+                pendingReloadTask = null;
+                reloadInFlight = false;
                 return CompletableFuture.completedFuture(ReloadResult.schedulerRejected(reference));
             }
 
@@ -555,7 +576,7 @@ public class ConfigService {
 
     public CompletableFuture<ValidationResult> validateAsync() {
         synchronized (reloadLock) {
-            if (pendingReloadTask != null) {
+            if (reloadInFlight) {
                 return CompletableFuture.completedFuture(ValidationResult.alreadyRunning());
             }
 

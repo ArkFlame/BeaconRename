@@ -1,5 +1,6 @@
 package com.arkflame.flameforge.config;
 
+import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.testfakes.FakeSchedulerBridge;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
@@ -94,6 +95,37 @@ class ConfigServiceTest {
         assertEquals(ConfigService.ValidationResult.Status.COMPLETED, result.getStatus());
         assertSame(before, configService.getCurrentSnapshot());
         assertFalse(configService.findTier("operator-valid").isPresent());
+    }
+
+    @Test
+    void synchronousSchedulerReloadsRepeatedlyWithoutStaleHandle() throws Exception {
+        configService.initialLoad();
+
+        ConfigService.ReloadResult first = configService.reloadAsync().getNow(null);
+        ConfigService.ReloadResult second = configService.reloadAsync().getNow(null);
+
+        assertEquals(ConfigService.ReloadResult.Status.APPLIED, first.getStatus());
+        assertEquals(ConfigService.ReloadResult.Status.APPLIED, second.getStatus());
+        assertFalse(configService.hasPendingReload());
+    }
+
+    @Test
+    void breakDefaultTextComesFromMessagesCatalog() throws Exception {
+        Files.write(tempDir.resolve("messages.yml"),
+            ("break-policy:\n"
+                + "  result-display-name: \"<red>Shattered %base_name%\"\n"
+                + "  result-lore:\n"
+                + "    - \"<gray>Custom lore.\"\n").getBytes(StandardCharsets.UTF_8));
+        Files.write(tempDir.resolve("tiers").resolve("operator-break.yml"),
+            ("schema-version: 2\nid: operator-break\nlevel: 99\n"
+                + "variants:\n  base:\n    weight: 1.0\n"
+                + "break:\n  reset-tier: true\n").getBytes(StandardCharsets.UTF_8));
+
+        configService.initialLoad();
+
+        BreakPolicy policy = configService.findTier("operator-break").get().getBreakPolicy();
+        assertEquals("<red>Shattered %base_name%", policy.getResultDisplayName());
+        assertEquals(java.util.Collections.singletonList("<gray>Custom lore."), policy.getResultLore());
     }
 
     private void stubBundledTiers() {

@@ -27,11 +27,18 @@ public class TierParser {
     private final ValidationReport report;
     private final YamlValues values;
     private final MigrationContext migrationContext;
+    private final BreakPolicy.DefaultText breakDefaults;
 
     public TierParser(ValidationReport report, YamlValues values, MigrationContext migrationContext) {
+        this(report, values, migrationContext, BreakPolicy.DefaultText.ENGLISH);
+    }
+
+    public TierParser(ValidationReport report, YamlValues values, MigrationContext migrationContext,
+                      BreakPolicy.DefaultText breakDefaults) {
         this.report = report;
         this.values = values;
         this.migrationContext = migrationContext;
+        this.breakDefaults = breakDefaults;
     }
 
     public static TierDefinition parse(ConfigurationSection section, ValidationReport report) {
@@ -52,13 +59,28 @@ public class TierParser {
         return parser.doParse();
     }
 
+    public static TierDefinition parse(ConfigurationSection section, ValidationReport report,
+                                       BreakPolicy.DefaultText breakDefaults) {
+        return parse(new YamlValues(section, report), report, breakDefaults);
+    }
+
+    public static TierDefinition parse(YamlValues values, ValidationReport report, BreakPolicy.DefaultText breakDefaults) {
+        TierParser parser = new TierParser(report, values, MigrationContext.noOp(), breakDefaults);
+        return parser.doParse();
+    }
+
     public static TierDefinition parseBundled(InputStream bundledStream, ValidationReport report, String resourceName) {
+        return parseBundled(bundledStream, report, resourceName, BreakPolicy.DefaultText.ENGLISH);
+    }
+
+    public static TierDefinition parseBundled(InputStream bundledStream, ValidationReport report, String resourceName,
+                                              BreakPolicy.DefaultText breakDefaults) {
         try {
             org.bukkit.configuration.file.YamlConfiguration bundledYaml =
                 org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
                     new InputStreamReader(bundledStream, StandardCharsets.UTF_8));
             YamlValues bundledValues = new YamlValues(bundledYaml, report);
-            TierParser parser = new TierParser(report, bundledValues, MigrationContext.noOp());
+            TierParser parser = new TierParser(report, bundledValues, MigrationContext.noOp(), breakDefaults);
             return parser.doParseV2();
         } catch (Exception e) {
             report.addError("", "bundled-parse",
@@ -141,7 +163,7 @@ public class TierParser {
                 org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
                     new InputStreamReader(bundledStream, StandardCharsets.UTF_8));
             YamlValues bundledValues = new YamlValues(bundledYaml, report);
-            TierParser parser = new TierParser(report, bundledValues, MigrationContext.noOp());
+            TierParser parser = new TierParser(report, bundledValues, MigrationContext.noOp(), breakDefaults);
             return parser.doParseV2();
         } catch (Exception e) {
             report.addError(values.getRootPath(), "bundled-v2-parse",
@@ -185,6 +207,10 @@ public class TierParser {
         }
 
         int level = values.getInt("level", 0);
+        if (level < 0) {
+            report.addError(values.getRootPath(), "level", "Tier level must be >= 0, got " + level);
+            return null;
+        }
 
         boolean enabled = values.getBoolean("enabled", true);
 
@@ -239,6 +265,11 @@ public class TierParser {
         List<String> allowedGroups = input.getStringList("allowed-groups", Collections.singletonList("ANY"));
         List<String> deniedMaterials = input.getStringList("denied-materials", Collections.emptyList());
         long cooldownSeconds = input.getLong("cooldown-seconds", 0L);
+        if (cooldownSeconds < 0) {
+            report.addError(input.getRootPath(), "cooldown-seconds",
+                "cooldown-seconds must be >= 0, got " + cooldownSeconds);
+            cooldownSeconds = 0L;
+        }
 
         return new InputConfig(allowedGroups, deniedMaterials, cooldownSeconds);
     }
@@ -303,6 +334,10 @@ public class TierParser {
 
         boolean enabled = xp.getBoolean("enabled", false);
         BigDecimal amount = parseDecimal(xp, "amount", BigDecimal.ZERO);
+        if (amount.signum() < 0) {
+            report.addError(xp.getRootPath(), "amount", "xp amount must be >= 0, got " + amount);
+            amount = BigDecimal.ZERO;
+        }
 
         return new TierRequirements.XpRequirement(enabled, amount.intValue());
     }
@@ -314,6 +349,10 @@ public class TierParser {
 
         boolean enabled = money.getBoolean("enabled", false);
         BigDecimal amount = parseDecimal(money, "amount", BigDecimal.ZERO);
+        if (amount.signum() < 0) {
+            report.addError(money.getRootPath(), "amount", "money amount must be >= 0, got " + amount);
+            amount = BigDecimal.ZERO;
+        }
 
         return new TierRequirements.MoneyRequirement(enabled, amount);
     }
@@ -379,7 +418,7 @@ public class TierParser {
 
     private BreakPolicy parseBreakPolicy(YamlValues breakPolicy) {
         if (breakPolicy == null || breakPolicy.getRawSection() == null) {
-            return BreakPolicy.defaultPolicy();
+            return BreakPolicy.defaultPolicy(breakDefaults);
         }
 
         boolean resetTier = breakPolicy.getBoolean("reset-tier", true);
@@ -392,7 +431,13 @@ public class TierParser {
         boolean resetCustomModelData = breakPolicy.getBoolean("reset-custom-model-data", true);
         boolean destroyItem = breakPolicy.getBoolean("destroy-item", false);
         String resultDisplayName = breakPolicy.getString("result-display-name", null);
+        if (resultDisplayName == null || resultDisplayName.trim().isEmpty()) {
+            resultDisplayName = breakDefaults.getDisplayName();
+        }
         List<String> resultLore = breakPolicy.getStringList("result-lore", Collections.emptyList());
+        if (resultLore == null || resultLore.isEmpty()) {
+            resultLore = breakDefaults.getLore();
+        }
 
         return new BreakPolicy(resetTier, targetTier, resetEnchantments, resetDisplayName, resetLore,
             resetAttributes, resetPowers, resetCustomModelData, destroyItem, resultDisplayName, resultLore);
@@ -485,20 +530,19 @@ public class TierParser {
         }
 
         ConfigurationSection section = variants.getRawSection();
-        if (section == null) {
-            return Collections.emptyList();
-        }
-
         List<ForgeVariant> result = new ArrayList<>();
-
-        for (String key : section.getKeys(false)) {
-            YamlValues variantValues = variants.sub(key);
-            ForgeVariant variant = parseVariant(variantValues, key);
-            if (variant != null) {
-                result.add(variant);
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                ForgeVariant variant = parseVariant(variants.sub(key), key);
+                if (variant != null) {
+                    result.add(variant);
+                }
             }
         }
 
+        if (result.isEmpty()) {
+            report.addError(variants.getRootPath(), "variants", "Tier must define at least one variant");
+        }
         return result;
     }
 

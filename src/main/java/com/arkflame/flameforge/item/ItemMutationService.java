@@ -1,6 +1,7 @@
 package com.arkflame.flameforge.item;
 
 import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
@@ -34,6 +35,7 @@ public final class ItemMutationService {
     private final EnchantmentResolver enchantmentResolver;
     private final TextRenderer textRenderer;
     private final ItemDisplayNameResolver displayNameResolver;
+    private final ConfigService configService;
 
     public ItemMutationService(
             ItemIdentityService identityService,
@@ -50,7 +52,7 @@ public final class ItemMutationService {
             TextRenderer textRenderer,
             ConfigService configService) {
         this(identityService, attributeBridge, enchantmentResolver, textRenderer,
-                new ItemDisplayNameResolver(identityService, configService));
+                new ItemDisplayNameResolver(identityService, configService), configService);
     }
 
     public ItemMutationService(
@@ -59,11 +61,22 @@ public final class ItemMutationService {
             EnchantmentResolver enchantmentResolver,
             TextRenderer textRenderer,
             ItemDisplayNameResolver displayNameResolver) {
+        this(identityService, attributeBridge, enchantmentResolver, textRenderer, displayNameResolver, null);
+    }
+
+    private ItemMutationService(
+            ItemIdentityService identityService,
+            AttributeBridge attributeBridge,
+            EnchantmentResolver enchantmentResolver,
+            TextRenderer textRenderer,
+            ItemDisplayNameResolver displayNameResolver,
+            ConfigService configService) {
         this.identityService = identityService;
         this.attributeBridge = attributeBridge;
         this.enchantmentResolver = enchantmentResolver;
         this.textRenderer = textRenderer;
         this.displayNameResolver = displayNameResolver;
+        this.configService = configService;
     }
 
     public MutationResult mutateSuccess(
@@ -83,6 +96,7 @@ public final class ItemMutationService {
         if (meta == null) {
             return MutationResult.fail("item has no meta");
         }
+        final String playerName = playerSetDisplayName(input, identity, baseDisplayName);
 
         removeFlameForgeMetadata(meta);
 
@@ -91,7 +105,9 @@ public final class ItemMutationService {
 
         applyVariantEnchants(meta, variant);
 
-        if (variant.getName() != null && !variant.getName().isEmpty()) {
+        if (playerName != null) {
+            meta.setDisplayName(playerName);
+        } else if (variant.getName() != null && !variant.getName().isEmpty()) {
             applyName(meta, variant.getName(), arguments);
         }
 
@@ -372,6 +388,52 @@ public final class ItemMutationService {
 
     private String resolveBaseDisplayName(final ItemStack input, final ItemIdentityCodec.Identity identity) {
         return displayNameResolver.resolve(input, identity);
+    }
+
+    /**
+     * Returns the item's current display name when a player set it (anvil rename) and
+     * forge.keep-custom-name is enabled; null when the forge should apply its own variant name.
+     */
+    private String playerSetDisplayName(final ItemStack input, final ItemIdentityCodec.Identity identity,
+                                        final String baseDisplayName) {
+        if (configService == null) {
+            return null;
+        }
+        final ConfigSnapshot snapshot = configService.getCurrentSnapshot();
+        if (snapshot == null || !snapshot.getRootBoolean("forge.keep-custom-name", true)) {
+            return null;
+        }
+        final ItemMeta inputMeta = input.getItemMeta();
+        if (inputMeta == null || !inputMeta.hasDisplayName()) {
+            return null;
+        }
+        final String current = inputMeta.getDisplayName();
+        if (identity.getLastVariantId() == null) {
+            return current; // never forged, so the name cannot be the forge's own
+        }
+        final ForgeVariant previous = findVariant(snapshot, identity);
+        if (previous == null) {
+            return null; // previous state unknown: keep the forge naming rule
+        }
+        if (previous.getName() == null || previous.getName().isEmpty()) {
+            return current;
+        }
+        final String generated = textRenderer.renderItemLegacyInheritedLiteral(previous.getName(),
+                MessageArguments.create().string("base_name", baseDisplayName), "base_name", null);
+        return current.equals(generated) ? null : current;
+    }
+
+    private static ForgeVariant findVariant(final ConfigSnapshot snapshot, final ItemIdentityCodec.Identity identity) {
+        for (TierDefinition tier : snapshot.getTiers()) {
+            if (tier.getId().equals(identity.getLastTierId())) {
+                for (ForgeVariant variant : tier.getVariants()) {
+                    if (variant.getId().equals(identity.getLastVariantId())) {
+                        return variant;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     private void removeFlameForgeMetadata(ItemMeta meta) {

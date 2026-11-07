@@ -551,7 +551,10 @@ public final class ForgePowerService {
                 if (!binding.player.isOnline() || heldWeaponVisualBindings.get(binding.player.getUniqueId()) != binding
                     || !heldBindingStillValid(binding) || !heldParticlesEnabled()) return;
                 List<Location> locations = heldRingLocations(binding.player);
-                List<String> candidates = ambientParticleCandidates(binding.powers);
+                if (binding.ambientCandidates == null) {
+                    binding.ambientCandidates = ambientParticleCandidates(binding.powers);
+                }
+                List<String> candidates = binding.ambientCandidates;
                 if (!locations.isEmpty() && !candidates.isEmpty()) {
                     WeaponParticleSettings particleSettings = weaponParticleSettings;
                     if (!particleSettings.isEnabled() || !particleSettings.isHeldEnabled()) return;
@@ -1500,6 +1503,7 @@ public final class ForgePowerService {
         private final String variantId;
         private final List<String> powerIds;
         private final List<ForgePowerDefinition> powers;
+        private List<String> ambientCandidates; // lazily resolved once per binding, timer thread only
         private TaskHandle task;
 
         HeldWeaponVisualBinding(Player player, UUID forgeId, String tierId, String variantId,

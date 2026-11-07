@@ -85,6 +85,26 @@ class ForgeItemInspectionTest {
     }
 
     @Test
+    void renamedPreviouslyForgedTierZeroItemRemainsForgeable() {
+        ItemMeta meta = mock(ItemMeta.class);
+        when(item.hasItemMeta()).thenReturn(true);
+        when(item.getItemMeta()).thenReturn(meta);
+        when(meta.hasDisplayName()).thenReturn(true);
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
+                .withCurrentTier(0)
+                .withHighestTier(1)
+                .withLastTierId("tier1")
+                .withLastVariantId("variant")
+                .withBaseMaterial("DIAMOND_SWORD");
+        when(identityService.readForgeIdentity(item)).thenReturn(new ItemIdentityService.ForgeIdentityRead(
+                ItemIdentityService.ForgeIdentityStatus.VALID, identity));
+
+        ForgeItemInspection.InspectionResult result = inspection.inspect(null, null, item);
+
+        assertEquals(ForgeItemInspection.Status.READY, result.getStatus());
+    }
+
+    @Test
     void cursedOwnedItemIsDeniedBeforeProgressionLookup() {
         ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty().withCursed(true);
         when(identityService.readForgeIdentity(item)).thenReturn(new ItemIdentityService.ForgeIdentityRead(

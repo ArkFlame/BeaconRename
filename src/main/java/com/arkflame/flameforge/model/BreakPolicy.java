@@ -6,12 +6,33 @@ import java.util.List;
 import java.util.Objects;
 
 public final class BreakPolicy {
-    private static final String DEFAULT_RESULT_DISPLAY_NAME =
-            "<gradient:#ef4444:#f97316><bold>Fractured %base_name%</bold></gradient>";
-    private static final List<String> DEFAULT_RESULT_LORE = Collections.unmodifiableList(Arrays.asList(
-            "<gray>The forge fractured this item.",
-            "<dark_gray>Its enhancements were reset."
-    ));
+    /** English fallback text for break results when no catalog text is supplied. */
+    public static final class DefaultText {
+        public static final DefaultText ENGLISH = new DefaultText(
+                "<gradient:#ef4444:#f97316><bold>Fractured %base_name%</bold></gradient>",
+                Arrays.asList(
+                        "<gray>The forge fractured this item.",
+                        "<dark_gray>Its enhancements were reset."));
+
+        private final String displayName;
+        private final List<String> lore;
+
+        private DefaultText(String displayName, List<String> lore) {
+            this.displayName = displayName;
+            this.lore = Collections.unmodifiableList(new java.util.ArrayList<>(lore));
+        }
+
+        /** Blank or missing values fall back to the English defaults. */
+        public static DefaultText of(String displayName, List<String> lore) {
+            String name = displayName != null && !displayName.trim().isEmpty()
+                    ? displayName : ENGLISH.displayName;
+            List<String> resolvedLore = lore != null && !lore.isEmpty() ? lore : ENGLISH.lore;
+            return new DefaultText(name, resolvedLore);
+        }
+
+        public String getDisplayName() { return displayName; }
+        public List<String> getLore() { return lore; }
+    }
 
     private final boolean resetTier;
     private final int targetTier;
@@ -29,8 +50,8 @@ public final class BreakPolicy {
                        boolean resetLore, boolean resetAttributes, boolean resetPowers,
                        boolean resetCustomModelData, boolean destroyItem) {
         this(resetTier, targetTier, resetEnchants, resetName, resetLore, resetAttributes,
-                resetPowers, resetCustomModelData, destroyItem, DEFAULT_RESULT_DISPLAY_NAME,
-                DEFAULT_RESULT_LORE);
+                resetPowers, resetCustomModelData, destroyItem, DefaultText.ENGLISH.getDisplayName(),
+                DefaultText.ENGLISH.getLore());
     }
 
     public BreakPolicy(boolean resetTier, int targetTier, boolean resetEnchants, boolean resetName,
@@ -47,10 +68,10 @@ public final class BreakPolicy {
         this.resetCustomModelData = resetCustomModelData;
         this.destroyItem = destroyItem;
         this.resultDisplayName = resultDisplayName != null && !resultDisplayName.trim().isEmpty()
-                ? resultDisplayName : DEFAULT_RESULT_DISPLAY_NAME;
+                ? resultDisplayName : DefaultText.ENGLISH.getDisplayName();
         this.resultLore = resultLore != null && !resultLore.isEmpty()
                 ? Collections.unmodifiableList(new java.util.ArrayList<>(resultLore))
-                : DEFAULT_RESULT_LORE;
+                : DefaultText.ENGLISH.getLore();
     }
 
     public static BreakPolicy none() {
@@ -58,7 +79,12 @@ public final class BreakPolicy {
     }
 
     public static BreakPolicy defaultPolicy() {
-        return new BreakPolicy(true, 0, true, true, true, true, true, true, false);
+        return defaultPolicy(DefaultText.ENGLISH);
+    }
+
+    public static BreakPolicy defaultPolicy(DefaultText text) {
+        return new BreakPolicy(true, 0, true, true, true, true, true, true, false,
+                text.getDisplayName(), text.getLore());
     }
 
     public boolean isResetTier() { return resetTier; }

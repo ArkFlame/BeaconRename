@@ -122,6 +122,15 @@ class MessageCatalogCoverageTest {
     }
 
     @Test
+    void placeholderFallbackAndHologramDefaultsAreCatalogOwned() {
+        Map<String, Map<String, Object>> messages = loadFlattenedBundledMessages();
+
+        assertEquals("???", messageOf(messages, "placeholders.unknown"));
+        assertEquals("???", messageOf(messages, "placeholders.empty-hand"));
+        assertTrue(messages.containsKey("holograms.default-lines"));
+    }
+
+    @Test
     void tierInfoTemplatesMatchThePublicContractExactly() {
         Map<String, Map<String, Object>> messages = loadFlattenedBundledMessages();
 
