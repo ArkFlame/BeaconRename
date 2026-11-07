@@ -3,6 +3,7 @@ package com.arkflame.flameforge.hologram;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.persistence.StationRepository.RegisteredForge;
 import com.arkflame.flameforge.text.TextRenderer;
@@ -112,6 +113,32 @@ class ForgeStationHologramServiceTest {
         verify(replacement, times(1)).upsert(any(ForgeHologram.class));
         verify(unavailable, never()).upsert(any(ForgeHologram.class));
         verify(provider, never()).upsert(any(ForgeHologram.class));
+    }
+
+    @Test
+    void noArgReloadReadsCurrentConfigSnapshot() {
+        HologramSettings snapshotSettings = HologramSettings.fromConfig(
+                Arrays.asList("FancyHolograms"), true, 1.25, false,
+                Arrays.asList("%forge_id%", "<gray>RIGHT CLICK"));
+        when(configService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder()
+                .putRoot("holograms.enabled", true)
+                .putRoot("holograms.provider-order", Collections.singletonList("FancyHolograms"))
+                .putRoot("holograms.offset-y", 1.25)
+                .putRoot("holograms.transparent-background", false)
+                .putRoot("holograms.lines", Arrays.asList("%forge_id%", "<gray>RIGHT CLICK"))
+                .build());
+        when(selector.select(any(HologramSettings.class))).thenReturn(provider);
+        RegisteredForge forge = new RegisteredForge("forge-id", null, "world", 10, 64, 10, "default");
+        when(repository.snapshotSortedById()).thenReturn(Collections.singletonList(forge));
+
+        ForgeStationHologramService service = new ForgeStationHologramService(plugin,
+                new ImmediateScheduler(), repository, configService, new TextRenderer(), selector,
+                provider, settings);
+        service.reload();
+
+        verify(configService).getCurrentSnapshot();
+        verify(selector).select(argThat(value -> value.getOffsetY() == snapshotSettings.getOffsetY()
+                && value.getLineTemplates().equals(snapshotSettings.getLineTemplates())));
     }
 
     private enum ExecutionScope { NONE, GLOBAL, REGION }

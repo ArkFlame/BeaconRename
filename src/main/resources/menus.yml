@@ -79,6 +79,8 @@ default:
     requirement-money-unavailable: "<red>✘ <gray>Money: <red>economy unavailable"
     requirement-item-met: "<green>✔ <gray>%item_name%: <white>%item_available%/%item_required%"
     requirement-item-missing: "<red>✘ <gray>%item_name%: <white>%item_available%/%item_required%"
+    requirement-item-unnamed: "Item"
+    requirement-data-missing: "<red>No requirements data available."
 
     chance-success: "<dark_gray>• <green>Success <white>%success_chance%%"
     chance-break: "<dark_gray>• <red>Break/reset <white>%break_chance%%"

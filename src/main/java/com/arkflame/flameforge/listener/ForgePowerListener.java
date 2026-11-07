@@ -393,6 +393,10 @@ public final class ForgePowerListener implements Listener {
         powerService.tracePowerEvent(attacker, "ON_HIT_RESOLVED",
             "forge=" + forgeId + " tier=" + lastTierId + " variant=" + lastVariantId
                 + " powers=" + powers.size());
+        Optional<String> equipmentCategory = tierRepository.findEquipmentCategory(weapon.getType());
+        if (equipmentCategory.isPresent() && "weapon".equalsIgnoreCase(equipmentCategory.get())) {
+            powerService.emitWeaponHitParticles(attacker, victim, lastTierId, powers);
+        }
         for (ForgePowerDefinition power : powers) {
             powerService.triggerOnHitPower(attacker, victim, power, forgeId, lethalHit);
         }

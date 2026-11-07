@@ -41,6 +41,19 @@ public final class ForgeMenuService {
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacySection();
     private static final int MAX_LEGACY_INVENTORY_TITLE_LENGTH = 32;
     private static final String SAFE_LEGACY_TITLE = "\u00A76\u00A7lFlameForge";
+    private static final Map<String, String> REQUIREMENT_LINE_DEFAULTS = new java.util.HashMap<>();
+
+    static {
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-data-missing", "<red>No requirements data available.");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-none", "<green>\u2714 <gray>No additional requirements.");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-mode-any", "<gray>Meet any one requirement:");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-xp-met", "<green>\u2714 <gray>XP: <white>%xp_available%/%xp_required%");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-xp-missing", "<red>\u2718 <gray>XP: <white>%xp_available%/%xp_required%");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-money-met", "<green>\u2714 <gray>Money: <white>%money_available%/%money_required%");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-money-missing", "<red>\u2718 <gray>Money: <white>%money_available%/%money_required%");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-item-met", "<green>\u2714 <gray>%item_name%: <white>%item_available%/%item_required%");
+        REQUIREMENT_LINE_DEFAULTS.put("requirement-item-missing", "<red>\u2718 <gray>%item_name%: <white>%item_available%/%item_required%");
+    }
 
     public enum MenuStatus {
         OPENED,
@@ -353,7 +366,7 @@ public final class ForgeMenuService {
         Component tierComponent = buildTierComponent(context, plan, menuConfig);
         args.component("tier_line", tierComponent);
 
-        List<String> requirements = buildRequirementLines(plan);
+        List<String> requirements = buildRequirementLines(plan, menuConfig);
         args.lines("requirements", requirements);
 
         List<String> chances = buildChanceLines(plan, menuConfig);
@@ -385,67 +398,68 @@ public final class ForgeMenuService {
         return textRenderer.renderComponent(tierTemplate, args, "menu.tier");
     }
 
-    List<String> buildRequirementLines(ForgePlan plan) {
+    List<String> buildRequirementLines(ForgePlan plan, Map<String, Object> menuConfig) {
         List<String> lines = new ArrayList<>();
+        Map<String, Object> dynamicLines = getSubConfig(menuConfig, "dynamic-lines");
 
         if (plan == null || plan.getCostQuote() == null || !plan.getCostQuote().isReady()) {
-            lines.add("<red>No requirements data available.");
-            return lines;
-        }
-
-        if (plan.getCostQuote().getRequirements() == null) {
-            lines.add("<green>✔ <gray>No additional requirements.");
+            lines.add(requirementLine(dynamicLines, "requirement-data-missing", MessageArguments.create()));
             return lines;
         }
 
         TierRequirements reqs = plan.getCostQuote().getRequirements();
-        boolean hasAnyEnabled = (reqs.getXp().isEnabled() || reqs.getMoney().isEnabled()
+        boolean hasAnyEnabled = reqs != null && (reqs.getXp().isEnabled() || reqs.getMoney().isEnabled()
                 || (reqs.getItems().isEnabled() && !reqs.getItems().getItems().isEmpty()));
-
         if (!hasAnyEnabled) {
-            lines.add("<green>✔ <gray>No additional requirements.");
+            lines.add(requirementLine(dynamicLines, "requirement-none", MessageArguments.create()));
             return lines;
         }
 
-        TierRequirements.Combine combine = reqs.getCombine();
-        if (combine == TierRequirements.Combine.ANY) {
-            lines.add("<gray>Meet any one requirement:");
+        if (reqs.getCombine() == TierRequirements.Combine.ANY) {
+            lines.add(requirementLine(dynamicLines, "requirement-mode-any", MessageArguments.create()));
         }
 
         if (reqs.getXp().isEnabled()) {
             int required = reqs.getXp().getLevel();
             int available = plan.getCostQuote().getXpAvailable();
-            if (available >= required) {
-                lines.add("<green>✔ <gray>XP: <white>" + available + "/" + required);
-            } else {
-                lines.add("<red>✘ <gray>XP: <white>" + available + "/" + required);
-            }
+            MessageArguments args = MessageArguments.create()
+                    .string("xp_available", String.valueOf(available))
+                    .string("xp_required", String.valueOf(required));
+            lines.add(requirementLine(dynamicLines,
+                    available >= required ? "requirement-xp-met" : "requirement-xp-missing", args));
         }
 
         if (reqs.getMoney().isEnabled()) {
             BigDecimal required = reqs.getMoney().getAmount();
             BigDecimal available = plan.getCostQuote().getMoneyAvailable();
-            if (available.compareTo(required) >= 0) {
-                lines.add("<green>✔ <gray>Money: <white>" + available + "/" + required);
-            } else {
-                lines.add("<red>✘ <gray>Money: <white>" + available + "/" + required);
-            }
+            MessageArguments args = MessageArguments.create()
+                    .string("money_available", String.valueOf(available))
+                    .string("money_required", String.valueOf(required));
+            lines.add(requirementLine(dynamicLines,
+                    available.compareTo(required) >= 0 ? "requirement-money-met" : "requirement-money-missing", args));
         }
 
         if (reqs.getItems().isEnabled() && !reqs.getItems().getItems().isEmpty()) {
             for (CostQuote.ItemRequirementQuote itemQuote : plan.getCostQuote().getItemQuotes()) {
-                String itemName = itemQuote.getDisplayName() != null ? itemQuote.getDisplayName() : "Item";
+                String itemName = itemQuote.getDisplayName() != null ? itemQuote.getDisplayName()
+                        : getMenuString(dynamicLines, "requirement-item-unnamed", "Item");
                 int required = itemQuote.getAmount();
                 int available = itemQuote.getAmountAvailable();
-                if (available >= required) {
-                    lines.add("<green>✔ <gray>" + itemName + ": <white>" + available + "/" + required);
-                } else {
-                    lines.add("<red>✘ <gray>" + itemName + ": <white>" + available + "/" + required);
-                }
+                MessageArguments args = MessageArguments.create()
+                        .string("item_name", itemName)
+                        .string("item_available", String.valueOf(available))
+                        .string("item_required", String.valueOf(required));
+                lines.add(requirementLine(dynamicLines,
+                        available >= required ? "requirement-item-met" : "requirement-item-missing", args));
             }
         }
 
         return lines;
+    }
+
+    private String requirementLine(Map<String, Object> dynamicLines, String key, MessageArguments args) {
+        String template = getMenuString(dynamicLines, key, REQUIREMENT_LINE_DEFAULTS.get(key));
+        return textRenderer.renderToMiniMessage(template, args.getStringValues(), "menu." + key);
     }
 
     List<String> buildChanceLines(ForgePlan plan, Map<String, Object> menuConfig) {

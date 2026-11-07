@@ -71,6 +71,21 @@ public final class ParticleNetworkRenderer {
     public void render(final Player viewer, List<Location> locations, final ParticleStyle style,
                        List<String> preferredCandidates, int interiorPoints, int frames,
                        double spacing) {
+        renderInternal(viewer, locations, style, preferredCandidates, interiorPoints, frames,
+            spacing, false);
+    }
+
+    public void renderChain(final Player viewer, List<Location> locations, final ParticleStyle style,
+                            List<String> preferredCandidates, int interiorPoints, int frames,
+                            double spacing) {
+        renderInternal(viewer, locations, style, preferredCandidates, interiorPoints, frames,
+            spacing, true);
+    }
+
+    private void renderInternal(final Player viewer, List<Location> locations,
+                                final ParticleStyle style, List<String> preferredCandidates,
+                                int interiorPoints, int frames, double spacing,
+                                boolean boundedEmission) {
         if (viewer == null || style == null || locations == null || locations.size() < 2
             || locations.size() > MAX_NODES || interiorPoints < 0 || frames < 1
             || frames > MAX_FRAMES || Double.isNaN(spacing) || Double.isInfinite(spacing)
@@ -79,9 +94,11 @@ public final class ParticleNetworkRenderer {
         }
         final List<Location> snapshots = snapshotLocations(locations);
         final List<ParticlePoint> geometry = compileGeometry(snapshots, interiorPoints, spacing);
+        final List<ParticlePoint> emittedGeometry = boundedEmission
+            ? boundedGeometry(geometry) : geometry;
         final List<String> candidates = preferredCandidates == null || preferredCandidates.isEmpty()
             ? style.getCandidates() : immutableCandidates(preferredCandidates);
-        final List<ParticlePoint> frozenGeometry = geometry;
+        final List<ParticlePoint> frozenGeometry = emittedGeometry;
         final List<String> frozenCandidates = candidates;
         if (bridge != null) {
             World world = snapshots.get(0).getWorld();
@@ -106,6 +123,23 @@ public final class ParticleNetworkRenderer {
                 scheduler.runEntityLater(viewer, task, RETIRED, delay);
             }
         }
+    }
+
+    private static List<ParticlePoint> boundedGeometry(List<ParticlePoint> geometry) {
+        int target = Math.max(1, (int) Math.round(geometry.size() * 0.10D));
+        if (target >= geometry.size()) {
+            return geometry;
+        }
+        List<ParticlePoint> result = new ArrayList<ParticlePoint>(target);
+        if (target == 1) {
+            result.add(geometry.get(0));
+            return Collections.unmodifiableList(result);
+        }
+        for (int index = 0; index < target; index++) {
+            int sourceIndex = (int) Math.round(index * (geometry.size() - 1D) / (target - 1D));
+            result.add(geometry.get(sourceIndex));
+        }
+        return Collections.unmodifiableList(result);
     }
 
     public void render(final Player viewer, List<Location> locations, final ParticleStyle style,
@@ -141,18 +175,18 @@ public final class ParticleNetworkRenderer {
         for (int index = 0; index < locations.size() - 1; index++) {
             Location start = locations.get(index);
             Location end = locations.get(index + 1);
-            result.add(new ParticlePoint(start.getX(), start.getY(), start.getZ()));
+            result.add(new ParticlePoint(start.getX(), start.getY() - 1.0D, start.getZ()));
             for (int point = 1; point <= interiorPoints; point++) {
                 double ratio = point / (double) (interiorPoints + 1);
                 result.add(new ParticlePoint(start.getX() + (end.getX() - start.getX()) * ratio,
-                    start.getY() + (end.getY() - start.getY()) * ratio,
+                    start.getY() + (end.getY() - start.getY()) * ratio - 1.0D,
                     start.getZ() + (end.getZ() - start.getZ()) * ratio));
                 if (result.size() > ParticlePattern.MAX_POINTS) {
                     throw new IllegalArgumentException("Network geometry exceeds 2048 points");
                 }
             }
             if (index == locations.size() - 2) {
-                result.add(new ParticlePoint(end.getX(), end.getY(), end.getZ()));
+                result.add(new ParticlePoint(end.getX(), end.getY() - 1.0D, end.getZ()));
                 if (result.size() > ParticlePattern.MAX_POINTS) {
                     throw new IllegalArgumentException("Network geometry exceeds 2048 points");
                 }

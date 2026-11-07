@@ -12,7 +12,8 @@ import java.util.Set;
 
 public final class HologramSettings {
     private static final List<String> DEFAULT_LINES = Collections.unmodifiableList(
-            Collections.singletonList("Forge Station"));
+            Arrays.asList("<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>",
+                    "<gray>RIGHT CLICK"));
 
     private final boolean enabled;
     private final List<String> providerOrder;
@@ -23,12 +24,12 @@ public final class HologramSettings {
     private HologramSettings(boolean enabled, List<String> providerOrder, double offsetY,
                              boolean transparentBackground, List<String> lineTemplates) {
         this.enabled = enabled;
-        this.providerOrder = Collections.unmodifiableList(providerOrder);
+        this.providerOrder = Collections.unmodifiableList(new ArrayList<>(providerOrder));
         this.offsetY = offsetY;
         this.transparentBackground = transparentBackground;
         this.lineTemplates = lineTemplates == null || lineTemplates.isEmpty()
                 ? DEFAULT_LINES
-                : Collections.unmodifiableList(lineTemplates);
+                : Collections.unmodifiableList(new ArrayList<>(lineTemplates));
     }
 
     public boolean isEnabled() {
@@ -55,7 +56,7 @@ public final class HologramSettings {
                                                double offsetY, boolean transparentBackground,
                                                List<?> rawLineTemplates) {
         List<String> providerOrder = normalizeProviderOrder(rawProviderOrder);
-        double finiteOffsetY = Double.isFinite(offsetY) ? offsetY : 0.0;
+        double finiteOffsetY = Double.isFinite(offsetY) ? offsetY : 1.25;
         List<String> lineTemplates = normalizeLines(rawLineTemplates);
         return new HologramSettings(enabled, providerOrder, finiteOffsetY, transparentBackground, lineTemplates);
     }
@@ -66,10 +67,10 @@ public final class HologramSettings {
         if (providerOrder == null || providerOrder.isEmpty()) {
             providerOrder = Arrays.asList("FancyHolograms", "DecentHolograms");
         }
-        double offsetY = snapshot.getRootDouble("holograms.offset-y", 1.75);
+        double offsetY = snapshot.getRootDouble("holograms.offset-y", 1.25);
         boolean transparentBackground = snapshot.getRootBoolean("holograms.transparent-background", true);
         List<String> lines = snapshot.getRootStringList("holograms.lines");
-        return new HologramSettings(enabled, providerOrder, offsetY, transparentBackground, lines);
+        return fromConfig(providerOrder, enabled, offsetY, transparentBackground, lines);
     }
 
     private static List<String> normalizeProviderOrder(List<?> raw) {
@@ -95,10 +96,7 @@ public final class HologramSettings {
         List<String> result = new ArrayList<>();
         for (Object item : raw) {
             if (item != null) {
-                String trimmed = item.toString().trim();
-                if (!trimmed.isEmpty()) {
-                    result.add(trimmed);
-                }
+                result.add(item.toString());
             }
         }
         return result.isEmpty() ? DEFAULT_LINES : result;

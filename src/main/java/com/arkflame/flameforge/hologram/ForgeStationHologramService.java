@@ -245,7 +245,7 @@ public final class ForgeStationHologramService {
     }
 
     public void reload() {
-        reload(settings);
+        reload(HologramSettings.fromSnapshot(configService.getCurrentSnapshot()));
     }
 
     public void disableCleanup() {

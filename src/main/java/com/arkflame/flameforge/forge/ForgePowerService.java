@@ -67,8 +67,8 @@ public final class ForgePowerService {
     private final ItemIdentityService identityService;
     private final TierRepository tierRepository;
     private final TimeSource timeSource;
-    private final int maxCooldownEntries;
-    private final BooleanSupplier powerTraceEnabled;
+    private volatile Settings settings;
+    private volatile WeaponParticleSettings weaponParticleSettings;
 
     private final Map<CooldownKey, Long> cooldowns = new ConcurrentHashMap<>();
     private final Map<HitCounterKey, AtomicLong> hitCounters = new ConcurrentHashMap<>();
@@ -77,9 +77,30 @@ public final class ForgePowerService {
     private static final Runnable RETIRED_NOOP = () -> {};
     private final Map<UUID, Map<PassiveBindingKey, PassiveBinding>> passiveBindingsByPlayer = new ConcurrentHashMap<>();
     private final Map<UUID, Set<UUID>> inventoryForgeIdsByPlayer = new ConcurrentHashMap<>();
+    private final Map<UUID, HeldWeaponVisualBinding> heldWeaponVisualBindings = new ConcurrentHashMap<>();
 
     public interface TimeSource {
         long monotonicMillis();
+    }
+
+    /** Runtime knobs are replaced as one snapshot so callbacks never see a partial update. */
+    public static final class Settings {
+        private final int maxCooldownEntries;
+        private final BooleanSupplier powerTraceEnabled;
+
+        public Settings(int maxCooldownEntries, BooleanSupplier powerTraceEnabled) {
+            this.maxCooldownEntries = maxCooldownEntries > 0
+                ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES;
+            this.powerTraceEnabled = Objects.requireNonNull(powerTraceEnabled);
+        }
+
+        public int getMaxCooldownEntries() {
+            return maxCooldownEntries;
+        }
+
+        public BooleanSupplier getPowerTraceEnabled() {
+            return powerTraceEnabled;
+        }
     }
 
     public static final class SystemTimeSource implements TimeSource {
@@ -114,11 +135,21 @@ public final class ForgePowerService {
                              PotionEffectResolver potionEffectResolver,
                              EquipmentBridge equipmentBridge,
                              ItemIdentityService identityService,
-                             MultiStrikeService multiStrikeService,
-                             TierRepository tierRepository) {
+                              MultiStrikeService multiStrikeService,
+                              TierRepository tierRepository) {
         this(plugin, schedulerBridge, potionEffectResolver, equipmentBridge, identityService,
              particleBridge, multiStrikeService, tierRepository,
              new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES);
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                             ParticleBridge particleBridge, PotionEffectResolver potionEffectResolver,
+                             EquipmentBridge equipmentBridge, ItemIdentityService identityService,
+                             MultiStrikeService multiStrikeService, TierRepository tierRepository,
+                             WeaponParticleSettings weaponParticleSettings) {
+        this(plugin, schedulerBridge, particleBridge, potionEffectResolver, equipmentBridge,
+            identityService, multiStrikeService, tierRepository, new SystemTimeSource(),
+            DEFAULT_MAX_COOLDOWN_ENTRIES, () -> false, null, weaponParticleSettings);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -146,6 +177,22 @@ public final class ForgePowerService {
         this(plugin, schedulerBridge, particleBridge, potionEffectResolver, equipmentBridge,
              identityService, multiStrikeService, tierRepository,
              new SystemTimeSource(), DEFAULT_MAX_COOLDOWN_ENTRIES, powerTraceEnabled, networkRenderer);
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                             ParticleBridge particleBridge,
+                             PotionEffectResolver potionEffectResolver,
+                             EquipmentBridge equipmentBridge,
+                             ItemIdentityService identityService,
+                             MultiStrikeService multiStrikeService,
+                             TierRepository tierRepository,
+                             BooleanSupplier powerTraceEnabled,
+                             ParticleNetworkRenderer networkRenderer,
+                             WeaponParticleSettings weaponParticleSettings) {
+        this(plugin, schedulerBridge, particleBridge, potionEffectResolver, equipmentBridge,
+             identityService, multiStrikeService, tierRepository, new SystemTimeSource(),
+             DEFAULT_MAX_COOLDOWN_ENTRIES, powerTraceEnabled, networkRenderer,
+             weaponParticleSettings);
     }
 
     public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
@@ -183,6 +230,18 @@ public final class ForgePowerService {
                               TimeSource timeSource, int maxCooldownEntries,
                               BooleanSupplier powerTraceEnabled,
                               ParticleNetworkRenderer networkRenderer) {
+        this(plugin, schedulerBridge, particleBridge, potionEffectResolver, equipmentBridge,
+            identityService, multiStrikeService, tierRepository, timeSource, maxCooldownEntries,
+            powerTraceEnabled, networkRenderer, WeaponParticleSettings.of(true, true, true, true));
+    }
+
+    public ForgePowerService(JavaPlugin plugin, SchedulerBridge schedulerBridge,
+                             ParticleBridge particleBridge, PotionEffectResolver potionEffectResolver,
+                             EquipmentBridge equipmentBridge, ItemIdentityService identityService,
+                             MultiStrikeService multiStrikeService, TierRepository tierRepository,
+                             TimeSource timeSource, int maxCooldownEntries,
+                             BooleanSupplier powerTraceEnabled, ParticleNetworkRenderer networkRenderer,
+                             WeaponParticleSettings weaponParticleSettings) {
         this.plugin = Objects.requireNonNull(plugin);
         this.schedulerBridge = Objects.requireNonNull(schedulerBridge);
         this.particleBridge = Objects.requireNonNull(particleBridge);
@@ -193,8 +252,16 @@ public final class ForgePowerService {
         this.identityService = Objects.requireNonNull(identityService);
         this.tierRepository = Objects.requireNonNull(tierRepository);
         this.timeSource = Objects.requireNonNull(timeSource);
-        this.maxCooldownEntries = maxCooldownEntries > 0 ? maxCooldownEntries : DEFAULT_MAX_COOLDOWN_ENTRIES;
-        this.powerTraceEnabled = Objects.requireNonNull(powerTraceEnabled);
+        this.settings = new Settings(maxCooldownEntries, powerTraceEnabled);
+        this.weaponParticleSettings = Objects.requireNonNull(weaponParticleSettings);
+    }
+
+    public void updateSettings(Settings settings) {
+        this.settings = Objects.requireNonNull(settings);
+    }
+
+    public void updateSettings(WeaponParticleSettings settings) {
+        this.weaponParticleSettings = Objects.requireNonNull(settings);
     }
 
     public boolean usePower(Player player, ForgePowerDefinition power, UUID forgeId) {
@@ -254,7 +321,7 @@ public final class ForgePowerService {
         Objects.requireNonNull(player);
         Objects.requireNonNull(stage);
         Objects.requireNonNull(detail);
-        if (!powerTraceEnabled.getAsBoolean()) {
+        if (!settings.getPowerTraceEnabled().getAsBoolean()) {
             return;
         }
         plugin.getLogger().info("[PowerTrace] player=" + player.getUniqueId()
@@ -280,7 +347,7 @@ public final class ForgePowerService {
     }
 
     private void evictIfNeeded() {
-        if (cooldowns.size() < maxCooldownEntries) {
+        if (cooldowns.size() < settings.getMaxCooldownEntries()) {
             return;
         }
         Iterator<Map.Entry<CooldownKey, Long>> iter = cooldowns.entrySet().iterator();
@@ -303,6 +370,10 @@ public final class ForgePowerService {
             for (PassiveBinding binding : bindings.values()) {
                 binding.cancelRefresh();
             }
+        }
+        HeldWeaponVisualBinding held = heldWeaponVisualBindings.remove(player.getUniqueId());
+        if (held != null) {
+            held.cancel();
         }
     }
 
@@ -336,6 +407,10 @@ public final class ForgePowerService {
             }
         });
         passiveBindingsByPlayer.clear();
+        for (HeldWeaponVisualBinding binding : heldWeaponVisualBindings.values()) {
+            binding.cancel();
+        }
+        heldWeaponVisualBindings.clear();
     }
 
     public long getEvictionCount() {
@@ -378,6 +453,50 @@ public final class ForgePowerService {
         emitPowerParticles(player, player.getLocation(), ParticleStyleId.DEFENSIVE, 1);
     }
 
+    public void emitWeaponHitParticles(Player attacker, LivingEntity victim) {
+        if (attacker == null || victim == null) return;
+        ItemStack item = equipmentBridge.getItem(attacker, EquipmentBridge.Slot.MAINHAND);
+        ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
+        if (read == null || read.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID
+            || read.getIdentity() == null || read.getIdentity().isCursed()) return;
+        ItemIdentityCodec.Identity identity = read.getIdentity();
+        emitWeaponHitParticles(attacker, victim, identity.getLastTierId(),
+            resolveActivePowers(identity.getLastTierId(), identity.getLastVariantId(), identity.getActivePowerIds()));
+    }
+
+    public void emitWeaponHitParticles(Player attacker, LivingEntity victim, String tierId,
+                                       List<ForgePowerDefinition> powers) {
+        WeaponParticleSettings particleSettings = weaponParticleSettings;
+        if (attacker == null || victim == null || !particleSettings.isEnabled()
+            || !particleSettings.isHitEnabled()
+            || tierId == null || powers == null || powers.isEmpty()) return;
+        if (containsHealingPower(powers)) return;
+        Optional<TierDefinition> tier = tierRepository.findById(tierId);
+        if (!tier.isPresent() || !tier.get().isEnabled()) return;
+        Location location = victim.getLocation();
+        if (location == null || location.getWorld() == null) return;
+        int level = Math.max(1, tier.get().getTierLevel());
+        int count = Math.min(16, level);
+        float spread = Math.min(0.6F, 0.08F + level * 0.04F);
+        particleBridge.sendFirstAvailable(attacker, location.clone().add(0, 0.9D, 0),
+            ambientParticleCandidates(powers), spread, spread, spread, 0F, count);
+    }
+
+    private boolean containsHealingPower(List<ForgePowerDefinition> powers) {
+        for (ForgePowerDefinition power : powers) {
+            if (power == null) {
+                continue;
+            }
+            ForgePowerDefinition.PowerType type = power.getPowerType();
+            if (type == ForgePowerDefinition.PowerType.ON_HIT_HEAL
+                || type == ForgePowerDefinition.PowerType.SHIFT_RIGHT_CLICK_HEAL
+                || type == ForgePowerDefinition.PowerType.ON_BLOCK_HEAL) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void refreshPassivePowers(Player player) {
         if (player == null || !player.isOnline()) {
             return;
@@ -385,6 +504,150 @@ public final class ForgePowerService {
         Map<UUID, PassiveItemSnapshot> snapshot = captureItemSnapshot(player);
         publishInventoryCache(player, snapshot);
         reconcilePassiveBindings(player, snapshot);
+        reconcileHeldWeaponVisual(player);
+    }
+
+    private void reconcileHeldWeaponVisual(Player player) {
+        UUID playerId = player.getUniqueId();
+        HeldWeaponVisualBinding old = heldWeaponVisualBindings.get(playerId);
+        WeaponParticleSettings particleSettings = weaponParticleSettings;
+        if (!particleSettings.isEnabled() || !particleSettings.isHeldEnabled()) {
+            if (old != null && heldWeaponVisualBindings.remove(playerId, old)) old.cancel();
+            return;
+        }
+        ItemStack item = equipmentBridge.getItem(player, EquipmentBridge.Slot.MAINHAND);
+        ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
+        if (read == null || read.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID
+            || read.getIdentity() == null
+            || read.getIdentity().isCursed()
+            || !isWeapon(item)) {
+            if (old != null && heldWeaponVisualBindings.remove(playerId, old)) old.cancel();
+            return;
+        }
+        ItemIdentityCodec.Identity identity = read.getIdentity();
+        List<ForgePowerDefinition> powers = resolveActivePowers(identity.getLastTierId(),
+            identity.getLastVariantId(), identity.getActivePowerIds());
+        if (powers.isEmpty()) {
+            if (old != null && heldWeaponVisualBindings.remove(playerId, old)) old.cancel();
+            return;
+        }
+        HeldWeaponVisualBinding next = new HeldWeaponVisualBinding(player, identity.getForgeId(),
+            identity.getLastTierId(), identity.getLastVariantId(), identity.getActivePowerIds(), powers);
+        if (old != null && old.matches(next)) return;
+        if (old != null) old.cancel();
+        heldWeaponVisualBindings.put(playerId, next);
+        scheduleHeldWeaponVisual(next, 1L);
+    }
+
+    private boolean isWeapon(ItemStack item) {
+        if (item == null) return false;
+        Optional<String> category = tierRepository.findEquipmentCategory(item.getType());
+        return category.isPresent() && "weapon".equalsIgnoreCase(category.get());
+    }
+
+    private void scheduleHeldWeaponVisual(final HeldWeaponVisualBinding binding, long delay) {
+        binding.setTask(schedulerBridge.runEntityLater(binding.player, new Runnable() {
+            @Override public void run() {
+                if (!binding.player.isOnline() || heldWeaponVisualBindings.get(binding.player.getUniqueId()) != binding
+                    || !heldBindingStillValid(binding) || !heldParticlesEnabled()) return;
+                List<Location> locations = heldRingLocations(binding.player);
+                List<String> candidates = ambientParticleCandidates(binding.powers);
+                if (!locations.isEmpty() && !candidates.isEmpty()) {
+                    WeaponParticleSettings particleSettings = weaponParticleSettings;
+                    if (!particleSettings.isEnabled() || !particleSettings.isHeldEnabled()) return;
+                    particleBridge.sendFirstAvailableAtLocations(binding.player, locations, candidates,
+                        heldCountForTier(binding.tierId, locations.size()));
+                    if (!heldParticlesEnabled()) return;
+                    if (!particleSettings.isHolderOnly() && binding.player.getWorld() != null) {
+                        for (Player viewer : binding.player.getWorld().getPlayers()) {
+                            if (viewer != binding.player && heldParticlesEnabled()) particleBridge.sendFirstAvailableAtLocations(viewer,
+                                locations, candidates, heldCountForTier(binding.tierId, locations.size()));
+                        }
+                    }
+                }
+                if (heldParticlesEnabled()) scheduleHeldWeaponVisual(binding, heldInterval(binding.powers));
+            }
+        }, new Runnable() { @Override public void run() { binding.clearTask(); } }, delay));
+    }
+
+    private boolean heldParticlesEnabled() {
+        WeaponParticleSettings particleSettings = weaponParticleSettings;
+        return particleSettings.isEnabled() && particleSettings.isHeldEnabled();
+    }
+
+    private boolean heldBindingStillValid(HeldWeaponVisualBinding binding) {
+        ItemStack item = equipmentBridge.getItem(binding.player, EquipmentBridge.Slot.MAINHAND);
+        ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
+        return read != null && read.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID
+            && read.getIdentity() != null && !read.getIdentity().isCursed()
+            && isWeapon(item) && binding.matchesIdentity(read.getIdentity());
+    }
+
+    private int heldInterval(List<ForgePowerDefinition> powers) {
+        int interval = 20;
+        for (ForgePowerDefinition power : powers) if (power.getHitInterval() > 0) interval = Math.min(interval, power.getHitInterval());
+        return Math.max(1, interval);
+    }
+
+    private List<Location> heldRingLocations(Player player) {
+        Location eye = player.getEyeLocation();
+        if (eye == null || eye.getWorld() == null) return Collections.emptyList();
+        List<Location> locations = new ArrayList<Location>(8);
+        double ringY = eye.getY() - 0.55D;
+        Vector direction = eye.getDirection();
+        double length = Math.sqrt(direction.getX() * direction.getX() + direction.getZ() * direction.getZ());
+        double backX = length > 0.001D ? -direction.getX() / length * 0.36D : 0D;
+        double backZ = length > 0.001D ? -direction.getZ() / length * 0.36D : -0.36D;
+        for (int i = 0; i < 8; i++) {
+            double angle = (Math.PI * 2D * i) / 8D;
+            locations.add(new Location(eye.getWorld(), eye.getX() + backX + Math.cos(angle) * 0.22D,
+                ringY - 1.0D, eye.getZ() + backZ + Math.sin(angle) * 0.22D));
+        }
+        return locations;
+    }
+
+    private int heldCountForTier(String tierId, int availableLocations) {
+        if (availableLocations <= 0) {
+            return 0;
+        }
+        Optional<TierDefinition> tier = tierRepository.findById(tierId);
+        int tierLevel = tier.isPresent() ? tier.get().getTierLevel() : 1;
+        return Math.max(1, Math.min(availableLocations, tierLevel));
+    }
+
+    private List<String> ambientParticleCandidates(List<ForgePowerDefinition> powers) {
+        Set<String> result = new LinkedHashSet<String>();
+        for (ForgePowerDefinition power : powers) {
+            if (power == null) continue;
+            List<String> configured = power.getParticleCandidates();
+            if (configured != null) for (String candidate : configured) addParticleCandidate(result, candidate);
+        }
+        for (ForgePowerDefinition power : powers) {
+            if (power == null) continue;
+            ParticleStyleId style = powerStyle(power);
+            if (style != null) for (String candidate : ParticleStyleCatalog.get(style).getCandidates()) addParticleCandidate(result, candidate);
+        }
+        addParticleCandidate(result, "SPELL");
+        addParticleCandidate(result, "ENCHANT");
+        return new ArrayList<String>(result);
+    }
+
+    private void addParticleCandidate(Set<String> result, String candidate) {
+        if (candidate == null || candidate.trim().isEmpty()) return;
+        String upper = candidate.toUpperCase();
+        if (upper.contains("EXPLOSION") || upper.contains("FLASH") || upper.contains("SONIC")) return;
+        result.add(candidate);
+    }
+
+    private ParticleStyleId powerStyle(ForgePowerDefinition power) {
+        switch (power.getPowerType()) {
+            case ON_HIT_FIRE: case ON_HIT_AOE_FIRE: case ON_HIT_EXPLOSIVE: return ParticleStyleId.FIRE;
+            case EVERY_N_HIT_LIGHTNING: case ON_HIT_CHAIN_DAMAGE: return ParticleStyleId.ELECTRIC;
+            case ON_HIT_BLEED: return ParticleStyleId.BLEED;
+            case ON_HIT_POTION: case ON_HIT_CHAIN_POTION: return ParticleStyleId.POISON;
+            case ON_HIT_HEAL: return ParticleStyleId.HEAL;
+            default: return ParticleStyleId.GENERIC_MAGIC;
+        }
     }
 
     private Map<UUID, PassiveItemSnapshot> captureItemSnapshot(Player player) {
@@ -416,7 +679,8 @@ public final class ForgePowerService {
             return;
         }
         ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(item);
-        if (read.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID) {
+        if (read == null || read.getStatus() != ItemIdentityService.ForgeIdentityStatus.VALID
+            || read.getIdentity() == null) {
             return;
         }
         ItemIdentityCodec.Identity identity = read.getIdentity();
@@ -574,6 +838,8 @@ public final class ForgePowerService {
                 if (!player.isOnline()) {
                     return;
                 }
+                // Reconcile held/inventory state before renewing the lease.
+                refreshPassivePowers(player);
                 Map<PassiveBindingKey, PassiveBinding> bindings = passiveBindingsByPlayer.get(playerId);
                 if (bindings == null || bindings.get(key) != binding) {
                     return;
@@ -612,10 +878,18 @@ public final class ForgePowerService {
         List<String> styleCandidates = style.getCandidates();
         Set<String> candidates = new LinkedHashSet<>();
         if (configuredCandidates != null) {
-            candidates.addAll(configuredCandidates);
+            for (String candidate : configuredCandidates) {
+                if (candidate != null && !candidate.trim().isEmpty()) {
+                    candidates.add(candidate);
+                }
+            }
         }
         if (styleCandidates != null) {
-            candidates.addAll(styleCandidates);
+            for (String candidate : styleCandidates) {
+                if (candidate != null && !candidate.trim().isEmpty()) {
+                    candidates.add(candidate);
+                }
+            }
         }
         return new ArrayList<>(candidates);
     }
@@ -1217,6 +1491,41 @@ public final class ForgePowerService {
                 refreshHandle = null;
             }
         }
+    }
+
+    private static final class HeldWeaponVisualBinding {
+        private final Player player;
+        private final UUID forgeId;
+        private final String tierId;
+        private final String variantId;
+        private final List<String> powerIds;
+        private final List<ForgePowerDefinition> powers;
+        private TaskHandle task;
+
+        HeldWeaponVisualBinding(Player player, UUID forgeId, String tierId, String variantId,
+                                List<String> powerIds, List<ForgePowerDefinition> powers) {
+            this.player = player;
+            this.forgeId = forgeId;
+            this.tierId = tierId;
+            this.variantId = variantId;
+            this.powerIds = new ArrayList<String>(powerIds);
+            this.powers = new ArrayList<ForgePowerDefinition>(powers);
+        }
+
+        boolean matches(HeldWeaponVisualBinding other) {
+            return forgeId.equals(other.forgeId) && Objects.equals(tierId, other.tierId)
+                && Objects.equals(variantId, other.variantId) && powerIds.equals(other.powerIds);
+        }
+
+        boolean matchesIdentity(ItemIdentityCodec.Identity identity) {
+            return forgeId.equals(identity.getForgeId()) && Objects.equals(tierId, identity.getLastTierId())
+                && Objects.equals(variantId, identity.getLastVariantId())
+                && powerIds.equals(identity.getActivePowerIds());
+        }
+
+        void setTask(TaskHandle task) { this.task = task; }
+        void clearTask() { task = null; }
+        void cancel() { if (task != null) { task.cancel(); task = null; } }
     }
 
     static final class PassiveItemSnapshot {

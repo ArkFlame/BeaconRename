@@ -759,6 +759,24 @@ class ForgePowerServiceTest {
     }
 
     @Test
+    void weaponHitImpactIsSuppressedWhenActivePowersIncludeHealing() {
+        ParticleBridge particles = mock(ParticleBridge.class);
+        TierRepository tiers = mock(TierRepository.class);
+        ForgePowerService service = service(new FakeSchedulerBridge(), mock(PotionEffectResolver.class),
+            mock(EquipmentBridge.class), mock(ItemIdentityService.class), mock(MultiStrikeService.class),
+            particles, tiers);
+        Player attacker = mock(Player.class);
+        LivingEntity victim = mock(LivingEntity.class);
+        ForgePowerDefinition healing = mock(ForgePowerDefinition.class);
+        when(healing.getPowerType()).thenReturn(ForgePowerDefinition.PowerType.ON_HIT_HEAL);
+
+        service.emitWeaponHitParticles(attacker, victim, "tier1", Collections.singletonList(healing));
+
+        verifyNoInteractions(particles);
+        verifyNoInteractions(tiers);
+    }
+
+    @Test
     void configuredLightningCandidateIsFirstAndLightningSideEffectRemains() {
         World world = mock(World.class);
         ParticleBridge particles = mock(ParticleBridge.class);
@@ -1378,6 +1396,33 @@ class ForgePowerServiceTest {
             eq(0F), eq(0F), eq(0F), eq(0F), eq(1));
         verify(particles).sendColoredDust(eq(player), any(Location.class),
             eq(96), eq(165), eq(250), anyFloat(), anyInt());
+    }
+
+    @Test
+    void settingsUpdateIsAtomicAndParticleCandidatesRemainOrderedAndUnique() {
+        ParticleBridge particles = mock(ParticleBridge.class);
+        JavaPlugin plugin = mock(JavaPlugin.class);
+        Logger logger = mock(Logger.class);
+        when(plugin.getLogger()).thenReturn(logger);
+        ForgePowerService service = service(plugin, new FakeSchedulerBridge(),
+            mock(PotionEffectResolver.class), mock(EquipmentBridge.class),
+            mock(ItemIdentityService.class), mock(MultiStrikeService.class), particles,
+            mock(TierRepository.class), new ForgePowerService.SystemTimeSource(), () -> false);
+        Player player = mock(Player.class);
+        when(player.getUniqueId()).thenReturn(UUID.randomUUID());
+        when(player.getLocation()).thenReturn(new Location(mock(World.class), 0, 0, 0));
+
+        service.updateSettings(new ForgePowerService.Settings(8, () -> true));
+        service.tracePowerEvent(player, "TEST", "detail");
+
+        ForgePowerDefinition power = hitHealPower("ordered");
+        when(power.getParticleCandidates()).thenReturn(Arrays.asList("HEART", "HEART", "", "VILLAGER_HAPPY"));
+        service.triggerOnHitPower(player, mock(LivingEntity.class), power, UUID.randomUUID());
+
+        verify(logger).info(contains("stage=TEST"));
+        verify(particles).sendFirstAvailable(eq(player), any(Location.class),
+            eq(Arrays.asList("HEART", "VILLAGER_HAPPY", "HAPPY_VILLAGER")),
+            eq(0.35F), eq(0.45F), eq(0.35F), eq(0F), eq(5));
     }
 
     private static ForgePowerService service(SchedulerBridge scheduler, PotionEffectResolver resolver,

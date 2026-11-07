@@ -50,7 +50,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
@@ -297,6 +299,9 @@ class ForgePowerListenerTest {
         UUID forgeId = UUID.randomUUID();
         ItemStack weapon = forgedItemWithPower(harness, "weapon_tier1", "draining", "draining_heal",
             forgeId, ForgePowerDefinition.PowerType.ON_HIT_HEAL);
+        when(weapon.getType()).thenReturn(Material.DIAMOND_SWORD);
+        when(harness.tierRepository.findEquipmentCategory(Material.DIAMOND_SWORD))
+            .thenReturn(Optional.of("weapon"));
         when(attacker.getItemInHand()).thenReturn(weapon);
         LivingEntity victim = mock(LivingEntity.class);
         EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
@@ -308,8 +313,31 @@ class ForgePowerListenerTest {
         verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_EVENT", "damager=PLAYER");
         verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_RESOLVED",
             "forge=" + forgeId + " tier=weapon_tier1 variant=draining powers=1");
+        verify(harness.powerService, times(1)).emitWeaponHitParticles(eq(attacker), eq(victim),
+            eq("weapon_tier1"), anyList());
         verify(harness.powerService).triggerOnHitPower(eq(attacker), eq(victim),
             any(ForgePowerDefinition.class), eq(forgeId), anyBoolean());
+    }
+
+    @Test
+    void nonweaponForgeHitDoesNotEmitWeaponHitParticles() {
+        Harness harness = new Harness().withSynchronousScheduler();
+        Player attacker = mock(Player.class);
+        when(attacker.isOnline()).thenReturn(true);
+        ItemStack armor = forgedItemWithPower(harness, "armor_tier1", "guarding", "guard",
+            UUID.randomUUID(), ForgePowerDefinition.PowerType.ON_HIT_POTION);
+        when(armor.getType()).thenReturn(Material.DIAMOND_CHESTPLATE);
+        when(harness.tierRepository.findEquipmentCategory(Material.DIAMOND_CHESTPLATE))
+            .thenReturn(Optional.of("armor"));
+        when(attacker.getItemInHand()).thenReturn(armor);
+        LivingEntity victim = mock(LivingEntity.class);
+        EntityDamageByEntityEvent combat = mock(EntityDamageByEntityEvent.class);
+        when(combat.getDamager()).thenReturn(attacker);
+        when(combat.getEntity()).thenReturn(victim);
+
+        harness.listener.onEntityDamageByEntity(combat);
+
+        verify(harness.powerService, never()).emitWeaponHitParticles(any(), any(), anyString(), anyList());
     }
 
     @Test
@@ -327,6 +355,7 @@ class ForgePowerListenerTest {
 
         verify(harness.powerService).tracePowerEvent(shooter, "PROJECTILE_HIT_EVENT_IGNORED",
             "projectile=" + projectile.getClass().getSimpleName());
+        verify(harness.powerService, never()).emitWeaponHitParticles(any(), any(), anyString(), anyList());
         verify(harness.powerService, never()).triggerOnHitPower(any(), any(), any(), any(), anyBoolean());
     }
 
@@ -350,6 +379,7 @@ class ForgePowerListenerTest {
 
         verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_EVENT", "damager=PLAYER");
         verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_REJECT_IDENTITY", "status=INVALID");
+        verify(harness.powerService, never()).emitWeaponHitParticles(any(), any(), anyString(), anyList());
         verify(harness.powerService, never()).triggerOnHitPower(any(), any(), any(), any(), anyBoolean());
     }
 
@@ -370,6 +400,7 @@ class ForgePowerListenerTest {
 
         verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_EVENT", "damager=PLAYER");
         verify(harness.powerService).tracePowerEvent(attacker, "ON_HIT_REJECT_CURSED", "cursed=true");
+        verify(harness.powerService, never()).emitWeaponHitParticles(any(), any(), anyString(), anyList());
         verify(harness.powerService, never()).triggerOnHitPower(any(), any(), any(), any(), anyBoolean());
     }
 

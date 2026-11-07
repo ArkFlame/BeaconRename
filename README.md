@@ -35,7 +35,7 @@ Requirements: Java 8 JDK or higher, Maven 3.x.
 mvn clean install
 ```
 
-The shaded JAR is `target/FlameForge-1.0.2.jar`.
+The shaded JAR is `target/FlameForge-1.0.3.jar`.
 
 1. Stop the server.
 2. Place the JAR in `plugins/`. **PacketEvents must also be installed** —

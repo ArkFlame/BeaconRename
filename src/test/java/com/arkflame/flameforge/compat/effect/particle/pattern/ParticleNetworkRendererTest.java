@@ -38,8 +38,8 @@ class ParticleNetworkRendererTest {
             sends.incrementAndGet();
             assertEquals(Arrays.asList("ELECTRIC_SPARK", "END_ROD", "ENCHANT", "NOTE", "CRIT"),
                 candidates);
-            assertEquals(new ParticlePoint(0, 0, 0), points.get(0));
-            assertEquals(new ParticlePoint(1, 0, 0), points.get(2));
+            assertEquals(new ParticlePoint(0, -1, 0), points.get(0));
+            assertEquals(new ParticlePoint(1, -1, 0), points.get(2));
         };
         doAnswer(invocation -> {
             delays.add(0L);
@@ -59,6 +59,33 @@ class ParticleNetworkRendererTest {
 
         assertEquals(5, sends.get());
         assertEquals(Arrays.asList(0L, 2L, 4L, 6L, 8L), delays);
+    }
+
+    @Test
+    void chainEmissionBoundsEachFrameToTenPercentAndKeepsOnePointForShortTrails() {
+        SchedulerBridge scheduler = mock(SchedulerBridge.class);
+        Player viewer = mock(Player.class);
+        World world = mock(World.class);
+        List<Integer> emittedCounts = new java.util.ArrayList<Integer>();
+        doAnswer(invocation -> {
+            invocation.<Runnable>getArgument(1).run();
+            return null;
+        }).when(scheduler).runEntity(any(Entity.class), any(Runnable.class), any(Runnable.class));
+        doAnswer(invocation -> {
+            invocation.<Runnable>getArgument(1).run();
+            return null;
+        }).when(scheduler).runEntityLater(any(Entity.class), any(Runnable.class), any(Runnable.class), anyLong());
+
+        ParticleNetworkRenderer renderer = new ParticleNetworkRenderer(scheduler,
+            (player, points, style, candidates) -> {
+                emittedCounts.add(points.size());
+                assertEquals(new ParticlePoint(0, -1, 0), points.get(0));
+            });
+        renderer.renderChain(viewer, Arrays.asList(new Location(world, 0, 0, 0),
+                new Location(world, 10, 0, 0)),
+            ParticleStyleCatalog.get(ParticleStyleId.ELECTRIC_NETWORK), null, 10, 5, 0.0);
+
+        assertEquals(Arrays.asList(1, 1, 1, 1, 1), emittedCounts);
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.arkflame.flameforge.text;
 
 import com.arkflame.flameforge.config.MessageTemplateLoader;
+import net.kyori.adventure.text.Component;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.junit.jupiter.api.Test;
 
@@ -97,6 +98,7 @@ class MessageCatalogCoverageTest {
         catalog.addAll(WEAPONSMENU_KEYS);
         catalog.addAll(TIER_INFO_CONTRACT_KEYS);
         catalog.add("tiers.entry");
+        catalog.addAll(Arrays.asList("reload.summary", "reload.economy-yes", "reload.economy-no"));
 
         for (String key : catalog) {
             assertTrue(messages.containsKey(key),
@@ -180,6 +182,20 @@ class MessageCatalogCoverageTest {
         String stationListEntry =
                 render(messages, "station-list.entry", representative.get("station-list.entry"));
         assertTrue(stationListEntry.contains("10,20,30"));
+    }
+
+    @Test
+    void forgeConfirmTemplatesRenderComponentItemsThroughItemLegacyContract() {
+        Map<String, Map<String, Object>> messages = loadFlattenedBundledMessages();
+        Component item = Component.text("Diamond Sword");
+        MessageArguments arguments = arguments().component("item", item);
+
+        for (String key : Arrays.asList("forge.confirm.success", "forge.confirm.fractured")) {
+            String rendered = renderer.renderItemLegacy(messageOf(messages, key), arguments, key);
+
+            assertTrue(rendered.contains("Diamond Sword"), "component item missing for " + key);
+            assertFalse(rendered.contains("%item%"), "component placeholder leaked for " + key);
+        }
     }
 
     private static Map<String, MessageArguments> representativeMessages() {

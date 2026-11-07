@@ -60,6 +60,34 @@ class ParticleBridgeSchedulingTest {
         assertEquals(3, emitted.get());
     }
 
+    @Test
+    void firstAvailableAtLocationsSchedulesOneCappedBatchOfValidSingleRequests() {
+        QueuedScheduler scheduler = new QueuedScheduler();
+        List<ParticleRequest> emittedRequests = new ArrayList<ParticleRequest>();
+        ParticleBridge bridge = new ParticleBridge(scheduler, capturingProvider(emittedRequests), new ParticleCatalog());
+        Player viewer = mock(Player.class);
+        World world = mock(World.class);
+        Location valid = new Location(world, 1, 2, 3);
+        Location worldless = new Location(null, 4, 5, 6);
+
+        bridge.sendFirstAvailableAtLocations(viewer,
+            java.util.Arrays.asList(null, worldless, valid, new Location(world, 7, 8, 9)),
+            java.util.Collections.singletonList("DUST"), 1);
+
+        assertEquals(1, scheduler.entityCalls);
+        assertEquals(0, emittedRequests.size());
+        scheduler.runEntityTask();
+
+        assertEquals(1, emittedRequests.size());
+        ParticleRequest request = emittedRequests.get(0);
+        assertEquals(1, request.getCount());
+        assertEquals(0, request.getOffsetX());
+        assertEquals(0, request.getOffsetY());
+        assertEquals(0, request.getOffsetZ());
+        assertEquals(0, request.getExtra());
+        assertTrue(request.getPayload() instanceof ParticleRequest.None);
+    }
+
     private static ParticleProvider provider(final AtomicInteger emitted) {
         return new ParticleProvider() {
             @Override public ParticleCapabilities getCapabilities() {
@@ -68,6 +96,19 @@ class ParticleBridgeSchedulingTest {
 
             @Override public boolean emit(Player viewer, ParticleRequest request) {
                 emitted.incrementAndGet();
+                return true;
+            }
+        };
+    }
+
+    private static ParticleProvider capturingProvider(final List<ParticleRequest> emittedRequests) {
+        return new ParticleProvider() {
+            @Override public ParticleCapabilities getCapabilities() {
+                return new ParticleCapabilities("test", false, java.util.Collections.<String>emptySet());
+            }
+
+            @Override public boolean emit(Player viewer, ParticleRequest request) {
+                emittedRequests.add(request);
                 return true;
             }
         };

@@ -475,7 +475,11 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             }
             switch (result.getStatus()) {
                 case APPLIED:
-                    send(sender, "reload.success");
+                    if (plugin.applyReloadedRuntimeState()) {
+                        send(sender, "reload.success");
+                    } else {
+                        send(sender, "reload.scheduler-rejected", messageArguments("reference", "FF-RELOAD-RUNTIME"));
+                    }
                     break;
                 case VALIDATION_REJECTED:
                     send(sender, "reload.validation-rejected");

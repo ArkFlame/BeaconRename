@@ -1,6 +1,6 @@
 # FlameForge Configuration Reference
 
-This document describes the configuration files shipped with FlameForge 1.0.2
+This document describes the configuration files shipped with FlameForge 1.0.3
 and how the runtime loads them. Every file described below is real and shipped
 in the JAR; the operator copy lives in `plugins/FlameForge/`.
 
@@ -39,9 +39,21 @@ Bundled defaults (schema-version 2):
 - `forge.passive-refresh-ticks`, `forge.power-cooldown-max-entries` (default 4096),
   `forge.power-trace` (default `false`), `forge.reject-foreign-persistent-data`,
   `forge.menu.profile` — power/cooldown, focused diagnostics, and menu runtime settings.
+- `forge.weapon-particles.enabled` (default `true`) — enables weapon particle visuals.
+- `forge.weapon-particles.held.enabled` (default `true`) — enables held-item visuals.
+- `forge.weapon-particles.held.holder-only` (default `true`) — sends held visuals only to
+  the item holder; other players do not see them.
+- `forge.weapon-particles.hit.enabled` (default `true`) — enables weapon hit visuals.
 - `holograms` — `enabled`, `provider-order` (default `FancyHolograms`,
-  `DecentHolograms`), `offset-y`, `transparent-background`, `lines` (MiniMessage
-  lines with `%forge_id%` placeholder).
+  `DecentHolograms`), `offset-y` (default `1.25`), `transparent-background` (default
+  `true`), and `lines` (default FlameForge gradient plus `RIGHT CLICK`; MiniMessage).
+
+### Weapon particles
+
+Weapon particle settings control visuals only. They do not change proc eligibility,
+chance, cooldown, damage, or any other power formula. Existing proc formulas remain
+unchanged: a proc still succeeds only when its configured chance and cooldown rules
+allow it. `held.holder-only` is a viewer restriction, not a range or damage modifier.
 
 ### Forge power trace
 
@@ -268,8 +280,10 @@ Supported global placeholders: `%player_name%`, `%player%`, `%display_name%`,
 Schema-version 2. The `default` profile is a 54-slot menu with `input` at slot
 22 and `confirm` at slot 31. `confirm.items` defines empty / blocked / ready
 states (materials with version fallbacks, glow, name, lore with `%tier_line%`,
-`%requirements%`, `%chances%`, `%variants%`). `dynamic-lines` renders tier and
-requirement rows. Additional profiles can be added and referenced from station
+`%requirements%`, `%chances%`, `%variants%`). `dynamic-lines` renders tier, chance,
+variant and requirement rows; requirement text lives in `dynamic-lines` keys
+`requirement-*` (`-met`/`-missing` for XP, money, items; `requirement-item-unnamed`
+for items without a display name). Additional profiles can be added and referenced from station
 profiles or `config.yml` `menu-profile`.
 
 ## station-profiles.yml

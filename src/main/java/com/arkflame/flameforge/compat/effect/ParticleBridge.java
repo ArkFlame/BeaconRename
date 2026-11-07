@@ -109,6 +109,20 @@ public final class ParticleBridge {
             offsetX, offsetY, offsetZ, speed, new ParticleRequest.None())));
     }
 
+    public void sendFirstAvailableAtLocations(Player player, List<Location> locations,
+                                              List<String> candidates, int cap) {
+        if (player == null || locations == null || locations.isEmpty()
+            || candidates == null || candidates.isEmpty() || cap <= 0) return;
+
+        List<ParticleRequest> requests = new java.util.ArrayList<ParticleRequest>(Math.min(cap, locations.size()));
+        for (Location location : locations) {
+            if (location == null || location.getWorld() == null) continue;
+            requests.add(request(location, candidates, 1, 0, 0, 0, 0, new ParticleRequest.None()));
+            if (requests.size() >= cap) break;
+        }
+        if (!requests.isEmpty()) sendBatch(player, new ParticleBatch(requests));
+    }
+
     public Map<String, String> getAvailableParticles() { return catalog.getAliases(); }
 
     private void emitSafely(Player viewer, ParticleBatch batch) {

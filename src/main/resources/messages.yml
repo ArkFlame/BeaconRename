@@ -7,7 +7,7 @@
 # All messages use MiniMessage formatting
 # Placeholders: %player_name%, %player%, %display_name%, %world%, %world_name%,
 #               %online%, %online_players%, %max_players%, %health%, %health_points%,
-#               %food%, %xp_level%, %item_name%, %item_in_hand%
+#               %food%, %xp_level%, %item_name%, %item_in_hand%, %tiers%, %stations%, %economy%, %holograms%
 
 # ============================================================
 # STARTUP MESSAGES
@@ -92,6 +92,9 @@ reload:
   no-permission: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Permission required: <white>%permission%"
   started: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Reloading FlameForge configuration..."
   success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Configuration applied. Runtime services refreshed."
+  summary: "<gold>[FlameForge] <green>Reload complete. <white>Tiers: %tiers% <gray>| <white>Stations: %stations% <gray>| <white>Economy: %economy% <gray>| <white>Holograms: %holograms%"
+  economy-yes: "yes"
+  economy-no: "no"
   validation-rejected: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Reload rejected because configuration validation found errors. The previous configuration remains active."
   already-running: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>A FlameForge reload is already running."
   startup-retry-started: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Retrying FlameForge startup..."
@@ -299,9 +302,9 @@ forge:
     title: "<aqua><bold>WARD PROTECTED"
     subtitle: "<white>Your item was protected by a ward"
   confirm:
-    success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Forge succeeded. You got <item>."
+    success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Forge succeeded. You got %item%."
     cursed: "<gradient:#ef4444:#7f1d1d><bold>☠</bold></gradient> <red>Your item was cursed."
-    fractured: "<gradient:#ef4444:#f97316><bold>✖</bold></gradient> <gray>Forge failed. Your item fractured into <item>."
+    fractured: "<gradient:#ef4444:#f97316><bold>✖</bold></gradient> <gray>Forge failed. Your item fractured into %item%."
     shattered: "<gradient:#ef4444:#7f1d1d><bold>✖</bold></gradient> <red>Forge failed. Your item shattered."
     failed: "<red>Forging failed: <white>%reason%"
 

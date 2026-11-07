@@ -131,6 +131,13 @@ forge:
   reject-foreign-persistent-data: true
   menu:
     profile: default
+  weapon-particles:
+    enabled: true
+    held:
+      enabled: true
+      holder-only: true
+    hit:
+      enabled: true
 
 # Hologram settings
 holograms:
@@ -138,8 +145,8 @@ holograms:
   provider-order:
     - FancyHolograms
     - DecentHolograms
-  offset-y: 1.75
+  offset-y: 1.25
   transparent-background: true
   lines:
     - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
-    - "<gray>%forge_id%"
+    - "<gray>RIGHT CLICK"

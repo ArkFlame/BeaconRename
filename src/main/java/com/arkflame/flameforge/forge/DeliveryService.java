@@ -20,14 +20,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 public final class DeliveryService {
@@ -37,7 +38,15 @@ public final class DeliveryService {
     private final TextBridge textBridge;
     private final AuditLogService auditLog;
     private final Map<String, Object> announcementConfig;
-    private final ConcurrentHashMap<String, Boolean> processedDeliveryIds = new ConcurrentHashMap<>();
+    // Bounded idempotency window: oldest ids are evicted past the cap (insertion order, synchronized).
+    private static final int MAX_PROCESSED_DELIVERY_IDS = 10_000;
+    private final Map<String, Boolean> processedDeliveryIds = Collections.synchronizedMap(
+            new LinkedHashMap<String, Boolean>(16, 0.75f, false) {
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest) {
+                    return size() > MAX_PROCESSED_DELIVERY_IDS;
+                }
+            });
     private final Set<String> loggedMissingMaterials = new HashSet<>();
 
     public DeliveryService(JavaPlugin plugin, SchedulerBridge scheduler,

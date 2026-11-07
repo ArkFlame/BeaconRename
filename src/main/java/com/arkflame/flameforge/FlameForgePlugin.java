@@ -40,6 +40,7 @@ import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.OutcomeExecutor;
 import com.arkflame.flameforge.forge.OutcomeExecutionResult;
+import com.arkflame.flameforge.forge.WeaponParticleSettings;
 import com.arkflame.flameforge.hook.EconomyService;
 import com.arkflame.flameforge.hook.EconomyServiceFactory;
 import com.arkflame.flameforge.hook.PluginConditionService;
@@ -74,13 +75,13 @@ import com.arkflame.flameforge.persistence.PlayerStateRepository;
 import com.arkflame.flameforge.persistence.StationRepository;
 import com.arkflame.flameforge.session.ForgeSessionService;
 import com.arkflame.flameforge.station.ForgeStationService;
+import com.arkflame.flameforge.text.MessageArguments;
 import com.arkflame.flameforge.text.MessageService;
 import com.arkflame.flameforge.text.TextBridge;
 import com.arkflame.flameforge.text.TextPlaceholders;
 import com.arkflame.flameforge.text.TextRenderer;
+import org.bukkit.command.CommandSender;
 import net.kyori.adventure.platform.bukkit.BukkitComponentSerializer;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -136,6 +137,7 @@ public final class FlameForgePlugin extends JavaPlugin {
     private volatile CompletableFuture<Void> startupFuture;
     private volatile CompletableFuture<?>[] startupComponentFutures = new CompletableFuture<?>[0];
     private final AtomicReference<TaskHandle> startupWatchdog = new AtomicReference<TaskHandle>();
+    private final AtomicReference<TaskHandle> runtimeRefreshHandle = new AtomicReference<TaskHandle>();
 
     private SchedulerBridge schedulerBridge;
     private RuntimeCapabilities runtimeCapabilities;
@@ -407,7 +409,8 @@ public final class FlameForgePlugin extends JavaPlugin {
             multiStrikeService,
             tierRepository,
             () -> configService.getCurrentSnapshot().getRootBoolean("forge.power-trace", false),
-            particleNetworkRenderer
+            particleNetworkRenderer,
+            WeaponParticleSettings.fromSnapshot(configService.getCurrentSnapshot())
         );
         menuInputReturnService = new MenuInputReturnService(deliveryService);
         forgeExampleItemService = new ForgeExampleItemService(
@@ -727,6 +730,10 @@ public final class FlameForgePlugin extends JavaPlugin {
     public void onDisable() {
         enabled = false;
         cancelWatchdog();
+        TaskHandle pendingRuntimeRefresh = runtimeRefreshHandle.getAndSet(null);
+        if (pendingRuntimeRefresh != null) {
+            pendingRuntimeRefresh.cancel();
+        }
         final long shutdownEpoch = lifecycleEpoch.incrementAndGet();
         CompletableFuture<?>[] pendingComponents = startupComponentFutures;
         for (CompletableFuture<?> pendingComponent : pendingComponents) {
@@ -803,11 +810,7 @@ public final class FlameForgePlugin extends JavaPlugin {
             }
             switch (result.getStatus()) {
                 case APPLIED:
-                    scheduler.runGlobal(this, () -> {
-                        if (isCurrentEpoch(epoch)) {
-                            refreshRuntimeState();
-                        }
-                    });
+                    applyReloadedRuntimeState();
                     break;
                 case VALIDATION_REJECTED:
                     getLogger().warning("Reload validation rejected. Errors:");
@@ -841,24 +844,66 @@ public final class FlameForgePlugin extends JavaPlugin {
         );
     }
 
+    public boolean applyReloadedRuntimeState() {
+        final long epoch = lifecycleEpoch.get();
+        final SchedulerBridge scheduler = schedulerBridge;
+        if (!isCurrentEpoch(epoch) || scheduler == null || forgeStationService == null
+                || forgePowerListener == null) {
+            return false;
+        }
+
+        TaskHandle previous = runtimeRefreshHandle.getAndSet(null);
+        if (previous != null) {
+            previous.cancel();
+        }
+
+        final AtomicReference<TaskHandle> scheduled = new AtomicReference<TaskHandle>();
+        try {
+            TaskHandle handle = scheduler.runGlobal(this, () -> {
+                if (!isCurrentEpoch(epoch)) {
+                    return;
+                }
+                try {
+                    refreshRuntimeState();
+                } catch (Throwable failure) {
+                    getLogger().log(Level.SEVERE, "Runtime refresh failed", failure);
+                } finally {
+                    runtimeRefreshHandle.compareAndSet(scheduled.get(), null);
+                }
+            });
+            if (handle == null) {
+                return false;
+            }
+            scheduled.set(handle);
+            runtimeRefreshHandle.set(handle);
+            return true;
+        } catch (Throwable failure) {
+            getLogger().log(Level.WARNING, "Runtime refresh scheduling rejected", failure);
+            return false;
+        }
+    }
+
     private void refreshRuntimeState() {
+        forgePowerService.updateSettings(WeaponParticleSettings.fromSnapshot(configService.getCurrentSnapshot()));
         forgeStationService.reloadHolograms();
         updateSuggestionIndex();
+        for (org.bukkit.entity.Player player : Bukkit.getOnlinePlayers()) {
+            forgePowerListener.queuePassiveRefresh(player);
+        }
 
         int tierCount = tierRepository.size();
         int stationCount = stationRepository.getAllSnapshot().size();
         boolean hasEconomy = economyService.available();
         String hologramStatus = forgeStationService.getHologramService().getProviderStatus();
 
-        Component message = Component.text()
-            .append(Component.text("[FlameForge] ", NamedTextColor.GOLD))
-            .append(Component.text("Reload complete. ", NamedTextColor.GREEN))
-            .append(Component.text("Tiers: " + tierCount, NamedTextColor.WHITE))
-            .append(Component.text(" | Stations: " + stationCount, NamedTextColor.WHITE))
-            .append(Component.text(" | Economy: " + (hasEconomy ? "yes" : "no"), NamedTextColor.WHITE))
-            .append(Component.text(" | Holograms: " + hologramStatus, NamedTextColor.WHITE))
-            .build();
+        String economyWord = messageService.findMessageString(hasEconomy ? "reload.economy-yes" : "reload.economy-no")
+                .orElse(hasEconomy ? "yes" : "no");
+        MessageArguments args = MessageArguments.create()
+                .string("tiers", String.valueOf(tierCount))
+                .string("stations", String.valueOf(stationCount))
+                .string("economy", economyWord)
+                .string("holograms", hologramStatus);
 
-        textBridge.sendAll(message);
+        textBridge.sendAll(messageService.renderToComponent("reload.summary", (CommandSender) null, args));
     }
 }

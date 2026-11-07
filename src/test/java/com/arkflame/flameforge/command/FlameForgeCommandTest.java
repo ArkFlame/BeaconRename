@@ -56,7 +56,7 @@ class FlameForgeCommandTest {
         plugin = mock(FlameForgePlugin.class);
         PluginDescriptionFile description = mock(PluginDescriptionFile.class);
         when(description.getName()).thenReturn("FlameForge");
-        when(description.getVersion()).thenReturn("1.0.2");
+        when(description.getVersion()).thenReturn("1.0.3");
         when(description.getAuthors()).thenReturn(Collections.singletonList("ArkFlame Studios"));
         when(plugin.getDescription()).thenReturn(description);
         scheduler = mock(SchedulerBridge.class);
@@ -116,6 +116,35 @@ class FlameForgeCommandTest {
         assertTrue(messages.keys.contains("reload.started"));
         assertTrue(messages.keys.contains("station-list.empty"));
         assertTrue(messages.keys.contains("open.no-forge-target"));
+    }
+
+    @Test
+    void appliedReloadAppliesRuntimeStateOnceAndReportsSuccess() {
+        command.markReady(mock(ReadyServices.class));
+        when(configService.reloadAsync()).thenReturn(CompletableFuture.completedFuture(
+            ConfigService.ReloadResult.applied(null, new com.arkflame.flameforge.config.ValidationReport())));
+        when(plugin.applyReloadedRuntimeState()).thenReturn(true);
+        runCallbacksImmediately();
+
+        assertTrue(command.onCommand(permittedSender(), mock(Command.class), "flameforge", new String[]{"reload"}));
+
+        verify(plugin, times(1)).applyReloadedRuntimeState();
+        assertTrue(messages.keys.contains("reload.success"));
+    }
+
+    @Test
+    void appliedReloadReportsRuntimeSchedulerRejection() {
+        command.markReady(mock(ReadyServices.class));
+        when(configService.reloadAsync()).thenReturn(CompletableFuture.completedFuture(
+            ConfigService.ReloadResult.applied(null, new com.arkflame.flameforge.config.ValidationReport())));
+        when(plugin.applyReloadedRuntimeState()).thenReturn(false);
+        runCallbacksImmediately();
+
+        command.onCommand(permittedSender(), mock(Command.class), "flameforge", new String[]{"reload"});
+
+        verify(plugin, times(1)).applyReloadedRuntimeState();
+        assertTrue(messages.keys.contains("reload.scheduler-rejected"));
+        assertFalse(messages.keys.contains("reload.success"));
     }
 
     @Test

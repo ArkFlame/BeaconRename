@@ -8,12 +8,12 @@ Requirements: JDK 8+ and Maven 3.x.
 mvn clean install
 ```
 
-The shaded JAR is written to `target/FlameForge-1.0.2.jar`.
+The shaded JAR is written to `target/FlameForge-1.0.3.jar`.
 
 Installation:
 
 1. Stop the server.
-2. Place `FlameForge-1.0.2.jar` into `plugins/`. **PacketEvents is a hard
+2. Place `FlameForge-1.0.3.jar` into `plugins/`. **PacketEvents is a hard
    dependency** — the PacketEvents plugin must also be installed or FlameForge
    will not load.
 3. Start the server. On first run FlameForge creates `plugins/FlameForge/`
@@ -104,10 +104,24 @@ itself. Unknown placeholders render empty and are logged once.
 
 ## Holograms
 
-`holograms.enabled`, `provider-order` (FancyHolograms, DecentHolograms),
-`offset-y`, `transparent-background` and `lines` are configured in config.yml.
+`holograms.enabled` (default `true`), `provider-order` (FancyHolograms, DecentHolograms),
+`offset-y` (default `1.25`), `transparent-background` (default `true`) and `lines`
+(FlameForge gradient plus `RIGHT CLICK` by default) are configured in config.yml.
 If neither hologram plugin is installed, FlameForge logs
 "no supported provider" and skips station holograms — the forge still works.
+
+## Weapon Particles
+
+The `forge.weapon-particles` tree controls cosmetic weapon visuals:
+
+- `enabled: true` enables the feature.
+- `held.enabled: true` enables held-item visuals.
+- `held.holder-only: true` makes held visuals holder-local; only the item holder sees them.
+- `hit.enabled: true` enables hit visuals.
+
+These switches do not change proc behavior. Chance, cooldown, damage, and other power
+formulas remain exactly as configured by the power; disabling particles only removes
+the visual effect.
 
 ## Compatibility Boundary
 

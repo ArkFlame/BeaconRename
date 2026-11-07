@@ -2,6 +2,7 @@ package com.arkflame.flameforge.forge;
 
 import com.arkflame.flameforge.compat.effect.ParticleBridge;
 import com.arkflame.flameforge.compat.effect.particle.ParticleBatch;
+import com.arkflame.flameforge.compat.effect.particle.pattern.ParticlePoint;
 import com.arkflame.flameforge.compat.effect.particle.pattern.ParticleNetworkRenderer;
 import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyle;
 import com.arkflame.flameforge.compat.effect.particle.style.ParticleStyleId;
@@ -27,6 +28,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -112,6 +115,12 @@ class MultiStrikeServiceTest {
         assertEquals(1, strikes.get(initial.getUniqueId()).intValue());
         assertEquals(1, strikes.get(near.getUniqueId()).intValue());
         assertFalse(strikes.containsKey(far.getUniqueId()));
+        ArgumentCaptor<Location> radialLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles, times(2)).sendToPlayer(eq(viewer), anyString(), radialLocation.capture(),
+            anyFloat(), anyFloat(), anyFloat(), anyFloat(), eq(1));
+        for (Location location : radialLocation.getAllValues()) {
+            assertEquals(-1.0, location.getY(), 0.0001);
+        }
     }
 
     @Test
@@ -472,6 +481,38 @@ class MultiStrikeServiceTest {
 
         assertFalse(candidates.isEmpty());
         assertEquals(Arrays.asList("CUSTOM_A", "CUSTOM_B"), candidates.get(0));
+    }
+
+    @Test
+    void retainsTenPercentOfDirectAndChainTrailPoints() {
+        FakeSchedulerBridge scheduler = new FakeSchedulerBridge();
+        ParticleBridge particles = mock(ParticleBridge.class);
+        List<Integer> chainPointCounts = new ArrayList<>();
+        List<List<ParticlePoint>> chainPoints = new ArrayList<>();
+        ParticleNetworkRenderer renderer = new ParticleNetworkRenderer(scheduler,
+            (viewer, points, style, candidates) -> {
+                chainPointCounts.add(points.size());
+                chainPoints.add(points);
+            });
+        MultiStrikeService service = new MultiStrikeService(scheduler, particles, renderer);
+        World world = mock(World.class);
+        Player viewer = player(new Location(world, 0, 0, 0));
+        LivingEntity target = entity(UUID.randomUUID(), new Location(world, 4, 0, 0), 1);
+        ForgePowerDefinition power = power(1, 0, 10);
+        when(power.getTrailPoints()).thenReturn(10);
+
+        service.execute(viewer, target, power, false, ignored -> { });
+        service.executeChain(viewer, target, power, false, ignored -> { });
+
+        ArgumentCaptor<Location> directLocation = ArgumentCaptor.forClass(Location.class);
+        verify(particles).sendToPlayer(eq(viewer), anyString(), directLocation.capture(),
+            anyFloat(), anyFloat(), anyFloat(), anyFloat(), eq(1));
+        assertEquals(2.0, directLocation.getValue().getX(), 0.0001);
+        assertEquals(-1.0, directLocation.getValue().getY(), 0.0001);
+        assertEquals(0.0, directLocation.getValue().getZ(), 0.0001);
+        assertFalse(chainPointCounts.isEmpty());
+        assertEquals(1, chainPointCounts.get(0).intValue());
+        assertEquals(-1.0, chainPoints.get(0).get(0).y(), 0.0001);
     }
 
     private static ForgePowerDefinition chainDamagePower(int maxTargets, int delay, double radius) {

@@ -25,6 +25,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MultiStrikeService {
+    private static final double TRAIL_PARTICLE_RETENTION = 0.10D;
     private static final Runnable RETIRED = new Runnable() {
         @Override
         public void run() {
@@ -216,9 +217,9 @@ public final class MultiStrikeService {
         }
         action.apply(target);
         Location edgeStart = parentHopLocation == null
-            ? raised(snapshot(viewer.getLocation()), 1.2D)
-            : raised(parentHopLocation, 1.0D);
-        Location edgeEnd = raised(childLocation, 1.0D);
+            ? snapshot(viewer.getLocation())
+            : snapshot(parentHopLocation);
+        Location edgeEnd = snapshot(childLocation);
         renderChainNetwork(viewer, target, edgeStart, edgeEnd, power);
         if (targetCount.get() >= targetLimit) {
             return;
@@ -377,10 +378,10 @@ public final class MultiStrikeService {
         final List<Location> locations = Collections.unmodifiableList(Arrays.asList(startPoint, endPoint));
         final ParticleStyle style = ParticleStyleCatalog.get(chainStyle(power));
         final List<String> preferredCandidates = chainCandidates(power);
-        final int points = Math.max(2, power.getTrailPoints());
-        networkRenderer.render(viewer, locations, style, preferredCandidates, points, 5, 0.0D);
+        final int points = power.getTrailPoints();
+        networkRenderer.renderChain(viewer, locations, style, preferredCandidates, points, 5, 0.0D);
         if (target instanceof Player && !target.getUniqueId().equals(viewer.getUniqueId())) {
-            networkRenderer.render((Player) target, locations, style, preferredCandidates,
+            networkRenderer.renderChain((Player) target, locations, style, preferredCandidates,
                 points, 5, 0.0D);
         }
     }
@@ -410,17 +411,25 @@ public final class MultiStrikeService {
             || !start.getWorld().equals(end.getWorld())) {
             return;
         }
-        int points = power.getTrailPoints();
+        int points = retainedTrailPoints(power.getTrailPoints());
         String particle = power.getParticleCandidates().isEmpty()
             ? "FLAME" : power.getParticleCandidates().get(0);
         for (int i = 1; i <= points; i++) {
             double ratio = (double) i / (double) (points + 1);
             Location point = start.clone().add(
                 (end.getX() - start.getX()) * ratio,
-                (end.getY() - start.getY()) * ratio,
+                (end.getY() - start.getY()) * ratio - 1.0D,
                 (end.getZ() - start.getZ()) * ratio);
             particles.sendToPlayer(owner, particle, point, 0F, 0F, 0F, 0F, 1);
         }
+    }
+
+    private static int retainedTrailPoints(int originalPoints) {
+        if (originalPoints < 1) {
+            return 0;
+        }
+        int retained = (int) Math.ceil(originalPoints * TRAIL_PARTICLE_RETENTION);
+        return Math.max(1, Math.min(originalPoints, retained));
     }
 
     private static Location snapshot(Location location) {
@@ -429,13 +438,6 @@ public final class MultiStrikeService {
         }
         Location copy = location.clone();
         return copy == null ? location : copy;
-    }
-
-    private static Location raised(Location location, double yOffset) {
-        if (location == null) {
-            return null;
-        }
-        return location.clone().add(0, yOffset, 0);
     }
 
     private static double distanceSquared(Location left, Location right) {
