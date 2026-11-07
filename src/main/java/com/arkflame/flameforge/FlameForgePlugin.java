@@ -225,6 +225,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         pendingDeliveryRepository = new PendingDeliveryRepository(this, schedulerBridge, dataPath);
         messageService = MessageService.create(this, configService, textRenderer, textBridge, textPlaceholders,
             getLogger());
+        applyPlaceholderLabels();
         suggestionIndex = new CommandSuggestionIndex(tierRepository);
 
         command = new FlameForgeCommand(
@@ -576,6 +577,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(forgeInteractListener, this);
         getServer().getPluginManager().registerEvents(forgeInventoryListener, this);
         getServer().getPluginManager().registerEvents(forgePowerListener, this);
+        getServer().getPluginManager().registerEvents(new com.arkflame.flameforge.listener.ForgeAnvilListener(itemIdentityService), this);
         getServer().getPluginManager().registerEvents(weaponsMenuListener, this);
         getServer().getPluginManager().registerEvents(playerLifecycleListener, this);
     }
@@ -793,6 +795,14 @@ public final class FlameForgePlugin extends JavaPlugin {
         }
     }
 
+    private void applyPlaceholderLabels() {
+        final java.util.Map<String, String> labels = new java.util.HashMap<>();
+        for (final String key : new String[] {"health", "health-points", "food", "xp-level"}) {
+            messageService.findMessageString("placeholders.hover." + key).ifPresent(v -> labels.put(key, v));
+        }
+        textPlaceholders.setLabels(labels);
+    }
+
     public void reload() {
         final long epoch = lifecycleEpoch.get();
         final ConfigService config = configService;
@@ -811,6 +821,7 @@ public final class FlameForgePlugin extends JavaPlugin {
             switch (result.getStatus()) {
                 case APPLIED:
                     applyReloadedRuntimeState();
+                    applyPlaceholderLabels();
                     break;
                 case VALIDATION_REJECTED:
                     getLogger().warning("Reload validation rejected. Errors:");

@@ -419,3 +419,11 @@ delivery:
   delivered: "<green>Item delivered to your inventory."
   dropped: "<yellow>Item dropped at your feet."
   full-inventory: "<yellow>Your inventory is full. Item dropped at your feet."
+
+# Hover labels shown by %health%, %food%, %xp_level% placeholders. Translate freely.
+placeholders:
+  hover:
+    health: "Health"
+    health-points: "Health"
+    food: "Food Level"
+    xp-level: "Experience Level"

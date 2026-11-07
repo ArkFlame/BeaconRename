@@ -21,6 +21,24 @@ public final class TextPlaceholders {
     private final Map<String, Function<Player, Component>> dynamicComponents = new ConcurrentHashMap<>();
     private final Map<String, Component> staticComponents = new ConcurrentHashMap<>();
 
+    private volatile Map<String, String> labels = java.util.Collections.emptyMap();
+
+    /** Overrides hover labels (keys: health, health-points, food, xp-level); missing keys keep English defaults. */
+    public void setLabels(final Map<String, String> overrides) {
+        this.labels = overrides == null ? java.util.Collections.<String, String>emptyMap() : new java.util.HashMap<>(overrides);
+    }
+
+    private String label(final String key) {
+        final String v = labels.get(key);
+        if (v != null) return v;
+        switch (key) {
+            case "health": return "Health";
+            case "health-points": return "Health";
+            case "food": return "Food Level";
+            default: return "Experience Level";
+        }
+    }
+
     public TextPlaceholders() {
         initializeDefaults();
     }
@@ -39,19 +57,19 @@ public final class TextPlaceholders {
                 ? String.valueOf(player.getServer().getMaxPlayers()) : "0");
         dynamicComponents.put("%health%", player -> player != null
                 ? Component.text(String.format("%.1f", player.getHealth())).hoverEvent(
-                        HoverEvent.showText(Component.text("Health: " + String.format("%.1f", player.getHealth())))
+                        HoverEvent.showText(Component.text(label("health") + ": " + String.format("%.1f", player.getHealth())))
                 ) : Component.text("???"));
         dynamicComponents.put("%health_points%", player -> player != null
                 ? Component.text(String.format("%.1f", player.getHealth())).hoverEvent(
-                        HoverEvent.showText(Component.text("Health"))
+                        HoverEvent.showText(Component.text(label("health-points")))
                 ) : Component.text("???"));
         dynamicComponents.put("%food%", player -> player != null
                 ? Component.text(String.valueOf(player.getFoodLevel())).hoverEvent(
-                        HoverEvent.showText(Component.text("Food Level"))
+                        HoverEvent.showText(Component.text(label("food")))
                 ) : Component.text("???"));
         dynamicComponents.put("%xp_level%", player -> player != null
                 ? Component.text(String.valueOf(player.getLevel())).hoverEvent(
-                        HoverEvent.showText(Component.text("Experience Level"))
+                        HoverEvent.showText(Component.text(label("xp-level")))
                 ) : Component.text("???"));
         dynamicComponents.put("%item_name%", player -> {
             if (player != null && player.getItemInHand() != null) {
