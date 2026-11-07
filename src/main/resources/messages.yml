@@ -350,6 +350,7 @@ announcements:
 menu:
   title: "FlameForge"  # 1.8-safe title (no MiniMessage)
   filler-name: " "
+  item-fallback: "item"
   input-placeholder:
     name: "<dark_gray><bold>Input Item"
     lore:

@@ -240,7 +240,7 @@ public final class ForgeAnimationService {
                 safeInvokeCallback(completionCallback, transactionId);
             }
         }, () -> {
-            cleanupTask(transactionId, completionTaskHolder[0]);
+            scheduledTasks.remove(transactionId + "_completion");
         }, durationTicks + REVEAL_DURATION_TICKS);
 
         if (completionTaskHolder[0] == null) {
@@ -710,12 +710,9 @@ public final class ForgeAnimationService {
         });
     }
 
-    private void cleanupTask(String transactionId, TaskHandle task) {
-        scheduledTasks.remove(transactionId + "_" + System.identityHashCode(task));
-    }
-
     private void cleanupAfterCompletion(String transactionId, List<TaskHandle> stepTasks) {
         handles.remove(transactionId);
+        scheduledTasks.remove(transactionId + "_completion");
         if (stepTasks != null) {
             for (TaskHandle task : stepTasks) {
                 task.cancel();

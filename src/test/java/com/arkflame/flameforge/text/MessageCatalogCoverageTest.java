@@ -98,6 +98,7 @@ class MessageCatalogCoverageTest {
         catalog.addAll(WEAPONSMENU_KEYS);
         catalog.addAll(TIER_INFO_CONTRACT_KEYS);
         catalog.add("tiers.entry");
+        catalog.add("menu.item-fallback");
         catalog.addAll(Arrays.asList("reload.summary", "reload.economy-yes", "reload.economy-no"));
 
         for (String key : catalog) {

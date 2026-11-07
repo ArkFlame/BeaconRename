@@ -263,6 +263,9 @@ Forge confirmation messages remain distinct: `forge.confirm.success`,
 `forge.confirm.shattered`; mutation or execution errors use
 `forge.confirm.failed`.
 
+New key: `menu.item-fallback` (default `item`) is the name shown for an item with no
+display name in forge messages.
+
 Layering: the bundled `messages.yml` inside the JAR is the default. Operator
 overrides in `plugins/FlameForge/messages.yml` take precedence per key; any key
 missing from the operator file falls back to the bundled value. Unknown

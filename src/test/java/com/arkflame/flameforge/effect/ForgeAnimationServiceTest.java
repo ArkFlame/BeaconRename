@@ -236,6 +236,22 @@ class ForgeAnimationServiceTest {
         assertTrue(containsColor(batches.getAllValues(), 250, 204, 21));
     }
 
+    @Test
+    void completedAnimationReleasesItsCompletionTaskHandle() throws Exception {
+        scheduler = new TestSchedulerBridge(false);
+        service = new ForgeAnimationService(plugin, scheduler, particles, sounds, text, textRenderer,
+            itemVisuals, new ForgeAnimationThemeResolver());
+        when(itemVisuals.spawn(any(), any(), any(), any())).thenReturn(true);
+
+        service.playAnimation("tx-release", owner, stationLocation, visualItem, profile(), null, null);
+        scheduler.runAll();
+
+        java.lang.reflect.Field field = ForgeAnimationService.class.getDeclaredField("scheduledTasks");
+        field.setAccessible(true);
+        java.util.Map<?, ?> scheduledTasks = (java.util.Map<?, ?>) field.get(service);
+        assertFalse(scheduledTasks.containsKey("tx-release_completion"));
+    }
+
     private boolean containsColor(List<ParticleBatch> batches, int red, int green, int blue) {
         for (ParticleBatch batch : batches) {
             for (ParticleRequest request : batch.getRequests()) {

@@ -173,7 +173,7 @@ public final class ForgeMenuForgeService {
 
     private Component itemComponent(ItemStack item) {
         if (item == null) {
-            return Component.text("item");
+            return Component.text(messageService.findMessageString("menu.item-fallback").orElse("item"));
         }
 
         ItemMeta meta = item.getItemMeta();

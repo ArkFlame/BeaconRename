@@ -231,6 +231,7 @@ public final class ForgeStationHologramService {
                 try {
                     provider.remove(hologramId);
                 } catch (Exception e) {
+                    plugin.getLogger().log(Level.WARNING, "[Hologram] Failed to remove hologram " + hologramId + " during reload", e);
                 }
             }
         }

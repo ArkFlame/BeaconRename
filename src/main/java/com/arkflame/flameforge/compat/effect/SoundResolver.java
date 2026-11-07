@@ -18,7 +18,7 @@ public final class SoundResolver {
     private static final SoundResolver INSTANCE = new SoundResolver();
     private static final Map<String, String[]> ALIASES = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> SOUND_GROUPS = new ConcurrentHashMap<>();
-    private static final Set<String> LOGGED_MISSING = new HashSet<>();
+    private static final Set<String> LOGGED_MISSING = ConcurrentHashMap.newKeySet();
     private static final Map<String, Object> CACHE = new ConcurrentHashMap<>(MAX_CACHE_ENTRIES);
     private static final Object NOT_FOUND = new Object();
     private static Logger pluginLogger;
