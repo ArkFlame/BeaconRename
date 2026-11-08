@@ -48,6 +48,7 @@ class ForgeMenuServiceTest {
     private ForgeService forgeService;
     private ForgeVariantEligibility variantEligibility;
     private ConfigService configService;
+    private ConfigSnapshot snapshot;
     private ItemDisplayNameResolver displayNameResolver;
     private Inventory inventory;
     private Map<Integer, ItemStack> visibleSlots;
@@ -58,7 +59,7 @@ class ForgeMenuServiceTest {
     void setUp() {
         inventoryFactory = mock(InventoryFactory.class);
         registry = new ForgeMenuRegistry();
-        ConfigSnapshot snapshot = mock(ConfigSnapshot.class);
+        snapshot = mock(ConfigSnapshot.class);
         configService = mock(ConfigService.class);
         forgeService = mock(ForgeService.class);
         variantEligibility = mock(ForgeVariantEligibility.class);
@@ -229,6 +230,49 @@ class ForgeMenuServiceTest {
                 Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
     }
 
+    private ForgeVariant variant(String name, double weight, List<String> lore) {
+        return new ForgeVariant(name.toLowerCase().replace(' ', '_'), name,
+                lore, weight, null, Collections.emptyList(),
+                Collections.emptyList(), Collections.emptyList(), Collections.emptyList());
+    }
+
+    @Test
+    void variantEntriesIncludeEffectLoreWhenEnabled() {
+        List<ForgeVariant> variants = Collections.singletonList(
+                variant("Blazing", 100.0, Arrays.asList("<gray>Weapon Tier II forged variant",
+                        "<dark_gray>\u25CF <gold>20% chance to ignite.")));
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, variants);
+        when(variantEligibility.eligibleVariants(any(ItemStack.class), anyList())).thenReturn(variants);
+        when(snapshot.getRootBoolean(eq("forge.menu.show-variant-effects"), anyBoolean())).thenReturn(true);
+
+        List<String> lines = menuService.buildVariantLines(new ItemStack(Material.DIAMOND, 1), plan, menuConfig());
+
+        boolean hasEffect = false;
+        for (String line : lines) {
+            assertFalse(line.contains("forged variant"));
+            if (line.contains("20% chance to ignite")) {
+                hasEffect = true;
+            }
+        }
+        assertTrue(hasEffect);
+    }
+
+    @Test
+    void variantEntriesOmitEffectLoreWhenDisabled() {
+        List<ForgeVariant> variants = Collections.singletonList(
+                variant("Blazing", 100.0, Arrays.asList("<gray>Weapon Tier II forged variant",
+                        "<dark_gray>\u25CF <gold>20% chance to ignite.")));
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, variants);
+        when(variantEligibility.eligibleVariants(any(ItemStack.class), anyList())).thenReturn(variants);
+        when(snapshot.getRootBoolean(eq("forge.menu.show-variant-effects"), anyBoolean())).thenReturn(false);
+
+        List<String> lines = menuService.buildVariantLines(new ItemStack(Material.DIAMOND, 1), plan, menuConfig());
+
+        for (String line : lines) {
+            assertFalse(line.contains("ignite"));
+        }
+    }
+
     @Test
     void variantNameSupportsMiniMessageFormatting() {
         List<ForgeVariant> variants = Collections.singletonList(
@@ -270,6 +314,24 @@ class ForgeMenuServiceTest {
         assertTrue(renderedLore.contains("80.0%"));
         assertFalse(renderedLore.contains("%base_name%"));
         assertFalse(renderedLore.matches("(?s).*%[A-Za-z0-9_-]+%.*"));
+    }
+
+    @Test
+    void variantEffectLineEscapesUntrustedBaseName() {
+        List<ForgeVariant> variants = Collections.singletonList(
+                variant("Blazing", 100.0, Arrays.asList("<gray>Weapon Tier II forged variant",
+                        "<white>Reinforced %base_name%")));
+        ForgePlan plan = plan(new ItemStack(Material.DIAMOND, 1), true, variants);
+        when(variantEligibility.eligibleVariants(any(ItemStack.class), anyList())).thenReturn(variants);
+        when(snapshot.getRootBoolean(eq("forge.menu.show-variant-effects"), anyBoolean())).thenReturn(true);
+        when(displayNameResolver.resolve(any(), any())).thenReturn("Pick <red>axe</red>");
+
+        List<String> lines = menuService.buildVariantLines(new ItemStack(Material.DIAMOND, 1), plan, menuConfig());
+        String joined = String.join("\n", lines);
+
+        assertFalse(joined.contains("<red>axe</red>"));
+        assertTrue(joined.contains("axe"));
+        assertFalse(joined.contains("%base_name%"));
     }
 
     private Map<String, Object> menuConfig() {

@@ -56,7 +56,7 @@ class FlameForgeCommandTest {
         plugin = mock(FlameForgePlugin.class);
         PluginDescriptionFile description = mock(PluginDescriptionFile.class);
         when(description.getName()).thenReturn("FlameForge");
-        when(description.getVersion()).thenReturn("1.0.3");
+        when(description.getVersion()).thenReturn("1.0.4");
         when(description.getAuthors()).thenReturn(Collections.singletonList("ArkFlame Studios"));
         when(plugin.getDescription()).thenReturn(description);
         scheduler = mock(SchedulerBridge.class);

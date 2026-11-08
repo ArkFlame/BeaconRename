@@ -10,6 +10,7 @@ import com.arkflame.flameforge.forge.ForgeService;
 import com.arkflame.flameforge.forge.ForgeVariantEligibility;
 import com.arkflame.flameforge.forge.CostQuote;
 import com.arkflame.flameforge.item.ItemDisplayNameResolver;
+import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.PlayerForgeState;
@@ -542,11 +543,12 @@ public final class ForgeMenuService {
             }
         });
 
+        final String baseName = resolveVariantBaseName(inputItem);
+        final boolean showEffects = isVariantEffectsEnabled();
         for (VariantWithActualPct vwp : sortedVariants) {
             ForgeVariant variant = vwp.variant;
             String variantName = variant.getName() != null ? variant.getName() : "Unknown";
 
-            String baseName = displayNameResolver.resolve(inputItem, null);
             Component variantNameComponent = textRenderer.renderInheritedLiteral(
                     variantName,
                     Collections.singletonMap("base_name", baseName),
@@ -561,9 +563,50 @@ public final class ForgeMenuService {
 
             lines.add(textRenderer.renderToMiniMessage(variantTemplate, args.getStringValues(),
                     args.getComponentValues(), "menu.variant"));
+            if (showEffects) {
+                appendVariantEffectLines(lines, variant, baseName);
+            }
         }
 
         return lines;
+    }
+
+    private String resolveVariantBaseName(ItemStack inputItem) {
+        ItemIdentityCodec.Identity identity = null;
+        if (inputItem != null) {
+            ItemIdentityService.ForgeIdentityRead read = identityService.readForgeIdentity(inputItem);
+            if (read != null && read.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID) {
+                identity = read.getIdentity();
+            }
+        }
+        return displayNameResolver.resolve(inputItem, identity);
+    }
+
+    private boolean isVariantEffectsEnabled() {
+        ConfigSnapshot snapshot = configService.getCurrentSnapshot();
+        return snapshot == null || snapshot.getRootBoolean("forge.menu.show-variant-effects", true);
+    }
+
+    private void appendVariantEffectLines(List<String> lines, ForgeVariant variant, String baseName) {
+        List<String> lore = variant.getLore();
+        if (lore == null) {
+            return;
+        }
+        Map<String, String> literals = Collections.singletonMap("base_name", baseName);
+        // Index 0 is the variant descriptor line ("<gray>Weapon Tier II forged variant");
+        // the remaining lines are the player-facing effect bullets.
+        for (int i = 1; i < lore.size(); i++) {
+            String line = lore.get(i);
+            if (line == null || line.trim().isEmpty()) {
+                continue;
+            }
+            Component rendered = textRenderer.renderInheritedLiteral(line, literals,
+                    Collections.emptyMap(), "base_name", "menu.variant-effect", logger);
+            String serialized = textRenderer.toMiniMessage(rendered);
+            if (serialized != null && !serialized.isEmpty()) {
+                lines.add(serialized);
+            }
+        }
     }
 
     String formatPercent(BigDecimal value) {

@@ -131,8 +131,16 @@ forge:
   reject-foreign-persistent-data: true
   # Keep a player-set (anvil rename) item name when the item is reforged.
   keep-custom-name: true
+  # Preserve any pre-existing display name on forge success, including names set by
+  # other plugins. Defaults to true; set to false to always apply the variant name.
+  # keep-custom-name still governs player anvil renames.
+  preserve-existing-name: true
+  # Prefer item-display-names over a stored identity base name when resolving %base_name%.
+  prefer-configured-display-name: true
   menu:
     profile: default
+    # Show each obtainable variant's effect lines in the forge confirm menu.
+    show-variant-effects: true
   weapon-particles:
     enabled: true
     held:

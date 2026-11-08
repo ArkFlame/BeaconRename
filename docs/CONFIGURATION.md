@@ -1,6 +1,6 @@
 # FlameForge Configuration Reference
 
-This document describes the configuration files shipped with FlameForge 1.0.3
+This document describes the configuration files shipped with FlameForge 1.0.4
 and how the runtime loads them. Every file described below is real and shipped
 in the JAR; the operator copy lives in `plugins/FlameForge/`.
 
@@ -41,6 +41,14 @@ Bundled defaults (schema-version 2):
   `forge.menu.profile` — power/cooldown, focused diagnostics, and menu runtime settings.
 - `forge.keep-custom-name` (default `true`) — a player-set name (for example an anvil rename)
   survives reforge; `false` applies the variant name on every reforge.
+- `forge.preserve-existing-name` (default `true`) — keeps any pre-existing display name on
+  forge success, including names set by other plugins and names whose previous variant can no
+  longer be resolved. `false` lets the variant name win, except for anvil renames governed by
+  `forge.keep-custom-name`.
+- `forge.prefer-configured-display-name` (default `true`) — resolves `%base_name%` from
+  `item-display-names` before falling back to a stored identity base name.
+- `forge.menu.show-variant-effects` (default `true`) — lists each obtainable variant's
+  effect lines in the forge confirm menu.
 - `forge.weapon-particles.enabled` (default `true`) — enables weapon particle visuals.
 - `forge.weapon-particles.held.enabled` (default `true`) — enables held-item visuals.
 - `forge.weapon-particles.held.holder-only` (default `true`) — sends held visuals only to

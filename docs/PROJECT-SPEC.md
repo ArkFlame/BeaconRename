@@ -1,6 +1,6 @@
 # FlameForge Project Specification
 
-This document constitutes the acceptance contract for FlameForge version 1.0.3.
+This document constitutes the acceptance contract for FlameForge version 1.0.4.
 
 ## Overview
 
@@ -8,7 +8,7 @@ FlameForge is a forge/reforge system for Minecraft servers. Players place items 
 
 ## Implemented Features
 
-The following features are selected for inclusion in version 1.0.3:
+The following features are selected for inclusion in version 1.0.4:
 
 ### F001 — Registered Forge Stations
 
@@ -163,7 +163,7 @@ Deleting a tier file removes that tier from the active configuration. Players wh
 
 ## API Contract
 
-The plugin exposes no public API in version 1.0.3. External integration occurs through:
+The plugin exposes no public API in version 1.0.4. External integration occurs through:
 
 - Command-based hooks (outcome `COMMANDS` type)
 - Vault economy (if present)

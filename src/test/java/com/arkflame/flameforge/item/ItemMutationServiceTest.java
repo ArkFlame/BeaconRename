@@ -102,9 +102,73 @@ class ItemMutationServiceTest {
         ConfigService configService = mock(ConfigService.class);
         when(configService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder()
                 .putRoot("forge.keep-custom-name", keepCustomName)
+                .putRoot("forge.preserve-existing-name", false)
                 .build());
         return new ItemMutationService(identityService, attributeBridge, enchantmentResolver,
                 textRenderer, configService);
+    }
+
+    private ItemMutationService serviceWithNameConfig(boolean keepCustomName, boolean preserveExistingName) {
+        ConfigService configService = mock(ConfigService.class);
+        when(configService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder()
+                .putRoot("forge.keep-custom-name", keepCustomName)
+                .putRoot("forge.preserve-existing-name", preserveExistingName)
+                .build());
+        return new ItemMutationService(identityService, attributeBridge, enchantmentResolver,
+                textRenderer, configService);
+    }
+
+    @Test
+    void successPreservesExistingNameWhenPreserveExistingNameEnabled() {
+        ItemMutationService service = serviceWithNameConfig(false, true);
+        ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
+        ItemStack cloned = input.clone();
+        createMockMeta(input, "Dragon Slayer", Collections.singletonList("Old lore"));
+        createMockMeta(cloned, null, Collections.singletonList("Old lore"));
+
+        ItemMutationService.MutationResult result = service.mutateSuccess(
+                input, forgeTier(), forgeVariant("Forged Sword"), ItemIdentityCodec.Identity.empty(),
+                UUID.randomUUID());
+
+        assertTrue(result.isSuccess());
+        assertEquals("Dragon Slayer", result.getResult().getItemMeta().getDisplayName());
+    }
+
+    @Test
+    void successAppliesVariantNameWhenBothNameOptionsDisabled() {
+        ItemMutationService service = serviceWithNameConfig(false, false);
+        ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
+        ItemStack cloned = input.clone();
+        createMockMeta(input, "Dragon Slayer", Collections.singletonList("Old lore"));
+        createMockMeta(cloned, null, Collections.singletonList("Old lore"));
+
+        ItemMutationService.MutationResult result = service.mutateSuccess(
+                input, forgeTier(), forgeVariant("Forged Sword"), ItemIdentityCodec.Identity.empty(),
+                UUID.randomUUID());
+
+        assertTrue(result.isSuccess());
+        assertEquals("Forged Sword", result.getResult().getItemMeta().getDisplayName());
+    }
+
+    @Test
+    void successPreservesForeignNameWhenPreserveExistingNameDefault() {
+        ConfigService configService = mock(ConfigService.class);
+        when(configService.getCurrentSnapshot()).thenReturn(ConfigSnapshot.builder().build());
+        ItemMutationService service = new ItemMutationService(identityService, attributeBridge,
+                enchantmentResolver, textRenderer, configService);
+        ItemStack input = createMockedItemStack(Material.DIAMOND_SWORD);
+        ItemStack cloned = input.clone();
+        createMockMeta(input, "Dragon Slayer", Collections.singletonList("Old lore"));
+        createMockMeta(cloned, null, Collections.singletonList("Old lore"));
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
+                .withLastVariantId("variant")
+                .withLastTierId("unknown_tier");
+
+        ItemMutationService.MutationResult result = service.mutateSuccess(
+                input, forgeTier(), forgeVariant("Forged Sword"), identity, UUID.randomUUID());
+
+        assertTrue(result.isSuccess());
+        assertEquals("Dragon Slayer", result.getResult().getItemMeta().getDisplayName());
     }
 
     private static TierDefinition forgeTier() {

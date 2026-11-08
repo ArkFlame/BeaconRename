@@ -19,6 +19,16 @@ public final class ItemDisplayNameResolver {
     }
 
     public String resolve(final ItemStack item, final ItemIdentityCodec.Identity identity) {
+        final Material material = item != null ? item.getType() : null;
+        final boolean preferConfigured = configService != null && material != null
+                && preferConfiguredDisplayName();
+        if (preferConfigured) {
+            String configured = configuredDisplayName(material);
+            if (configured != null) {
+                return configured;
+            }
+        }
+
         if (identity != null) {
             String inherited = identity.getBaseDisplayName();
             if (inherited != null && !inherited.trim().isEmpty()) {
@@ -26,17 +36,29 @@ public final class ItemDisplayNameResolver {
             }
         }
 
-        Material material = item != null ? item.getType() : null;
-        if (configService != null && material != null) {
-            ConfigSnapshot snapshot = configService.getCurrentSnapshot();
-            if (snapshot != null) {
-                String configured = snapshot.getRootString(
-                        "item-display-names." + material.name(), null);
-                if (configured != null && !configured.trim().isEmpty()) {
-                    return configured.trim();
-                }
+        if (!preferConfigured) {
+            String configured = configuredDisplayName(material);
+            if (configured != null) {
+                return configured;
             }
         }
         return identityService.defaultBaseDisplayName(material);
+    }
+
+    private boolean preferConfiguredDisplayName() {
+        final ConfigSnapshot snapshot = configService.getCurrentSnapshot();
+        return snapshot == null || snapshot.getRootBoolean("forge.prefer-configured-display-name", true);
+    }
+
+    private String configuredDisplayName(final Material material) {
+        if (configService == null || material == null) {
+            return null;
+        }
+        final ConfigSnapshot snapshot = configService.getCurrentSnapshot();
+        if (snapshot == null) {
+            return null;
+        }
+        String configured = snapshot.getRootString("item-display-names." + material.name(), null);
+        return configured != null && !configured.trim().isEmpty() ? configured.trim() : null;
     }
 }

@@ -157,6 +157,10 @@ public final class TextRenderer {
         return legacySerializer.serialize(component);
     }
 
+    public String toMiniMessage(final Component component) {
+        return component != null ? miniMessage.serialize(component) : "";
+    }
+
     public Map<String, String> extractPlaceholders(final String input) {
         if (input == null || input.isEmpty()) {
             return Collections.emptyMap();

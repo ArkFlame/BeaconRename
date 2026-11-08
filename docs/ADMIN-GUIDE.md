@@ -8,12 +8,12 @@ Requirements: JDK 8+ and Maven 3.x.
 mvn clean install
 ```
 
-The shaded JAR is written to `target/FlameForge-1.0.3.jar`.
+The shaded JAR is written to `target/FlameForge-1.0.4.jar`.
 
 Installation:
 
 1. Stop the server.
-2. Place `FlameForge-1.0.3.jar` into `plugins/`. **PacketEvents is a hard
+2. Place `FlameForge-1.0.4.jar` into `plugins/`. **PacketEvents is a hard
    dependency** — the PacketEvents plugin must also be installed or FlameForge
    will not load.
 3. Start the server. On first run FlameForge creates `plugins/FlameForge/`
