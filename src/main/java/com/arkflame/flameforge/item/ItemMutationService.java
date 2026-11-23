@@ -6,6 +6,7 @@ import com.arkflame.flameforge.model.AttributeSpec;
 import com.arkflame.flameforge.model.BreakPolicy;
 import com.arkflame.flameforge.model.CurseDefinition;
 import com.arkflame.flameforge.model.ForgeAttributeDefinition;
+import com.arkflame.flameforge.model.FailureVariant;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierDefinition;
 import com.arkflame.flameforge.text.MessageArguments;
@@ -259,6 +260,156 @@ public final class ItemMutationService {
         return MutationResult.fail("failed to write forge identity");
     }
 
+    /**
+     * Applies a configurable failure variant. This is the break-system path used for the
+     * built-in break/curse variants and for every server-defined variant.
+     */
+    public MutationResult mutateFailure(
+            ItemStack input,
+            FailureVariant variant,
+            ItemIdentityCodec.Identity identity,
+            UUID forgeId) {
+        if (input == null) {
+            return MutationResult.fail("null input");
+        }
+        if (variant == null) {
+            return MutationResult.fail("null failure variant");
+        }
+        final String baseDisplayName = resolveBaseDisplayName(input, identity);
+        final MessageArguments arguments = MessageArguments.create().string("base_name", baseDisplayName);
+        final ItemStack clone = input.clone();
+        clone.setAmount(1);
+        final ItemMeta meta = clone.getItemMeta();
+        if (meta == null) {
+            return MutationResult.fail("item has no meta");
+        }
+
+        if (variant.isResetDisplayName()) meta.setDisplayName(null);
+        if (variant.isResetLore()) meta.setLore(new ArrayList<String>());
+        if (variant.isResetEnchantments()) enchantmentResolver.clearFromMeta(meta);
+        if (variant.isResetAttributes()) attributeBridge.removeFlameForgeAttributes(clone);
+        if (variant.isResetPowers()) clearPowers(meta);
+        if (variant.isResetCustomModelData()) attributeBridge.setCustomModelData(clone, null);
+
+        if (variant.isDurabilityHalf()) halveRemainingDurability(clone);
+        double penalty = Math.abs(variant.getDamageReduction());
+
+        if (!variant.isDestroyItem()) {
+            if (!variant.getDisplayName().isEmpty()) {
+                applyName(meta, variant.getDisplayName(), arguments);
+            }
+            List<String> resultLore = new ArrayList<>(variant.getLore());
+            if (penalty > 0) {
+                resultLore.add("<dark_gray>● <red>-" + formatNumber(penalty) + " attack damage.");
+            }
+            if (!resultLore.isEmpty()) {
+                applyLore(meta, resultLore, arguments);
+            }
+            applyConfiguredEnchantments(meta, variant.getEnchantments());
+        }
+
+        try {
+            clone.setItemMeta(meta);
+        } catch (Exception e) {
+            return MutationResult.fail("failed to apply meta: " + e.getMessage());
+        }
+
+        if (!variant.isDestroyItem() && penalty > 0) {
+            double amount = -penalty;
+            attributeBridge.applyAttributes(clone, Collections.singletonList(AttributeSpec.of(
+                "generic.attackDamage", amount, amount, "ADD_NUMBER")));
+        }
+
+        ItemIdentityCodec.Identity failureIdentity = buildFailureIdentity(
+                identity, variant, forgeId, input, baseDisplayName);
+        Optional<ItemStack> written = identityService.writeForgeIdentity(clone, failureIdentity);
+        if (!written.isPresent()) {
+            return MutationResult.fail("failed to write forge identity");
+        }
+        if (variant.isDestroyItem()) {
+            return MutationResult.destroyed();
+        }
+        return MutationResult.success(written.get(), new ArrayList<String>());
+    }
+
+    private void halveRemainingDurability(ItemStack item) {
+        short max = item.getType().getMaxDurability();
+        if (max <= 0) {
+            return;
+        }
+        short damage = item.getDurability();
+        int remaining = max - damage;
+        if (remaining <= 0) {
+            return;
+        }
+        int newRemaining = Math.max(1, remaining / 2);
+        item.setDurability((short) Math.max(0, max - newRemaining));
+    }
+
+    private String formatNumber(double value) {
+        if (value == Math.rint(value)) {
+            return String.valueOf((long) value);
+        }
+        return String.valueOf(value);
+    }
+
+    private void applyConfiguredEnchantments(ItemMeta meta, List<String> enchantKeys) {
+        if (enchantKeys == null) {
+            return;
+        }
+        for (String key : enchantKeys) {
+            Optional<Enchantment> enchant = enchantmentResolver.resolve(key);
+            if (!enchant.isPresent()) {
+                continue;
+            }
+            try {
+                meta.addEnchant(enchant.get(), 1, true);
+            } catch (Exception ignored) {
+                // Unsupported enchant for this material; other configured enchantments still apply.
+            }
+        }
+    }
+
+    private ItemIdentityCodec.Identity buildFailureIdentity(
+            ItemIdentityCodec.Identity current, FailureVariant variant,
+            UUID forgeId, ItemStack originalInput, String baseDisplayName) {
+        if (current == null) {
+            current = ItemIdentityCodec.Identity.empty();
+        }
+        UUID actualForgeId = forgeId != null ? forgeId : current.getForgeId();
+        if (actualForgeId == null) {
+            actualForgeId = UUID.randomUUID();
+        }
+        int currentTier = current.getCurrentTier();
+        if (variant.isResetTier()) {
+            currentTier = variant.getTargetTier();
+        }
+        String baseMaterial = current.getBaseMaterial();
+        if (baseMaterial == null && originalInput != null) {
+            baseMaterial = originalInput.getType().name();
+        }
+        String identityBaseDisplayName = current.getBaseDisplayName();
+        if (identityBaseDisplayName == null || identityBaseDisplayName.trim().isEmpty()) {
+            identityBaseDisplayName = baseDisplayName;
+        }
+        boolean failed = variant.isMarkAsFailed();
+        return current
+                .withCurrentTier(currentTier)
+                .withForgeId(actualForgeId)
+                .withLastTierId(variant.isResetTier() ? null : current.getLastTierId())
+                .withLastVariantId(variant.isResetTier() ? null : current.getLastVariantId())
+                .withBaseMaterial(baseMaterial)
+                .withBaseDisplayName(identityBaseDisplayName)
+                .withActiveAttributeIds(variant.isResetAttributes()
+                        ? Collections.emptyList() : current.getActiveAttributeIds())
+                .withActivePowerIds(variant.isResetPowers()
+                        ? Collections.emptyList() : current.getActivePowerIds())
+                .withForgeEnchantments(variant.isResetEnchantments()
+                        ? Collections.emptyMap() : current.getForgeEnchantments())
+                .withCursed(failed && "curse".equals(variant.getId()))
+                .withFailureVariantId(failed ? variant.getId() : null);
+    }
+
     private ItemIdentityCodec.Identity buildRichIdentityForSuccess(
             ItemIdentityCodec.Identity current,
             int targetTierLevel,
@@ -311,7 +462,8 @@ public final class ItemMutationService {
                 .withBaseDisplayName(identityBaseDisplayName)
                 .withActiveAttributeIds(attributeIds)
                 .withActivePowerIds(powerIds)
-                .withCursed(false);
+                .withCursed(false)
+                .withFailureVariantId(null);
     }
 
     private ItemIdentityCodec.Identity buildRichIdentityForBreak(
@@ -360,7 +512,8 @@ public final class ItemMutationService {
                         ? Collections.emptyList() : current.getActivePowerIds())
                 .withForgeEnchantments(policy.isResetEnchants()
                         ? Collections.emptyMap() : current.getForgeEnchantments())
-                .withCursed(false);
+                .withCursed(false)
+                .withFailureVariantId("break");
         return result;
     }
 
@@ -383,7 +536,8 @@ public final class ItemMutationService {
                 .withActiveAttributeIds(Collections.emptyList())
                 .withActivePowerIds(Collections.emptyList())
                 .withForgeEnchantments(Collections.emptyMap())
-                .withCursed(true);
+                .withCursed(true)
+                .withFailureVariantId("curse");
     }
 
     private String resolveBaseDisplayName(final ItemStack input, final ItemIdentityCodec.Identity identity) {

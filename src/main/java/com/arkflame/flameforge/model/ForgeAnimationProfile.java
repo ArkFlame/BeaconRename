@@ -127,22 +127,30 @@ public final class ForgeAnimationProfile {
         private final List<String> particleCandidates;
         private final String title;
         private final String actionBar;
+        private final List<String> subtitle;
 
         public OutcomeFeedback(List<String> soundCandidates, List<String> particleCandidates, String title) {
-            this(soundCandidates, particleCandidates, title, null);
+            this(soundCandidates, particleCandidates, title, null, Collections.emptyList());
         }
 
         public OutcomeFeedback(List<String> soundCandidates, List<String> particleCandidates, String title, String actionBar) {
+            this(soundCandidates, particleCandidates, title, actionBar, Collections.emptyList());
+        }
+
+        public OutcomeFeedback(List<String> soundCandidates, List<String> particleCandidates, String title,
+                               String actionBar, List<String> subtitle) {
             this.soundCandidates = soundCandidates != null ? Collections.unmodifiableList(new java.util.ArrayList<>(soundCandidates)) : Collections.emptyList();
             this.particleCandidates = particleCandidates != null ? Collections.unmodifiableList(new java.util.ArrayList<>(particleCandidates)) : Collections.emptyList();
             this.title = title;
             this.actionBar = actionBar;
+            this.subtitle = subtitle != null ? Collections.unmodifiableList(new java.util.ArrayList<>(subtitle)) : Collections.emptyList();
         }
 
         public List<String> getSoundCandidates() { return soundCandidates; }
         public List<String> getParticleCandidates() { return particleCandidates; }
         public String getTitle() { return title; }
         public String getActionBar() { return actionBar; }
+        public List<String> getSubtitle() { return subtitle; }
         public String getSound() { return soundCandidates != null && !soundCandidates.isEmpty() ? soundCandidates.get(0) : null; }
     }
 

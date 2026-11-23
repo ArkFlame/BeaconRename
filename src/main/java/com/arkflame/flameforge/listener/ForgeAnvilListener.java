@@ -29,6 +29,11 @@ public final class ForgeAnvilListener implements Listener {
         final ItemStack right = inv.getItem(1);
         final ItemStack vanilla = event.getResult();
         if (left == null || vanilla == null || (right != null && right.getType() != org.bukkit.Material.AIR)) return;
+        if (FailedItemGuard.isFailed(identityService, left)
+                || FailedItemGuard.isFailed(identityService, right)) {
+            event.setResult(null);
+            return;
+        }
         if (!left.hasItemMeta() || !identityService.hasForgeIdentityMarker(left)) return;
 
         final ItemStack result = left.clone();

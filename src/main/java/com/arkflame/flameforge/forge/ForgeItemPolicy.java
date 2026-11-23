@@ -74,6 +74,8 @@ public final class ForgeItemPolicy {
                 return "menu.item-denied.customized";
             case CURSED:
                 return "menu.item-denied.cursed";
+            case FAILED:
+                return "menu.item-denied.failed";
             case STATION_TIER_BLOCKED:
                 return "menu.item-denied.station";
             case TIER_PERMISSION_REQUIRED:

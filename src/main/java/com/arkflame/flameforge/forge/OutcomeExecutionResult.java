@@ -15,10 +15,19 @@ public final class OutcomeExecutionResult {
     private final ForgeOutcomeCategory category;
     private final String error;
     private final boolean wardConverted;
+    private final String failureVariantId;
+    private final String failureMessage;
 
     private OutcomeExecutionResult(String outcomeId, Set<String> executedIds,
                                    ItemStack itemOutput, ForgeOutcomeCategory category,
                                    String error, boolean wardConverted) {
+        this(outcomeId, executedIds, itemOutput, category, error, wardConverted, null, null);
+    }
+
+    private OutcomeExecutionResult(String outcomeId, Set<String> executedIds,
+                                   ItemStack itemOutput, ForgeOutcomeCategory category,
+                                   String error, boolean wardConverted,
+                                   String failureVariantId, String failureMessage) {
         this.outcomeId = outcomeId;
         this.executedIds = executedIds != null ?
             Collections.unmodifiableSet(new HashSet<>(executedIds)) :
@@ -27,6 +36,8 @@ public final class OutcomeExecutionResult {
         this.category = category;
         this.error = error;
         this.wardConverted = wardConverted;
+        this.failureVariantId = failureVariantId;
+        this.failureMessage = failureMessage;
     }
 
     public static OutcomeExecutionResult success(String outcomeId, Set<String> executedIds) {
@@ -52,6 +63,13 @@ public final class OutcomeExecutionResult {
             ForgeOutcomeCategory.CURSE, null, false);
     }
 
+    public static OutcomeExecutionResult failure(String outcomeId, Set<String> executedIds,
+                                                 ItemStack itemOutput, ForgeOutcomeCategory category,
+                                                 String failureVariantId, String failureMessage) {
+        return new OutcomeExecutionResult(outcomeId, executedIds, itemOutput, category,
+            null, false, failureVariantId, failureMessage);
+    }
+
     public static OutcomeExecutionResult wardConverted(String originalOutcomeId, Set<String> executedIds) {
         return new OutcomeExecutionResult(originalOutcomeId, executedIds, null,
             null, null, true);
@@ -68,6 +86,8 @@ public final class OutcomeExecutionResult {
     public ForgeOutcomeCategory getCategory() { return category; }
     public String getError() { return error; }
     public boolean isWardConverted() { return wardConverted; }
+    public String getFailureVariantId() { return failureVariantId; }
+    public String getFailureMessage() { return failureMessage; }
 
     public boolean isSuccess() { return error == null && category == ForgeOutcomeCategory.SUCCESS; }
     public boolean hasItemOutput() { return itemOutput != null; }
@@ -84,12 +104,15 @@ public final class OutcomeExecutionResult {
             Objects.equals(executedIds, that.executedIds) &&
             Objects.equals(itemOutput, that.itemOutput) &&
             category == that.category &&
-            Objects.equals(error, that.error);
+            Objects.equals(error, that.error) &&
+            Objects.equals(failureVariantId, that.failureVariantId) &&
+            Objects.equals(failureMessage, that.failureMessage);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(outcomeId, executedIds, itemOutput, category, error, wardConverted);
+        return Objects.hash(outcomeId, executedIds, itemOutput, category, error, wardConverted,
+            failureVariantId, failureMessage);
     }
 
     @Override

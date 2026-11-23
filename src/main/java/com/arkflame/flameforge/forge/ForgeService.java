@@ -1,12 +1,16 @@
 package com.arkflame.flameforge.forge;
 
+import com.arkflame.flameforge.chance.ForgeOutcomeSelection;
 import com.arkflame.flameforge.chance.OutcomeSelector;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
+import com.arkflame.flameforge.config.BreakSystemConfig;
 import com.arkflame.flameforge.config.ConfigService;
+import com.arkflame.flameforge.config.ConfigSnapshot;
 import com.arkflame.flameforge.effect.AnimationHandle;
 import com.arkflame.flameforge.effect.ForgeAnimationService;
 import com.arkflame.flameforge.model.AnimationStep;
+import com.arkflame.flameforge.model.FailureVariant;
 import com.arkflame.flameforge.model.ForgeHistory;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
@@ -235,7 +239,15 @@ public final class ForgeService {
         }
 
         ForgeVariant usedVariant = outcomeSelector.selectVariant(eligibleVariants);
-        ForgeOutcomeCategory category = outcomeSelector.rollCategory(plan.getTargetTier().getChances());
+        BreakSystemConfig breakSystem = BreakSystemConfig.from(configService.getCurrentSnapshot());
+        ForgeOutcomeSelection selection = breakSystem.isEnabled()
+                ? outcomeSelector.rollOutcome(plan.getTargetTier().getChances(), breakSystem)
+                : null;
+        if (selection == null) {
+            selection = ForgeOutcomeSelection.of(
+                outcomeSelector.rollCategory(plan.getTargetTier().getChances()), null);
+        }
+        ForgeOutcomeCategory category = selection.getCategory();
 
         ChargeReceipt chargeReceipt = costService.charge(player, plan.getTargetTier().getCost(), Collections.singletonList(input));
         if (!chargeReceipt.isSuccess()) {
@@ -252,6 +264,7 @@ public final class ForgeService {
             .quote(quote)
             .chargeReceipt(chargeReceipt)
             .outcomeCategory(category)
+            .failureVariantId(selection.getFailureVariantId())
             .custodySnapshot(custodySnapshot)
             .usedVariant(usedVariant);
 
@@ -274,30 +287,42 @@ public final class ForgeService {
         }
 
         AnimationHandle animHandle = null;
+        java.util.function.Consumer<String> completion = (txId) -> {
+            synchronized (session) {
+                if (session.isClosed()) {
+                    return;
+                }
+                if (session.isProcessing()) {
+                    session.transitionToSettling();
+                }
+                if (!session.isSettling()) {
+                    return;
+                }
+                mutateAndDeliver(session, context, player, plan, transaction, completionCallback);
+            }
+        };
+        java.util.function.Consumer<String> animationFailure = (txId) -> {
+            synchronized (session) {
+                rollbackAndFail(context, session, player,
+                    ForgeTransaction.RollbackReason.ANIMATION_FAILURE,
+                    "Animation failed", completionCallback);
+            }
+        };
         try {
-            animHandle = animationService.playAnimation(
-                context.getTransactionId().toString(), player, context.getStationLocation(),
-                plan.getInput(), plan.getTargetTier().getAnimationProfile(),
-                transaction.getOutcomeCategory(), transaction.getUsedVariant(), (txId) -> {
-                    synchronized (session) {
-                        if (session.isClosed()) {
-                            return;
-                        }
-                        if (session.isProcessing()) {
-                            session.transitionToSettling();
-                        }
-                        if (!session.isSettling()) {
-                            return;
-                        }
-                        mutateAndDeliver(session, context, player, plan, transaction, completionCallback);
-                    }
-                }, (txId) -> {
-                    synchronized (session) {
-                        rollbackAndFail(context, session, player,
-                            ForgeTransaction.RollbackReason.ANIMATION_FAILURE,
-                            "Animation failed", completionCallback);
-                    }
-                });
+            FailureVariant effectVariant = failureEffectVariant(plan, transaction);
+            if (effectVariant == null) {
+                animHandle = animationService.playAnimation(
+                    context.getTransactionId().toString(), player, context.getStationLocation(),
+                    plan.getInput(), plan.getTargetTier().getAnimationProfile(),
+                    transaction.getOutcomeCategory(), transaction.getUsedVariant(),
+                    completion, animationFailure);
+            } else {
+                animHandle = animationService.playAnimation(
+                    context.getTransactionId().toString(), player, context.getStationLocation(),
+                    plan.getInput(), plan.getTargetTier().getAnimationProfile(),
+                    transaction.getOutcomeCategory(), transaction.getUsedVariant(),
+                    effectVariant, completion, animationFailure);
+            }
         } catch (RuntimeException e) {
             plugin.getLogger().severe("Animation admission exception for transaction " +
                 context.getTransactionId() + ", player " + player.getUniqueId() +
@@ -371,6 +396,23 @@ public final class ForgeService {
         return true;
     }
 
+    private FailureVariant failureEffectVariant(ForgePlan plan, ForgeTransaction transaction) {
+        String variantId = transaction.getFailureVariantId();
+        ConfigSnapshot snapshot = configService.getCurrentSnapshot();
+        if (variantId == null || snapshot == null) {
+            return null;
+        }
+        FailureVariant variant = BreakSystemConfig.from(snapshot).resolve(variantId, plan.getTargetTier());
+        if (variant == null || !variant.isEnabled()) {
+            return null;
+        }
+        boolean hasOverride = !variant.getSoundCandidates().isEmpty()
+            || !variant.getParticleCandidates().isEmpty()
+            || !variant.getTitle().isEmpty()
+            || !variant.getSubtitle().isEmpty();
+        return hasOverride ? variant : null;
+    }
+
     private void mutateAndDeliver(ForgeSession session, ForgeContext context,
                                  Player player, ForgePlan plan,
                                  ForgeTransaction transaction,
@@ -383,8 +425,12 @@ public final class ForgeService {
 
         OutcomeExecutionResult execResult;
         try {
-            execResult = outcomeExecutor.execute(plan, inputItem, player,
-                context.getTransactionId(), category, transaction.getUsedVariant());
+            execResult = transaction.getFailureVariantId() == null
+                ? outcomeExecutor.execute(plan, inputItem, player,
+                    context.getTransactionId(), category, transaction.getUsedVariant())
+                : outcomeExecutor.execute(plan, inputItem, player,
+                    context.getTransactionId(), category, transaction.getUsedVariant(),
+                    transaction.getFailureVariantId());
         } catch (RuntimeException e) {
             plugin.getLogger().severe("Outcome execution exception for transaction " +
                 context.getTransactionId() + ": " + e.getMessage());
@@ -440,7 +486,7 @@ public final class ForgeService {
             context.getTransactionId(), category,
             transaction.getUsedVariant(), outcomeId, resultItem, mutatedItems,
             history, transaction.getChargeReceipt(),
-            transaction.getCustodySnapshot());
+            transaction.getCustodySnapshot(), execResult.getFailureMessage());
 
         session.setTerminalResolution(resolution);
         session.setPlayerStateSnapshot(context.getPlayerState());

@@ -14,6 +14,7 @@ import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
 import com.arkflame.flameforge.model.AnimationStep;
 import com.arkflame.flameforge.model.ForgeAnimationProfile;
+import com.arkflame.flameforge.model.FailureVariant;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.text.TextBridge;
@@ -130,6 +131,16 @@ public final class ForgeAnimationService {
                                          ForgeOutcomeCategory outcomeCategory, ForgeVariant usedVariant,
                                          Consumer<String> completionCallback,
                                          Consumer<String> failureCallback) {
+        return playAnimation(transactionId, owner, stationLocation, visualItem, profile,
+            outcomeCategory, usedVariant, null, completionCallback, failureCallback);
+    }
+
+    public AnimationHandle playAnimation(String transactionId, Player owner, Location stationLocation,
+                                         ItemStack visualItem, ForgeAnimationProfile profile,
+                                         ForgeOutcomeCategory outcomeCategory, ForgeVariant usedVariant,
+                                         FailureVariant failureVariant,
+                                         Consumer<String> completionCallback,
+                                         Consumer<String> failureCallback) {
         if (transactionId == null || owner == null || stationLocation == null || profile == null
             || visualItem == null || outcomeCategory == null) {
             throw new IllegalArgumentException("transactionId, owner, stationLocation, visualItem, profile, and outcomeCategory must not be null");
@@ -212,7 +223,7 @@ public final class ForgeAnimationService {
 
         for (int revealTick = 1; revealTick <= REVEAL_DURATION_TICKS; revealTick++) {
             TaskHandle revealTask = scheduleRevealTick(revealTick, owner, stationLocation, profile, theme,
-                outcomeCategory, handle, transactionId);
+                outcomeCategory, failureVariant, handle, transactionId);
             if (revealTask == null) {
                 admissionFailed = true;
                 break;
@@ -324,8 +335,8 @@ public final class ForgeAnimationService {
 
     private TaskHandle scheduleRevealTick(int revealTick, Player owner, Location stationLocation,
                                           ForgeAnimationProfile profile, ForgeAnimationTheme theme,
-                                          ForgeOutcomeCategory outcomeCategory, AnimationHandle handle,
-                                          String transactionId) {
+                                          ForgeOutcomeCategory outcomeCategory, FailureVariant failureVariant,
+                                          AnimationHandle handle, String transactionId) {
         final int delay = profile.getDurationTicks() + revealTick;
         TaskHandle task = scheduler.runEntityLater(owner, () -> {
             if (handle.isTerminal()) {
@@ -334,7 +345,8 @@ public final class ForgeAnimationService {
             if (revealTick == 1) {
                 holdFakeItemAtFinalPosition(owner, stationLocation, transactionId);
             }
-            executeRevealStep(owner, stationLocation, profile, theme, outcomeCategory, revealTick);
+            executeRevealStep(owner, stationLocation, profile, theme, outcomeCategory,
+                failureVariant, revealTick);
         }, () -> scheduledTasks.remove(transactionId + "_reveal_" + revealTick), delay);
         if (task == null) {
             return null;
@@ -372,7 +384,8 @@ public final class ForgeAnimationService {
     }
 
     private void executeRevealStep(Player owner, Location stationLocation, ForgeAnimationProfile profile,
-                                   ForgeAnimationTheme theme, ForgeOutcomeCategory category, int revealTick) {
+                                   ForgeAnimationTheme theme, ForgeOutcomeCategory category,
+                                   FailureVariant failureVariant, int revealTick) {
         ParticleStyle style = theme.getStyle();
         List<ParticleRequest> requests = new ArrayList<>();
         ParticlePattern star = ParticlePatternBuilder.star(point(stationLocation, FORGING_CENTER_Y),
@@ -391,7 +404,11 @@ public final class ForgeAnimationService {
         }
         sendBatchSafe(owner, requests);
         if (revealTick == REVEAL_FEEDBACK_TICK) {
-            executeOutcomeFeedbackStep(owner, feedbackFor(profile, category));
+            ForgeAnimationProfile.OutcomeFeedback feedback =
+                mergeFailureFeedback(feedbackFor(profile, category), failureVariant);
+            boolean variantParticles = failureVariant != null
+                && !failureVariant.getParticleCandidates().isEmpty();
+            executeOutcomeFeedbackStep(owner, stationLocation, feedback, variantParticles);
         }
     }
 
@@ -674,14 +691,48 @@ public final class ForgeAnimationService {
         }
     }
 
-    private void executeOutcomeFeedbackStep(Player owner, ForgeAnimationProfile.OutcomeFeedback feedback) {
+    private ForgeAnimationProfile.OutcomeFeedback mergeFailureFeedback(
+            ForgeAnimationProfile.OutcomeFeedback base, FailureVariant variant) {
+        if (variant == null) {
+            return base;
+        }
+        if (base == null) {
+            base = new ForgeAnimationProfile.OutcomeFeedback(Collections.emptyList(),
+                Collections.emptyList(), null);
+        }
+        List<String> sounds = variant.getSoundCandidates().isEmpty()
+            ? base.getSoundCandidates() : variant.getSoundCandidates();
+        List<String> particles = variant.getParticleCandidates().isEmpty()
+            ? base.getParticleCandidates() : variant.getParticleCandidates();
+        String title = variant.getTitle().isEmpty() ? base.getTitle() : variant.getTitle();
+        List<String> subtitle = variant.getSubtitle().isEmpty()
+            ? base.getSubtitle() : variant.getSubtitle();
+        return new ForgeAnimationProfile.OutcomeFeedback(sounds, particles, title,
+            base.getActionBar(), subtitle);
+    }
+
+    private void executeOutcomeFeedbackStep(Player owner, Location location,
+                                            ForgeAnimationProfile.OutcomeFeedback feedback,
+                                            boolean variantParticles) {
         if (feedback == null) return;
         if (feedback.getSound() != null) {
             sounds.playCosmetic(owner, feedback.getSound());
         }
-        if (feedback.getTitle() != null) {
-            Component component = textRenderer.renderToComponent(feedback.getTitle());
-            text.sendTitle(owner, component, Component.empty(), 10, 70, 20);
+        if (variantParticles && !feedback.getParticleCandidates().isEmpty()) {
+            particles.sendFirstAvailable(owner, location, feedback.getParticleCandidates(),
+                0.15f, 0.05f, 0.15f, 0.02f, 12);
+        }
+        if (feedback.getTitle() != null || !feedback.getSubtitle().isEmpty()) {
+            Component title = feedback.getTitle() != null
+                ? textRenderer.renderToComponent(feedback.getTitle()) : Component.empty();
+            Component subtitle = Component.empty();
+            for (String line : feedback.getSubtitle()) {
+                Component rendered = textRenderer.renderToComponent(line);
+                if (rendered != null) {
+                    subtitle = subtitle.append(rendered).append(Component.newline());
+                }
+            }
+            text.sendTitle(owner, title, subtitle, 10, 70, 20);
         }
         if (feedback.getActionBar() != null) {
             Component component = textRenderer.renderToComponent(feedback.getActionBar());

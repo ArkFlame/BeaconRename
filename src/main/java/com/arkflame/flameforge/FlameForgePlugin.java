@@ -52,6 +52,7 @@ import com.arkflame.flameforge.item.ItemDisplayNameResolver;
 import com.arkflame.flameforge.item.ItemIdentityCodec;
 import com.arkflame.flameforge.item.ItemIdentityService;
 import com.arkflame.flameforge.item.ItemMutationService;
+import com.arkflame.flameforge.listener.FailedItemUsageListener;
 import com.arkflame.flameforge.listener.ForgeInteractListener;
 import com.arkflame.flameforge.listener.ForgeInventoryListener;
 import com.arkflame.flameforge.listener.ForgePowerListener;
@@ -427,7 +428,10 @@ public final class FlameForgePlugin extends JavaPlugin {
             itemMutationService,
             itemIdentityService,
             auditLogService,
-            wardConfig != null ? wardConfig : emptyMap
+            wardConfig != null ? wardConfig : emptyMap,
+            configService,
+            messageService,
+            textRenderer
         );
         forgeService = new ForgeService(
             this,
@@ -578,6 +582,7 @@ public final class FlameForgePlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(forgeInventoryListener, this);
         getServer().getPluginManager().registerEvents(forgePowerListener, this);
         getServer().getPluginManager().registerEvents(new com.arkflame.flameforge.listener.ForgeAnvilListener(itemIdentityService), this);
+        getServer().getPluginManager().registerEvents(new FailedItemUsageListener(itemIdentityService), this);
         getServer().getPluginManager().registerEvents(weaponsMenuListener, this);
         getServer().getPluginManager().registerEvents(playerLifecycleListener, this);
     }

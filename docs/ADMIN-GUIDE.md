@@ -75,6 +75,21 @@ Tier files live in `plugins/FlameForge/tiers/` (schema-version 2). Key rules:
 
 After editing, run `/flameforge validate`, then `/flameforge reload`.
 
+## Failure Variants (Break System)
+
+The root `break-system:` section of `config.yml` defines what a failed reforge
+does to the item. `break` and `curse` are the built-in variant ids; custom
+ids can be added under `break-system.failure-variants.<id>` and only roll
+when a tier has a matching `chances.<id>` entry. With
+`break-system.enabled: false`, failures fall back to the legacy per-tier
+`break:` / `curse:` behavior. See
+[Break system (failure variants)](CONFIGURATION.md#break-system-failure-variants)
+for every field and its default.
+
+An item marked as failed (`mark-as-failed: true`, the default) is permanent:
+it cannot be reforged or combined, and crafting, anvil, and furnace recipes
+that use it are cancelled.
+
 ## The testitem Workflow
 
 `/flameforge testitem <tier> <variant> [material]` creates a fresh forged test

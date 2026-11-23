@@ -15,6 +15,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -413,7 +414,51 @@ public class TierParser {
         BigDecimal breakChance = parseDecimal(chances, "break", BigDecimal.ZERO);
         BigDecimal curseChance = parseDecimal(chances, "curse", BigDecimal.ZERO);
 
-        return new TierChances(success.doubleValue(), breakChance.doubleValue(), curseChance.doubleValue());
+        Map<String, BigDecimal> customChances = new LinkedHashMap<>();
+        ConfigurationSection section = chances.getRawSection();
+        if (section != null) {
+            for (String key : section.getKeys(false)) {
+                if ("success".equalsIgnoreCase(key) || "break".equalsIgnoreCase(key)
+                        || "curse".equalsIgnoreCase(key)) {
+                    continue;
+                }
+                Object raw = section.get(key);
+                BigDecimal value = null;
+                if (raw instanceof org.bukkit.configuration.ConfigurationSection) {
+                    org.bukkit.configuration.ConfigurationSection nested =
+                            (org.bukkit.configuration.ConfigurationSection) raw;
+                    for (String candidate : new String[]{"percent", "chance", "value", "amount"}) {
+                        Object nestedRaw = nested.get(candidate);
+                        if (nestedRaw != null && !(nestedRaw instanceof org.bukkit.configuration.ConfigurationSection)) {
+                            value = parseDecimalValue(nestedRaw, key, chances);
+                            if (value != null) break;
+                        }
+                    }
+                } else {
+                    value = parseDecimalValue(raw, key, chances);
+                }
+                if (value != null && value.compareTo(BigDecimal.ZERO) > 0) {
+                    customChances.put(key, value);
+                }
+            }
+        }
+
+        return new TierChances(success, breakChance, curseChance, customChances);
+    }
+
+    private BigDecimal parseDecimalValue(Object raw, String key, YamlValues values) {
+        if (raw instanceof Number) {
+            Number num = (Number) raw;
+            return BigDecimal.valueOf(num.doubleValue());
+        }
+        if (raw instanceof String) {
+            try {
+                return new BigDecimal((String) raw);
+            } catch (NumberFormatException e) {
+                report.addError(values.getRootPath(), key, "Invalid decimal: " + raw);
+            }
+        }
+        return null;
     }
 
     private BreakPolicy parseBreakPolicy(YamlValues breakPolicy) {

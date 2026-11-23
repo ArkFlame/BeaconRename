@@ -27,6 +27,7 @@ public final class ForgeItemInspection {
         CUSTOM_MODEL_DATA,
         FOREIGN_PERSISTENT_DATA,
         CURSED,
+        FAILED,
         MAX_TIER,
         NEXT_TIER_MISSING,
         NEXT_TIER_DISABLED,
@@ -96,8 +97,13 @@ public final class ForgeItemInspection {
         }
 
         final boolean freshUnowned = identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.NONE;
-        if (identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID && identity.isCursed()) {
-            return new InspectionResult(Status.CURSED, identity);
+        if (identityRead.getStatus() == ItemIdentityService.ForgeIdentityStatus.VALID) {
+            if (identity.getFailureVariantId() != null) {
+                return new InspectionResult(identity.isCursed() ? Status.CURSED : Status.FAILED, identity);
+            }
+            if (identity.isCursed()) {
+                return new InspectionResult(Status.CURSED, identity);
+            }
         }
 
         int currentTier = identity.getCurrentTier();

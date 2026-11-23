@@ -23,6 +23,7 @@ public final class ForgeResolution {
     private final ChargeReceipt chargeReceipt;
     private final List<ItemStack> custodyReturned;
     private final boolean preRollFailure;
+    private final String failureMessage;
 
     private ForgeResolution(Builder builder) {
         this.transactionId = Objects.requireNonNull(builder.transactionId);
@@ -41,6 +42,7 @@ public final class ForgeResolution {
             Collections.unmodifiableList(new java.util.ArrayList<>(builder.custodyReturned)) :
             Collections.emptyList();
         this.preRollFailure = builder.preRollFailure;
+        this.failureMessage = builder.failureMessage;
     }
 
     public static Builder builder() {
@@ -63,6 +65,15 @@ public final class ForgeResolution {
             String outcomeId, ItemStack mutatedItem, List<ItemStack> allMutatedItems,
             ForgeHistory historyEntry, ChargeReceipt chargeReceipt,
             List<ItemStack> custodyReturned) {
+        return success(transactionId, category, usedVariant, outcomeId, mutatedItem,
+            allMutatedItems, historyEntry, chargeReceipt, custodyReturned, null);
+    }
+
+    public static ForgeResolution success(UUID transactionId, ForgeOutcomeCategory category,
+            ForgeVariant usedVariant,
+            String outcomeId, ItemStack mutatedItem, List<ItemStack> allMutatedItems,
+            ForgeHistory historyEntry, ChargeReceipt chargeReceipt,
+            List<ItemStack> custodyReturned, String failureMessage) {
         return builder()
             .transactionId(transactionId)
             .success(true)
@@ -75,6 +86,7 @@ public final class ForgeResolution {
             .chargeReceipt(chargeReceipt)
             .custodyReturned(custodyReturned)
             .preRollFailure(false)
+            .failureMessage(failureMessage)
             .build();
     }
 
@@ -126,6 +138,10 @@ public final class ForgeResolution {
         return preRollFailure;
     }
 
+    public String getFailureMessage() {
+        return failureMessage;
+    }
+
     public boolean hasItemOutput() {
         return mutatedItem != null;
     }
@@ -147,6 +163,7 @@ public final class ForgeResolution {
         private ChargeReceipt chargeReceipt;
         private List<ItemStack> custodyReturned;
         private boolean preRollFailure;
+        private String failureMessage;
 
         public Builder transactionId(UUID transactionId) {
             this.transactionId = transactionId;
@@ -205,6 +222,11 @@ public final class ForgeResolution {
 
         public Builder preRollFailure(boolean preRollFailure) {
             this.preRollFailure = preRollFailure;
+            return this;
+        }
+
+        public Builder failureMessage(String failureMessage) {
+            this.failureMessage = failureMessage;
             return this;
         }
 

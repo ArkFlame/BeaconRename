@@ -34,7 +34,7 @@ break:
   result-lore:
     - "<dark_gray>Forge fracture"
     - "<red>● Previous forge powers were stripped."
-    - "<gray>Reforge the item."
+    - "<dark_red>This item cannot be reforged or combined."
   reset-display-name: true
   reset-lore: true
   reset-enchantments: true

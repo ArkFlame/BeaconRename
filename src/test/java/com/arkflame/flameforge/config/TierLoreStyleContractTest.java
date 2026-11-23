@@ -27,7 +27,7 @@ class TierLoreStyleContractTest {
     private static final List<String> FRACTURE_LORE = Arrays.asList(
         "<dark_gray>Forge fracture",
         "<red>\u25cf Previous forge powers were stripped.",
-        "<gray>Reforge the item."
+        "<dark_red>This item cannot be reforged or combined."
     );
     private static final List<String> CURSE_LORE = Arrays.asList(
         "<gray>Forge curse",

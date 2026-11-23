@@ -18,6 +18,7 @@ public final class ForgeTransaction {
     private final CostQuote quote;
     private final ChargeReceipt chargeReceipt;
     private final ForgeOutcomeCategory outcomeCategory;
+    private final String failureVariantId;
     private final List<ItemStack> custodySnapshot;
     private final List<ItemStack> mutatedItems;
     private final ForgeVariant usedVariant;
@@ -32,6 +33,7 @@ public final class ForgeTransaction {
         this.quote = builder.quote;
         this.chargeReceipt = builder.chargeReceipt;
         this.outcomeCategory = builder.outcomeCategory;
+        this.failureVariantId = builder.failureVariantId;
         this.custodySnapshot = builder.custodySnapshot != null ?
             Collections.unmodifiableList(new ArrayList<>(builder.custodySnapshot)) :
             Collections.emptyList();
@@ -71,6 +73,8 @@ public final class ForgeTransaction {
     public ForgeOutcomeCategory getOutcomeCategory() {
         return outcomeCategory;
     }
+
+    public String getFailureVariantId() { return failureVariantId; }
 
     public List<ItemStack> getCustodySnapshot() {
         return custodySnapshot;
@@ -147,6 +151,7 @@ public final class ForgeTransaction {
         private CostQuote quote;
         private ChargeReceipt chargeReceipt;
         private ForgeOutcomeCategory outcomeCategory;
+        private String failureVariantId;
         private List<ItemStack> custodySnapshot;
         private List<ItemStack> mutatedItems;
         private ForgeVariant usedVariant;
@@ -178,6 +183,11 @@ public final class ForgeTransaction {
 
         public Builder outcomeCategory(ForgeOutcomeCategory outcomeCategory) {
             this.outcomeCategory = outcomeCategory;
+            return this;
+        }
+
+        public Builder failureVariantId(String failureVariantId) {
+            this.failureVariantId = failureVariantId;
             return this;
         }
 

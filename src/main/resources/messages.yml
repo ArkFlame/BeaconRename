@@ -389,6 +389,7 @@ menu:
     unsupported: "<red>This item type is not supported by the next forge tier."
     customized: "<red>This item contains custom data that cannot be forged safely."
     cursed: "<red>This cursed item cannot be forged again."
+    failed: "<red>This fractured item cannot be reforged, combined, or used in a recipe."
     station: "<red>This forge station cannot upgrade this item to its next tier."
     permission: "<red>You do not have permission to use the next forge tier."
     empty: "<red>Please insert an item."
@@ -428,6 +429,7 @@ break-policy:
   result-lore:
     - "<gray>The forge fractured this item."
     - "<dark_gray>Its enhancements were reset."
+    - "<dark_red>This item cannot be reforged or combined."
 holograms:
   default-lines:
     - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"

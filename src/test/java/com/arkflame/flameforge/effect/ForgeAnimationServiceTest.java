@@ -7,6 +7,7 @@ import com.arkflame.flameforge.compat.effect.particle.ParticleRequest;
 import com.arkflame.flameforge.compat.effect.SoundResolver;
 import com.arkflame.flameforge.compat.scheduler.SchedulerBridge;
 import com.arkflame.flameforge.compat.scheduler.TaskHandle;
+import com.arkflame.flameforge.model.FailureVariant;
 import com.arkflame.flameforge.model.ForgeAnimationProfile;
 import com.arkflame.flameforge.model.ForgeOutcomeCategory;
 import com.arkflame.flameforge.model.ForgePowerDefinition;
@@ -18,12 +19,14 @@ import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import net.kyori.adventure.text.Component;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
@@ -138,6 +141,65 @@ class ForgeAnimationServiceTest {
         assertFalse(service.isRunning("tx-shutdown-one"));
         assertFalse(service.isRunning("tx-shutdown-two"));
         verify(itemVisuals).destroyAll();
+    }
+
+    @Test
+    void failureVariantOverridesResultSoundParticlesTitleAndSubtitle() {
+        when(textRenderer.renderToComponent(anyString()))
+            .thenAnswer(invocation -> Component.text((String) invocation.getArgument(0)));
+        FailureVariant variant = failureVariant(
+            Collections.singletonList("CUSTOM_PARTICLE"),
+            Collections.singletonList("CUSTOM_SOUND"),
+            "<red>custom title", Arrays.asList("<gray>first line", "<gray>second line"));
+
+        service.playAnimation("tx-variant-feedback", owner, stationLocation, visualItem,
+            profileWithBreakFeedback(), ForgeOutcomeCategory.BREAK, null, variant, null, null);
+
+        verify(sounds).playCosmetic(owner, "CUSTOM_SOUND");
+        verify(particles).sendFirstAvailable(eq(owner), eq(stationLocation),
+            eq(Collections.singletonList("CUSTOM_PARTICLE")), anyFloat(), anyFloat(),
+            anyFloat(), anyFloat(), anyInt());
+        ArgumentCaptor<Component> title = ArgumentCaptor.forClass(Component.class);
+        ArgumentCaptor<Component> subtitle = ArgumentCaptor.forClass(Component.class);
+        verify(text).sendTitle(eq(owner), title.capture(), subtitle.capture(),
+            anyInt(), anyInt(), anyInt());
+        assertTrue(title.getValue().toString().contains("custom title"));
+        assertTrue(subtitle.getValue().toString().contains("first line"));
+        assertTrue(subtitle.getValue().toString().contains("second line"));
+    }
+
+    @Test
+    void emptyFailureVariantOverridesFallBackToTierFeedback() {
+        when(textRenderer.renderToComponent(anyString()))
+            .thenAnswer(invocation -> Component.text((String) invocation.getArgument(0)));
+        FailureVariant variant = failureVariant(Collections.emptyList(), Collections.emptyList(),
+            "", Collections.emptyList());
+
+        service.playAnimation("tx-variant-fallback", owner, stationLocation, visualItem,
+            profileWithBreakFeedback(), ForgeOutcomeCategory.BREAK, null, variant, null, null);
+
+        verify(sounds).playCosmetic(owner, "LEGACY_SOUND");
+        verify(particles, never()).sendFirstAvailable(eq(owner), any(), anyList(),
+            anyFloat(), anyFloat(), anyFloat(), anyFloat(), anyInt());
+        ArgumentCaptor<Component> title = ArgumentCaptor.forClass(Component.class);
+        verify(text).sendTitle(eq(owner), title.capture(), any(), anyInt(), anyInt(), anyInt());
+        assertTrue(title.getValue().toString().contains("legacy title"));
+    }
+
+    private ForgeAnimationProfile profileWithBreakFeedback() {
+        ForgeAnimationProfile.OutcomeFeedback feedback = new ForgeAnimationProfile.OutcomeFeedback(
+            Collections.singletonList("LEGACY_SOUND"),
+            Collections.singletonList("LEGACY_PARTICLE"), "<red>legacy title");
+        return new ForgeAnimationProfile(8, 4, null,
+            new ForgeAnimationProfile.ChargeParticle(Collections.singletonList("flame"), 5, BigDecimal.ONE),
+            null, null, feedback, null);
+    }
+
+    private FailureVariant failureVariant(List<String> particleCandidates, List<String> soundCandidates,
+                                          String title, List<String> subtitle) {
+        return new FailureVariant("shatter", true, false, "", Collections.emptyList(),
+            false, 0, Collections.emptyList(), false, 0, false, false, false, false, false, false,
+            true, "", particleCandidates, soundCandidates, title, subtitle);
     }
 
     @Test

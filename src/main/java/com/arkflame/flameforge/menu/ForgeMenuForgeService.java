@@ -134,6 +134,12 @@ public final class ForgeMenuForgeService {
                         }
 
                         ForgeOutcomeCategory category = resolution.getCategory();
+                        String failureMessage = resolution.getFailureMessage();
+                        if (failureMessage != null && !failureMessage.isEmpty()) {
+                            // Configured custom failure messages are delivered by OutcomeExecutor.
+                            forgePowerService.refreshPassivePowers(player);
+                            return;
+                        }
                         if (category == ForgeOutcomeCategory.SUCCESS) {
                             forgePowerService.refreshPassivePowers(player);
                             messageService.send(player, "forge.confirm.success",

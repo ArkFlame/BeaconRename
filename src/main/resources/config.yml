@@ -160,3 +160,75 @@ holograms:
   lines:
     - "<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>"
     - "<gray>RIGHT CLICK"
+
+
+# ============================================================
+# BREAK SYSTEM
+# ============================================================
+# Controls what happens when a reforge fails. Each failure variant has its own
+# item transformation. Custom variants can be added below; give a tier a matching
+# `chances.<variant-id>: "5.0"` entry (or a nested map with `percent: "5.0"`)
+# to make that variant roll.
+break-system:
+  enabled: true
+  failure-variants:
+    break:
+      enabled: true
+      destroy-item: false
+      display-name: "<gradient:#ef4444:#f97316><bold>Fractured %base_name%</bold></gradient>"
+      lore:
+        - "<dark_gray>Forge fracture"
+        - "<red>● Previous forge powers were stripped."
+        - "<dark_red>● This item cannot be reforged or combined."
+      durability-half: true
+      damage-reduction: 2
+      enchantments: []
+      reset-tier: true
+      target-tier: 0
+      reset-enchantments: true
+      reset-display-name: true
+      reset-lore: true
+      reset-attributes: true
+      reset-powers: true
+      reset-custom-model-data: true
+      mark-as-failed: true
+      message: ""
+      particle-candidates: []
+      sound-candidates: []
+      title: ""
+      subtitle: []
+    curse:
+      enabled: true
+      destroy-item: false
+      display-name: "<gradient:#7f1d1d:#111827><bold>Cursed %base_name%</bold></gradient>"
+      lore:
+        - "<dark_gray>Forge curse"
+        - "<dark_gray>● <red>Previous forge powers were stripped."
+        - "<dark_gray>● <dark_red>This item cannot be reforged or combined."
+      durability-half: true
+      damage-reduction: 2
+      enchantments:
+        - VANISHING_CURSE
+        - CURSE_OF_VANISHING
+      reset-tier: true
+      target-tier: 0
+      reset-enchantments: true
+      reset-display-name: true
+      reset-lore: true
+      reset-attributes: true
+      reset-powers: true
+      reset-custom-model-data: true
+      mark-as-failed: true
+      message: ""
+      particle-candidates: []
+      sound-candidates: []
+      title: ""
+      subtitle: []
+    # Example custom variant (uncomment and add chances.shatter to a tier):
+    # shatter:
+    #   enabled: true
+    #   display-name: "<dark_red>Shattered %base_name%</dark_red>"
+    #   lore: ["<dark_red>This item cannot be reforged or combined."]
+    #   damage-reduction: 4
+    #   mark-as-failed: true
+    #   message: "<red>Your item shattered."

@@ -55,6 +55,24 @@ class ForgeItemPolicyTest {
     }
 
     @Test
+    void failedItemIsDeniedWithDedicatedMessageKey() {
+        ForgeItemInspection inspection = mock(ForgeItemInspection.class);
+        ForgeItemPolicy policy = new ForgeItemPolicy(inspection);
+        Player player = mock(Player.class);
+        PlayerForgeState state = PlayerForgeState.of("player");
+        ItemStack item = mock(ItemStack.class);
+        ItemIdentityCodec.Identity identity = ItemIdentityCodec.Identity.empty()
+            .withFailureVariantId("break");
+
+        when(inspection.inspect(player, state, item)).thenReturn(
+            new ForgeItemInspection.InspectionResult(ForgeItemInspection.Status.FAILED, identity));
+
+        ForgeItemPolicy.PolicyResult denied = policy.checkItem(player, state, item);
+        assertFalse(denied.isAllowed());
+        assertEquals("menu.item-denied.failed", denied.getMessageKey());
+    }
+
+    @Test
     void tierMaterialAndPlayerRequirementsGateReadiness() {
         ForgeItemInspection inspection = mock(ForgeItemInspection.class);
         ForgeItemPolicy policy = new ForgeItemPolicy(inspection);

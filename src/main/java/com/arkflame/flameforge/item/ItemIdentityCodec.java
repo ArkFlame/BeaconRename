@@ -29,13 +29,15 @@ public final class ItemIdentityCodec {
         private final Map<String, Integer> forgeEnchantments;
         private final List<String> activeAttributeIds;
         private final List<String> activePowerIds;
+        private final String failureVariantId;
 
         private Identity(int schemaVersion, int currentTier, int highestTier, int reforgeCount,
                         boolean cursed, String lastTierId, String lastVariantId, UUID forgeId,
                         String baseMaterial, String baseDisplayName,
                         Map<String, Integer> originalEnchantments,
                         Map<String, Integer> forgeEnchantments,
-                        List<String> activeAttributeIds, List<String> activePowerIds) {
+                        List<String> activeAttributeIds, List<String> activePowerIds,
+                        String failureVariantId) {
             this.schemaVersion = schemaVersion;
             this.currentTier = currentTier;
             this.highestTier = highestTier;
@@ -58,91 +60,93 @@ public final class ItemIdentityCodec {
             this.activePowerIds = activePowerIds != null ?
                 Collections.unmodifiableList(new java.util.ArrayList<>(activePowerIds)) :
                 Collections.emptyList();
+            this.failureVariantId = failureVariantId != null && !failureVariantId.trim().isEmpty()
+                ? failureVariantId : null;
         }
 
         public static Identity empty() {
             return new Identity(SCHEMA_VERSION, 0, 0, 0, false, null, null,
                 UUID.randomUUID(), null, null,
                 Collections.emptyMap(), Collections.emptyMap(),
-                Collections.emptyList(), Collections.emptyList());
+                Collections.emptyList(), Collections.emptyList(), null);
         }
 
         public Identity withCurrentTier(int tier) {
             return new Identity(schemaVersion, tier, Math.max(highestTier, tier), reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withHighestTier(int tier) {
             return new Identity(schemaVersion, currentTier, Math.max(highestTier, tier), reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withReforgeCount(int count) {
             return new Identity(schemaVersion, currentTier, highestTier, count,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withCursed(boolean cursed) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withLastTierId(String tierId) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, tierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withLastVariantId(String variantId) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, variantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withForgeId(UUID id) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, id, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withBaseMaterial(String material) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, material, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withBaseDisplayName(String name) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, name,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withOriginalEnchantments(Map<String, Integer> enchants) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                enchants, forgeEnchantments, activeAttributeIds, activePowerIds);
+                enchants, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withForgeEnchantments(Map<String, Integer> enchants) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, enchants, activeAttributeIds, activePowerIds);
+                originalEnchantments, enchants, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         public Identity withActiveAttributeIds(List<String> ids) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, ids, activePowerIds);
+                originalEnchantments, forgeEnchantments, ids, activePowerIds, failureVariantId);
         }
 
         public Identity withActivePowerIds(List<String> ids) {
             return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, ids);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, ids, failureVariantId);
         }
 
         public int getSchemaVersion() { return schemaVersion; }
@@ -159,6 +163,14 @@ public final class ItemIdentityCodec {
         public Map<String, Integer> getForgeEnchantments() { return forgeEnchantments; }
         public List<String> getActiveAttributeIds() { return activeAttributeIds; }
         public List<String> getActivePowerIds() { return activePowerIds; }
+        public String getFailureVariantId() { return failureVariantId; }
+        public boolean isFailed() { return failureVariantId != null; }
+
+        public Identity withFailureVariantId(String variantId) {
+            return new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
+                cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, variantId);
+        }
 
         @Override
         public boolean equals(Object o) {
@@ -185,7 +197,7 @@ public final class ItemIdentityCodec {
         public int hashCode() {
             return Objects.hash(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, forgeId, lastTierId, lastVariantId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
         }
 
         @Override
@@ -194,7 +206,8 @@ public final class ItemIdentityCodec {
                 ", highestTier=" + highestTier + ", reforgeCount=" + reforgeCount +
                 ", cursed=" + cursed + ", forgeId=" + forgeId +
                 ", lastTierId=" + lastTierId + ", lastVariantId=" + lastVariantId +
-                ", baseMaterial=" + baseMaterial + ", baseDisplayName=" + baseDisplayName + "}";
+                ", baseMaterial=" + baseMaterial + ", baseDisplayName=" + baseDisplayName +
+                ", failureVariantId=" + failureVariantId + "}";
         }
     }
 
@@ -275,10 +288,11 @@ public final class ItemIdentityCodec {
             Map<String, Integer> forgeEnchantments = readIntMap(json, "forgeEnchantments");
             List<String> activeAttributeIds = readStringList(json, "activeAttributeIds");
             List<String> activePowerIds = readStringList(json, "activePowerIds");
+            String failureVariantId = readString(json, "failureVariantId");
 
             Identity identity = new Identity(schemaVersion, currentTier, highestTier, reforgeCount,
                 cursed, lastTierId, lastVariantId, forgeId, baseMaterial, baseDisplayName,
-                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds);
+                originalEnchantments, forgeEnchantments, activeAttributeIds, activePowerIds, failureVariantId);
 
             return Decoded.valid(identity);
         } catch (Exception e) {
@@ -311,7 +325,8 @@ public final class ItemIdentityCodec {
         sb.append("\"originalEnchantments\":").append(mapToJson(identity.originalEnchantments)).append(",");
         sb.append("\"forgeEnchantments\":").append(mapToJson(identity.forgeEnchantments)).append(",");
         sb.append("\"activeAttributeIds\":").append(listToJson(identity.activeAttributeIds)).append(",");
-        sb.append("\"activePowerIds\":").append(listToJson(identity.activePowerIds));
+        sb.append("\"activePowerIds\":").append(listToJson(identity.activePowerIds)).append(",");
+        sb.append("\"failureVariantId\":").append(escape(identity.failureVariantId));
         sb.append("}");
         return sb.toString();
     }

@@ -58,6 +58,8 @@ Bundled defaults (schema-version 2):
   `DecentHolograms`), `offset-y` (default `1.25`), `transparent-background` (default
   `true`), and `lines` (MiniMessage). When `lines` is empty the fallback is
   `holograms.default-lines` in `messages.yml` (bundled: FlameForge gradient plus `RIGHT CLICK`).
+- `break-system` — configurable failure variants applied when a reforge fails;
+  see [Break system (failure variants)](#break-system-failure-variants).
 
 ### Weapon particles
 
@@ -81,6 +83,56 @@ power before it applies. `CHANCE_MISS` means chance gate failed. It does not
 mean the power is stuck in cooldown. `PROJECTILE_HIT_EVENT_IGNORED` is
 diagnostic evidence for a separate routing decision. It does not establish
 projectile spear powers as supported.
+
+### Break system (failure variants)
+
+The root `break-system:` section in `config.yml` controls what happens when a
+reforge fails. It has two keys:
+
+- `enabled` (default `true`) — when `true`, each failure rolls the
+  configured variants below. When `false`, failures fall back to the legacy
+  per-tier behavior: the tier's `chances.break` / `chances.curse` values
+  decide the outcome, and the tier's `break:` / `curse:` blocks and tier
+  animation profile define the result.
+- `failure-variants` — a map of variant ids to their settings. `break` and
+  `curse` are the built-in ids and are always available. Custom ids may be
+  added; a custom variant only rolls when a tier has a matching
+  `chances.<id>` entry (a percent string such as `"5.0"`, or a nested
+  map with `percent: "5.0"`; `chance`, `value`, and `amount` are
+  also accepted in the nested map).
+
+Each variant under `break-system.failure-variants.<id>` accepts these
+fields (shown with their bundled defaults):
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| `enabled` | `true` | Whether this variant can be rolled and applied. |
+| `destroy-item` | `false` | Destroy the item on failure instead of transforming it. The built-in `break` falls back to the tier's `break.destroy-item`. |
+| `display-name` | built-in text for `break`/`curse`, otherwise empty | MiniMessage name applied to the failed item; `%base_name%` is replaced with the item's base name. |
+| `lore` | built-in text for `break`/`curse`, otherwise empty | MiniMessage lore lines applied to the failed item; `%base_name%` is supported. |
+| `durability-half` | `true` | Halve the item's remaining durability (no effect on items without durability). |
+| `damage-reduction` | `2` | Reduce the item's attack damage by this amount (the absolute value is used); a matching lore line is added. |
+| `enchantments` | `[]` | Enchantment keys applied at level 1 to the failed item (for example `VANISHING_CURSE`). The built-in `curse` falls back to the tier's `curse.enchantment-candidates`. |
+| `reset-tier` | `true` | Reset the stored forge tier. |
+| `target-tier` | `0` | Tier level assigned when `reset-tier` is `true` (`0` means an un-forged/base item). |
+| `reset-enchantments` | `true` | Clear the stored forge enchantments before applying `enchantments`. |
+| `reset-display-name` | `true` | Clear the current display name before applying `display-name`. |
+| `reset-lore` | `true` | Clear the current lore before applying `lore`. |
+| `reset-attributes` | `true` | Clear FlameForge attributes from the item. |
+| `reset-powers` | `true` | Clear FlameForge powers from the item. |
+| `reset-custom-model-data` | `true` | Clear the item's custom model data. |
+| `mark-as-failed` | `true` | Mark the item as failed (and cursed for `curse`). See the restriction note below. |
+| `message` | `""` | MiniMessage message sent to the player on failure; `%base_name%` and `%player_name%` are supported. Empty sends nothing. |
+| `particle-candidates` | `[]` | Override the tier animation profile's failure particles; the first available value is used. Empty uses the profile. |
+| `sound-candidates` | `[]` | Override the tier animation profile's failure sounds; the first available value is used. Empty uses the profile. |
+| `title` | `""` | Override the tier animation profile's failure title. Empty uses the profile. |
+| `subtitle` | `[]` | Override the tier animation profile's failure subtitle lines. Empty uses the profile. |
+
+For the built-in `break` variant, any `reset-*` field left unset is
+inherited from the tier's `break:` block.
+
+An item with `mark-as-failed: true` cannot be reforged or combined, and
+cannot be used as an ingredient in crafting, anvil, or furnace recipes.
 
 ## equipment.yml (categories and progression)
 
@@ -203,6 +255,11 @@ variants:
     attributes: []
     powers: [ ... ]         # see below
 ```
+
+`chances` also accepts custom failure variant ids defined under
+`break-system.failure-variants` (for example `chances: { shatter: "5.0" }`,
+or a nested map such as `chances: { shatter: { percent: "5.0" } }`). See
+[Break system (failure variants)](#break-system-failure-variants).
 
 ### Cooldown units
 
