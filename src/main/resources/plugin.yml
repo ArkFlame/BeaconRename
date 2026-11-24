@@ -10,6 +10,7 @@ softdepend:
   - Vault
   - FancyHolograms
   - DecentHolograms
+  - CMI
 
 commands:
   flameforge:

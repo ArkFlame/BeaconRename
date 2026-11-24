@@ -273,8 +273,9 @@ setup-tier-create:
   usage: "<dark_gray>• <gray>Usage: <aqua>/flameforge setup tier create <id> <level>"
   level-invalid: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Level must be a number."
   already-exists: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier already exists: <white>%tier_id%"
+  failure: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The tier '<white>%tier_id%<gray>' could not be created. Check that the id is unique and the console for details."
   success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Tier '<white>%tier_id%<gray>' created with level <white>%level%<gray>."
-  note: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Note: New tiers are not populated with default outcomes. Edit the tier file manually."
+  note: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Saved to <white>%file%<gray>. %progression%"
 
 # Setup tier clone
 setup-tier-clone:
@@ -284,7 +285,7 @@ setup-tier-clone:
   already-exists: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>Tier already exists: <white>%new_id%"
   failure: "<gradient:#ef4444:#fb7185><bold>✖</bold></gradient> <gray>The tier could not be cloned. Check the console for details."
   success: "<gradient:#22c55e:#86efac><bold>✔</bold></gradient> <gray>Tier '<white>%new_id%<gray>' cloned from '<white>%source_id%<gray>' with level <white>%level%<gray>."
-  note: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Note: Cloned tiers inherit all settings. Edit the tier file manually to adjust."
+  note: "<gradient:#f59e0b:#fde68a><bold>!</bold></gradient> <gray>Saved to <white>%file%<gray>. %progression%"
 
 # ============================================================
 # SUCCESS / ERROR / TITLE / ACTIONBAR MESSAGES

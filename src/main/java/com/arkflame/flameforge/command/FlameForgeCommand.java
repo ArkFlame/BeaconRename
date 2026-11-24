@@ -33,6 +33,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -1226,10 +1227,15 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             send(sender, "setup-tier-create.already-exists", messageArguments("tier_id", id));
             return true;
         }
-        tierRepository.create(id, level);
-        send(sender, "setup-tier-create.success", messageArguments("tier_id", id,
-            "level", String.valueOf(level)));
-        send(sender, "setup-tier-create.note");
+        TierDefinition created = configService.createTier(id, level);
+        if (created == null) {
+            send(sender, "setup-tier-create.failure", messageArguments("tier_id", id));
+            return true;
+        }
+        send(sender, "setup-tier-create.success", messageArguments("tier_id", created.getId(),
+            "level", String.valueOf(created.getLevel())));
+        send(sender, "setup-tier-create.note", messageArguments("file", tierFilePath(created.getId()),
+            "progression", progressionNote(created.getId())));
         return true;
     }
 
@@ -1255,15 +1261,27 @@ public final class FlameForgeCommand implements CommandExecutor, TabCompleter {
             send(sender, "setup-tier-clone.already-exists", messageArguments("new_id", newId));
             return true;
         }
-        TierDefinition cloned = tierRepository.clone(sourceId, newId, level);
+        TierDefinition cloned = configService.cloneTier(sourceId, newId, level);
         if (cloned == null) {
-            send(sender, "setup-tier-clone.failure");
+            send(sender, "setup-tier-clone.failure", messageArguments("new_id", newId));
             return true;
         }
-        send(sender, "setup-tier-clone.success", messageArguments("new_id", newId,
-            "source_id", sourceId, "level", String.valueOf(level)));
-        send(sender, "setup-tier-clone.note");
+        send(sender, "setup-tier-clone.success", messageArguments("new_id", cloned.getId(),
+            "source_id", sourceId, "level", String.valueOf(cloned.getLevel())));
+        send(sender, "setup-tier-clone.note", messageArguments("file", tierFilePath(cloned.getId()),
+            "progression", progressionNote(cloned.getId())));
         return true;
+    }
+
+    private String tierFilePath(String id) {
+        return new File(tierRepository.getTiersDirectory(), id + ".yml").getPath();
+    }
+
+    private String progressionNote(String id) {
+        Optional<String> category = tierRepository.getEquipmentCatalog().categoryIdForTier(id);
+        return category.isPresent()
+            ? "It was added to the " + category.get() + " progression."
+            : "It is not part of any equipment category progression yet.";
     }
 
     private int parsePageArg(String value) {

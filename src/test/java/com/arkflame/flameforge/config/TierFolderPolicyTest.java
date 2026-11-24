@@ -157,7 +157,7 @@ class TierFolderPolicyTest {
     }
 
     @Test
-    void incompleteConfiguredProgressionIsValidationErrorAndIsNotPublished() throws Exception {
+    void unknownProgressionTierIsValidationErrorAndIsNotPublished() throws Exception {
         JavaPlugin plugin = mock(JavaPlugin.class);
         when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
         stubAllBundledResources(plugin);
@@ -172,7 +172,7 @@ class TierFolderPolicyTest {
              "    materials:\n" +
              "      - DIAMOND_SWORD\n" +
              "    progression:\n" +
-             "      - weapon_tier1\n")
+             "      - weapon_tier_missing\n")
                 .getBytes(StandardCharsets.UTF_8));
 
         TierRepository repository = new TierRepository(plugin);

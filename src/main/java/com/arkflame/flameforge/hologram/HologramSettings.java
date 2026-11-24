@@ -14,6 +14,8 @@ public final class HologramSettings {
     private static final List<String> DEFAULT_LINES = Collections.unmodifiableList(
             Arrays.asList("<gradient:#ff5f00:#ffd166><bold>FlameForge</bold></gradient>",
                     "<gray>RIGHT CLICK"));
+    private static final List<String> DEFAULT_PROVIDER_ORDER = Collections.unmodifiableList(
+            Arrays.asList("FancyHolograms", "DecentHolograms", "CMI"));
 
     private final boolean enabled;
     private final List<String> providerOrder;
@@ -65,7 +67,7 @@ public final class HologramSettings {
         boolean enabled = snapshot.getRootBoolean("holograms.enabled", true);
         List<String> providerOrder = snapshot.getRootStringList("holograms.provider-order");
         if (providerOrder == null || providerOrder.isEmpty()) {
-            providerOrder = Arrays.asList("FancyHolograms", "DecentHolograms");
+            providerOrder = DEFAULT_PROVIDER_ORDER;
         }
         double offsetY = snapshot.getRootDouble("holograms.offset-y", 1.25);
         boolean transparentBackground = snapshot.getRootBoolean("holograms.transparent-background", true);

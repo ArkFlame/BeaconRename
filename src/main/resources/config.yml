@@ -155,6 +155,7 @@ holograms:
   provider-order:
     - FancyHolograms
     - DecentHolograms
+    - CMI
   offset-y: 1.25
   transparent-background: true
   lines:

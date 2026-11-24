@@ -4,10 +4,14 @@ import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.PluginManager;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Logger;
 
 public final class HologramProviderSelector {
+    private static final List<String> SUPPORTED_PROVIDERS =
+            Arrays.asList("FancyHolograms", "DecentHolograms", "CMI");
+
     private final Plugin hostPlugin;
     private final PluginManager pluginManager;
     private final HologramProviderFactory providerFactory;
@@ -32,7 +36,7 @@ public final class HologramProviderSelector {
 
         for (String providerName : settings.getProviderOrder()) {
             String trimmed = providerName.trim();
-            if (!"FancyHolograms".equals(trimmed) && !"DecentHolograms".equals(trimmed)) {
+            if (!SUPPORTED_PROVIDERS.contains(trimmed)) {
                 continue;
             }
 

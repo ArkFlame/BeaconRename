@@ -16,6 +16,9 @@ public interface HologramProviderFactory {
             if ("DecentHolograms".equals(name)) {
                 return new DecentHologramsProvider(providerPlugin, logger);
             }
+            if ("CMI".equals(name)) {
+                return new CmiHologramsProvider(providerPlugin, logger);
+            }
             return new NoOpHologramProvider("Unknown provider: " + name);
         }
     }

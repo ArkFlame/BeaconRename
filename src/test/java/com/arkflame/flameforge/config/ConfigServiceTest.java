@@ -81,6 +81,19 @@ class ConfigServiceTest {
     }
 
     @Test
+    void createTierWritesFileAndPublishesSnapshotWithoutReload() throws Exception {
+        configService.initialLoad();
+
+        com.arkflame.flameforge.model.TierDefinition created = configService.createTier("weapon_tier8", 8);
+
+        assertNotNull(created);
+        assertTrue(Files.exists(tempDir.resolve("tiers").resolve("weapon_tier8.yml")));
+        assertTrue(configService.findTier("weapon_tier8").isPresent());
+        assertTrue(configService.getCurrentSnapshot().getTiers().stream()
+            .anyMatch(tier -> "weapon_tier8".equals(tier.getId())));
+    }
+
+    @Test
     void validateDoesNotPublishCandidateSnapshot() throws Exception {
         configService.initialLoad();
         ConfigSnapshot before = configService.getCurrentSnapshot();

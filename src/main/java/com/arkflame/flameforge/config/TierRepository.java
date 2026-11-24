@@ -1,6 +1,7 @@
 package com.arkflame.flameforge.config;
 
 import com.arkflame.flameforge.model.BreakPolicy;
+import com.arkflame.flameforge.model.ForgeVariant;
 import com.arkflame.flameforge.model.TierDefinition;
 import org.bukkit.Material;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -27,7 +28,10 @@ import java.util.Set;
 public class TierRepository {
     private static final String TIER_PREFIX = "tier";
     private static final String TIER_EXTENSION = ".yml";
-    private static final int MAX_PROGRESSION_SIZE = 7;
+    /** Number of legacy bundled tier files (tier1.yml .. tier7.yml) copied to the data folder. */
+    private static final int BUNDLED_LEGACY_TIER_COUNT = 7;
+    private static final java.util.regex.Pattern TIER_ID_PATTERN =
+        java.util.regex.Pattern.compile("[A-Za-z0-9_-]+");
 
     private final JavaPlugin plugin;
     private final File tiersDirectory;
@@ -35,9 +39,9 @@ public class TierRepository {
     private final File equipmentFile;
     private boolean directoryExistedBeforeStartup;
 
-    private final Map<String, TierDefinition> tiersById = new LinkedHashMap<>();
-    private final List<TierDefinition> tiersAscending = new ArrayList<>();
-    private EquipmentCatalog equipmentCatalog = EquipmentCatalog.empty();
+    private volatile Map<String, TierDefinition> tiersById = new LinkedHashMap<>();
+    private volatile List<TierDefinition> tiersAscending = new ArrayList<>();
+    private volatile EquipmentCatalog equipmentCatalog = EquipmentCatalog.empty();
 
     public TierRepository(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -111,7 +115,7 @@ public class TierRepository {
 
     private void loadBundledLegacyTiers(Map<String, TierDefinition> loadedTiers, ValidationReport report,
                                         BreakPolicy.DefaultText breakDefaults) {
-        for (int i = 1; i <= MAX_PROGRESSION_SIZE; i++) {
+        for (int i = 1; i <= BUNDLED_LEGACY_TIER_COUNT; i++) {
             String bundledResourceName = TIER_PREFIX + i + TIER_EXTENSION;
             try (InputStream bundledStream = plugin.getResource("tiers/" + bundledResourceName)) {
                 if (bundledStream == null) {
@@ -208,10 +212,8 @@ public class TierRepository {
             return;
         }
 
-        tiersById.clear();
-        tiersAscending.clear();
-        tiersById.putAll(candidate.byId);
-        tiersAscending.addAll(candidate.allAscending);
+        tiersById = new LinkedHashMap<>(candidate.byId);
+        tiersAscending = Collections.unmodifiableList(new ArrayList<>(candidate.allAscending));
         equipmentCatalog = candidate.catalog;
     }
 
@@ -223,7 +225,7 @@ public class TierRepository {
         }
 
         Set<String> bundledTierResources = new LinkedHashSet<>();
-        for (int i = 1; i <= MAX_PROGRESSION_SIZE; i++) {
+        for (int i = 1; i <= BUNDLED_LEGACY_TIER_COUNT; i++) {
             bundledTierResources.add(TIER_PREFIX + i + TIER_EXTENSION);
         }
         copyBundledEquipment();
@@ -264,10 +266,9 @@ public class TierRepository {
             }
 
             List<String> progression = category.getProgression();
-            if (progression.size() != MAX_PROGRESSION_SIZE) {
+            if (progression.isEmpty()) {
                 report.addError("equipment.yml.categories." + category.getId(), "progression",
-                    "Configured category progression is incomplete: expected " + MAX_PROGRESSION_SIZE +
-                    " tiers, got " + progression.size());
+                    "Configured category progression must not be empty");
                 continue;
             }
 
@@ -314,11 +315,6 @@ public class TierRepository {
         sorted.sort(Comparator.comparingInt(TierDefinition::getLevel)
             .thenComparing(TierDefinition::getId, String.CASE_INSENSITIVE_ORDER));
         return sorted;
-    }
-
-    private void rebuildAscending() {
-        tiersAscending.clear();
-        tiersAscending.addAll(buildAscending(tiersById));
     }
 
     private void copyBundledEquipment() {
@@ -551,36 +547,51 @@ public class TierRepository {
         return Collections.unmodifiableList(new ArrayList<>(tiersById.values()));
     }
 
-    public TierDefinition create(String id, int level) {
-        TierDefinition tier = new TierDefinition(
-            id,
-            level,
-            true,
-            "",
-            new TierDefinition.TierDisplay("", Collections.emptyList(), false, "AIR"),
-            0L,
-            Collections.singletonList("ANY"),
-            Collections.emptyList(),
-            null,
-            null,
-            null,
-            null,
-            null,
-            Collections.emptyList()
-        );
-        tiersById.put(id, tier);
-        rebuildAscending();
+    public synchronized TierDefinition create(String id, int level) {
+        String validatedId = validateId(id);
+        if (validatedId == null) {
+            return null;
+        }
+        if (level < 0) {
+            warn("Tier level must be >= 0 for " + validatedId + ", got " + level);
+            return null;
+        }
+        if (tierIdTaken(validatedId)) {
+            warn("Tier id already exists: " + validatedId);
+            return null;
+        }
+
+        TierDefinition tier = defaultTier(validatedId, level);
+        if (!TierFileWriter.write(tiersDirectory, tier)) {
+            warn("Failed to write tier file for " + validatedId);
+            return null;
+        }
+        installTier(tier);
+        registerProgression(tier);
         return tier;
     }
 
-    public TierDefinition clone(String sourceId, String newId, int newLevel) {
+    public synchronized TierDefinition clone(String sourceId, String newId, int newLevel) {
         TierDefinition source = tiersById.get(sourceId);
         if (source == null) {
             return null;
         }
 
+        String validatedId = validateId(newId);
+        if (validatedId == null) {
+            return null;
+        }
+        if (newLevel < 0) {
+            warn("Tier level must be >= 0 for " + validatedId + ", got " + newLevel);
+            return null;
+        }
+        if (tierIdTaken(validatedId)) {
+            warn("Tier id already exists: " + validatedId);
+            return null;
+        }
+
         TierDefinition clone = new TierDefinition(
-            newId,
+            validatedId,
             newLevel,
             source.isEnabled(),
             source.getPermission(),
@@ -596,28 +607,171 @@ public class TierRepository {
             new ArrayList<>(source.getVariants())
         );
 
-        tiersById.put(newId, clone);
-        rebuildAscending();
+        if (!TierFileWriter.write(tiersDirectory, clone)) {
+            warn("Failed to write tier file for " + validatedId);
+            return null;
+        }
+        installTier(clone);
+        registerProgression(clone);
         return clone;
     }
 
-    public boolean delete(String id) {
-        TierDefinition removed = tiersById.remove(id);
-        if (removed == null) {
+    public synchronized boolean delete(String id) {
+        if (id == null || !tiersById.containsKey(id)) {
             return false;
         }
-        rebuildAscending();
+        Map<String, TierDefinition> copy = new LinkedHashMap<>(tiersById);
+        copy.remove(id);
+        tiersById = copy;
+        tiersAscending = Collections.unmodifiableList(buildAscending(copy));
+
+        File file = new File(tiersDirectory, id + TIER_EXTENSION);
+        if (isInsideTiersDirectory(file) && file.isFile()) {
+            try {
+                Files.deleteIfExists(file.toPath());
+            } catch (IOException failure) {
+                warn("Failed to delete tier file " + file.getName() + ": " + failure.getMessage());
+            }
+        }
         return true;
     }
 
-    public boolean save(TierDefinition tier) {
+    public synchronized boolean save(TierDefinition tier) {
+        if (tier == null || tier.getId() == null) {
+            return false;
+        }
         String id = tier.getId();
         if (!tiersById.containsKey(id)) {
             return false;
         }
-        tiersById.put(id, tier);
-        rebuildAscending();
+        if (!TierFileWriter.write(tiersDirectory, tier)) {
+            warn("Failed to write tier file for " + id);
+            return false;
+        }
+        installTier(tier);
         return true;
+    }
+
+    private static TierDefinition defaultTier(String id, int level) {
+        ForgeVariant variant = new ForgeVariant("base", "", Collections.emptyList(), 1.0d, null,
+            Collections.singletonList("ANY"), Collections.emptyList(), Collections.emptyList(),
+            Collections.emptyList());
+        return new TierDefinition(
+            id,
+            level,
+            true,
+            "",
+            new TierDefinition.TierDisplay("", Collections.emptyList(), false, "AIR"),
+            0L,
+            Collections.singletonList("ANY"),
+            Collections.emptyList(),
+            null,
+            null,
+            null,
+            null,
+            null,
+            Collections.singletonList(variant)
+        );
+    }
+
+    private String validateId(String id) {
+        if (id == null) {
+            warn("Tier id is required");
+            return null;
+        }
+        String trimmed = id.trim();
+        if (trimmed.isEmpty() || !TIER_ID_PATTERN.matcher(trimmed).matches()) {
+            warn("Invalid tier id '" + id + "'; use only letters, numbers, '_' and '-'");
+            return null;
+        }
+        return trimmed;
+    }
+
+    private boolean tierIdTaken(String id) {
+        for (String existing : tiersById.keySet()) {
+            if (existing.equalsIgnoreCase(id)) {
+                return true;
+            }
+        }
+        File[] files = tiersDirectory.listFiles((dir, name) ->
+            name.toLowerCase(Locale.ROOT).endsWith(TIER_EXTENSION) && !name.startsWith("."));
+        if (files != null) {
+            for (File file : files) {
+                String name = file.getName();
+                String base = name.substring(0, name.length() - TIER_EXTENSION.length());
+                if (base.equalsIgnoreCase(id)) {
+                    return true;
+                }
+            }
+        }
+        return new File(tiersDirectory, id + TIER_EXTENSION).exists();
+    }
+
+    private void installTier(TierDefinition tier) {
+        Map<String, TierDefinition> copy = new LinkedHashMap<>(tiersById);
+        copy.put(tier.getId(), tier);
+        tiersById = copy;
+        tiersAscending = Collections.unmodifiableList(buildAscending(copy));
+    }
+
+    private void registerProgression(TierDefinition tier) {
+        EquipmentCatalog catalog = equipmentCatalog;
+        if (catalog == null) {
+            return;
+        }
+        String tierId = tier.getId().toLowerCase(Locale.ROOT);
+        for (EquipmentCatalog.Category category : catalog.all()) {
+            String prefix = category.getId().toLowerCase(Locale.ROOT) + "_";
+            if (!tierId.startsWith(prefix)) {
+                continue;
+            }
+            int nextLevel = category.getProgression().size() + 1;
+            if (tier.getLevel() != nextLevel) {
+                warn("Tier " + tier.getId() + " has level " + tier.getLevel() + " but the next "
+                    + category.getId() + " progression level is " + nextLevel
+                    + "; the equipment.yml progression entry was not added");
+                return;
+            }
+            for (String existing : category.getProgression()) {
+                if (existing.equalsIgnoreCase(tier.getId())) {
+                    return;
+                }
+            }
+            if (!EquipmentProgressionAppender.append(equipmentFile, category.getId(), tier.getId())) {
+                warn("Failed to add " + tier.getId() + " to the " + category.getId()
+                    + " progression in equipment.yml");
+                return;
+            }
+            rebuildEquipmentCatalog();
+            return;
+        }
+    }
+
+    private void rebuildEquipmentCatalog() {
+        ValidationReport report = new ValidationReport();
+        EquipmentCatalog parsed = EquipmentCatalogParser.parse(
+            plugin.getResource("equipment.yml"), equipmentFile, report);
+        if (report.hasErrors()) {
+            warn("Could not rebuild the equipment catalog after tier registration");
+            return;
+        }
+        equipmentCatalog = parsed;
+    }
+
+    private boolean isInsideTiersDirectory(File file) {
+        try {
+            String directory = tiersDirectory.getCanonicalPath();
+            String path = file.getCanonicalPath();
+            return path.equals(directory) || path.startsWith(directory + File.separator);
+        } catch (IOException failure) {
+            return false;
+        }
+    }
+
+    private void warn(String message) {
+        if (plugin != null && plugin.getLogger() != null) {
+            plugin.getLogger().warning(message);
+        }
     }
 
     public File getTiersDirectory() {

@@ -447,8 +447,14 @@ public class ConfigService {
         if (source == null) {
             return null;
         }
-        int newLevel = source.getLevel();
+        return cloneTier(sourceId, newId, source.getLevel());
+    }
+
+    public TierDefinition cloneTier(String sourceId, String newId, int newLevel) {
         TierDefinition tier = tierRepository.clone(sourceId, newId, newLevel);
+        if (tier == null) {
+            return null;
+        }
         updateSnapshotWithTierChange();
         return tier;
     }
@@ -491,9 +497,12 @@ public class ConfigService {
             field.setAccessible(true);
             Object value = field.get(source);
             if (value instanceof java.util.Map) {
-                java.util.Map<String, java.util.Map<String, Object>> map = (java.util.Map<String, java.util.Map<String, Object>>) value;
-                java.util.Map<String, java.util.Map<String, Object>> targetMap = (java.util.Map<String, java.util.Map<String, Object>>) ConfigSnapshot.Builder.class.getDeclaredField(fieldName).get(target);
-                targetMap.putAll(map);
+                java.lang.reflect.Field targetField = ConfigSnapshot.Builder.class.getDeclaredField(fieldName);
+                targetField.setAccessible(true);
+                Object targetValue = targetField.get(target);
+                if (targetValue instanceof java.util.Map) {
+                    ((java.util.Map<Object, Object>) targetValue).putAll((java.util.Map<?, ?>) value);
+                }
             }
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new IllegalStateException("Failed to copy field: " + fieldName, e);

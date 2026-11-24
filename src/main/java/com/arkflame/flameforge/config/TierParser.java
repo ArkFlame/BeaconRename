@@ -324,8 +324,9 @@ public class TierParser {
         TierRequirements.MoneyRequirement money = parseMoneyRequirement(moneyValues);
 
         List<TierRequirements.ItemRequirement> items = parseItemRequirements(requirements.sub("items"));
+        boolean itemsEnabled = requirements.getBoolean("items.enabled", false);
 
-        return new TierRequirements(combine, xp, money, new TierRequirements.ItemsRequirement(false, items));
+        return new TierRequirements(combine, xp, money, new TierRequirements.ItemsRequirement(itemsEnabled, items));
     }
 
     private TierRequirements.XpRequirement parseXpRequirement(YamlValues xp) {
@@ -365,40 +366,34 @@ public class TierParser {
 
         List<TierRequirements.ItemRequirement> result = new ArrayList<>();
 
-        YamlValues requiredSection = items.sub("required");
-        if (requiredSection == null || requiredSection.getRawSection() == null) {
+        List<?> required = items.getList("required");
+        if (required == null) {
             return Collections.emptyList();
         }
 
-        ConfigurationSection section = requiredSection.getRawSection();
-        if (!(section.get("required") instanceof List)) {
-            return Collections.emptyList();
-        }
-
-        Object raw = section.get("required");
-        if (raw instanceof List) {
-            List<?> list = (List<?>) raw;
-            for (Object item : list) {
-                if (item instanceof Map) {
-                    Map<?, ?> itemMap = (Map<?, ?>) item;
-                    List<String> materials = new ArrayList<>();
-                    Object materialsObj = itemMap.get("materials");
-                    if (materialsObj instanceof List) {
-                        for (Object m : (List<?>) materialsObj) {
-                            materials.add(String.valueOf(m));
-                        }
-                    }
-                    int amount = 1;
-                    Object amountObj = itemMap.get("amount");
-                    if (amountObj instanceof Number) {
-                        amount = ((Number) amountObj).intValue();
-                    }
-                    Object displayNameObj = itemMap.get("display-name");
-                    String displayName = displayNameObj != null ? String.valueOf(displayNameObj) : "";
-                    if (!materials.isEmpty()) {
-                        result.add(new TierRequirements.ItemRequirement(materials, amount, displayName));
-                    }
+        for (Object item : required) {
+            if (!(item instanceof Map)) {
+                report.addError(items.getRootPath(), "required",
+                    "Item requirement entries must be maps");
+                continue;
+            }
+            Map<?, ?> itemMap = (Map<?, ?>) item;
+            List<String> materials = new ArrayList<>();
+            Object materialsObj = itemMap.get("materials");
+            if (materialsObj instanceof List) {
+                for (Object material : (List<?>) materialsObj) {
+                    materials.add(String.valueOf(material));
                 }
+            }
+            int amount = 1;
+            Object amountObj = itemMap.get("amount");
+            if (amountObj instanceof Number) {
+                amount = ((Number) amountObj).intValue();
+            }
+            Object displayNameObj = itemMap.get("display-name");
+            String displayName = displayNameObj != null ? String.valueOf(displayNameObj) : "";
+            if (!materials.isEmpty()) {
+                result.add(new TierRequirements.ItemRequirement(materials, amount, displayName));
             }
         }
 
