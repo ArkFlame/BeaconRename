@@ -1,6 +1,6 @@
 # FlameForge Configuration Reference
 
-This document describes the configuration files shipped with FlameForge 1.0.4
+This document describes the configuration files shipped with FlameForge 1.0.5
 and how the runtime loads them. Every file described below is real and shipped
 in the JAR; the operator copy lives in `plugins/FlameForge/`.
 
